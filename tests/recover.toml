@@ -1,0 +1,16 @@
+[[hosts]]
+hostname = "127.0.0.1:8003"
+
+  [hosts.resources.test_zpool]
+  kind = "heartbeat/ZFS"
+
+    [hosts.resources.test_zpool.parameters]
+    pool = "test_zpool"
+
+  [hosts.resources.test_mgt]
+  kind = "lustre/Lustre"
+  requires = "test_zpool"
+
+    [hosts.resources.test_mgt.parameters]
+    mountpoint = "/mnt/test_mgt"
+    target = "test_mgt"

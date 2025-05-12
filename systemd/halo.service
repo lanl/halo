@@ -1,0 +1,15 @@
+[Unit]
+Description=HALO Management Server
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+Restart=always
+RestartSec=1
+User=root
+ExecStart=/usr/local/sbin/halo
+EnvironmentFile=-/etc/sysconfig/halo
+
+[Install]
+WantedBy=multi-user.target

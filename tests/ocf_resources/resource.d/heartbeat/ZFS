@@ -1,0 +1,43 @@
+#!/bin/bash
+
+HALO_TEST_LOG=${HALO_TEST_LOG:-/dev/stdout}
+HALO_TEST_ID=${HALO_TEST_ID:-test_agent}
+
+if [[ -z "${HALO_TEST_DIRECTORY}" ]]; then
+	res_state_file="$HALO_TEST_ID.zfs.$OCF_RESKEY_pool"
+else
+	res_state_file="$HALO_TEST_DIRECTORY/$HALO_TEST_ID.zfs.$OCF_RESKEY_pool"
+fi
+
+start () {
+	echo zfs start pool=$OCF_RESKEY_pool >> $HALO_TEST_LOG
+	touch $res_state_file || exit 1
+	exit 0
+}
+
+stop () {
+	echo zfs stop pool=$OCF_RESKEY_pool >> $HALO_TEST_LOG
+	rm -f $res_state_file
+	exit 0
+}
+
+monitor () {
+	echo zfs monitor pool=$OCF_RESKEY_pool >> $HALO_TEST_LOG
+	if [ -f "$res_state_file" ]; then
+		exit 0
+	else
+		exit 7
+	fi
+}
+
+no_such_command() {
+	echo "No such command"
+	exit 1
+}
+
+case $1 in
+    start)              start;;
+    stop)               stop;;
+    status|monitor)     monitor;;
+    *)                  no_such_command;;
+esac

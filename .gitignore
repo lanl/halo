@@ -1,0 +1,10 @@
+/halo
+/halo_remote
+proto/*.pb.go
+*.swp
+/*.toml
+/target
+/vendor
+patches
+patches.tar
+tests/test_output
