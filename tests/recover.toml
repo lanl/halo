@@ -1,0 +1,11 @@
+[[nodes]]
+  hostname = "127.0.0.1:8003"
+
+  [[nodes.zpools]]
+    name = "test_zpool"
+
+    [[nodes.zpools.targets]]
+      device = "test_mgt"
+      fstype = "zfs"
+      mountpoint = "/mnt/test_mgt"
+      type = ""

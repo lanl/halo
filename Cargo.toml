@@ -1,0 +1,35 @@
+[package]
+name = "halo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "halo"
+path = "src/bin/manager.rs"
+
+[[bin]]
+name = "halo_remote"
+path = "src/bin/remote.rs"
+
+[lib]
+name = "halo_lib"
+path = "src/lib.rs"
+
+[dependencies]
+toml = "0.8.12"
+serde = { version = "1.0.197", features = ["derive"] }
+tokio = { version = "1.0", features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio-util = {version = "0.7.11", features = ["compat"] }
+tokio-rustls = "0.26.2"
+capnp = "0.19.0"
+capnp-rpc = "0.19.2"
+futures = "0.3.30"
+nix = {version = "0.29.0", features = ["fs", "net"]}
+cidr = "0.2.3"
+clap = {version = "4.5.16", features = ["derive"] }
+rustls = "0.23.26"
+rustls-pemfile = "2.2.0"
+futures-util = "0.3.31"
+
+[build-dependencies]
+capnpc = "0.19.0"
