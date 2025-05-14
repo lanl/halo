@@ -2,57 +2,79 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-/// Config, along with its children Node, Target, and Zpool, is the model for a Lustre cluster
-/// used in the HALO configuration file. The config file is deserialized into a Config object.
-///
-/// The model for a cluster used in the config file is intentionally different from the model
-/// used to track the status of the cluster in memory. Since they are decoupled, the dynamic
-/// model can be changed without needing to change the configuration file format.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    // TODO: update everything to use 'hosts' insead of 'nodes' including Cluster config object
-    pub nodes: Vec<Node>,
+    pub hosts: Vec<Host>,
     pub failover_pairs: Option<Vec<Vec<String>>>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Host {
+    pub hostname: String,
+
+    /// Resources should be given a unique identifier to identify them in this hashmap.
+    pub resources: HashMap<String, Resource>,
 }
 
-impl Config {
-    /// configuration file.
-    pub fn new() -> Self {
-        Config {
-            nodes: Vec::new(),
-            failover_pairs: None,
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Resource {
+    /// An OCF Resource Agent identifier, such as "heartbeat/ZFS" or "lustre/Lustre"
+    pub kind: String,
+
+    /// The resource parameters, which are to be passed to the OCF Resource Agent.
+    pub parameters: HashMap<String, String>,
+
+    /// Each resource is allowed to specify a single dependency. The named resource must be started
+    /// before this one.
+    pub requires: Option<String>,
+}
+
+impl Resource {
+    pub fn new_zpool(pool: String) -> Self {
+        Self {
+            kind: "heartbeat/ZFS".to_string(),
+            parameters: HashMap::from([("pool".to_string(), pool)]),
+            requires: None,
         }
     }
-    /// Append a Lustre Node to the given Cluster.
-    pub fn add_node(&mut self, n: Node) {
-        self.nodes.push(n);
+
+    /// Given a line of output from the `mount` command, parses it into a Lustre Resource.
+    ///
+    /// TODO: make this return a result instead of panicking?
+    pub fn new_lustre(mount_output: &str) -> Self {
+        let mut tokens = mount_output.split_whitespace();
+
+        let device = tokens.next().unwrap();
+        let zpool = device.split('/').next().unwrap();
+        let mountpoint = tokens.nth(1).unwrap();
+
+        let opts = tokens.nth(2).unwrap();
+        let opts = opts.trim_matches(|c| c == '(' || c == ')').split(',');
+        let mut kind: Option<String> = None;
+        for opt in opts {
+            if opt.starts_with("svname=") {
+                if opt.contains("MDT") {
+                    kind = Some("mdt".to_string());
+                } else if opt.contains("MGS") {
+                    kind = Some("mgs".to_string());
+                } else if opt.contains("OST") {
+                    kind = Some("ost".to_string());
+                }
+            }
+        }
+        let Some(kind) = kind else {
+            panic!("could not parse lustre mount line")
+        };
+        Self {
+            kind: "lustre/Lustre".to_string(),
+            parameters: HashMap::from([
+                ("mountpoint".to_string(), mountpoint.to_string()),
+                ("target".to_string(), device.to_string()),
+                ("kind".to_string(), kind.to_string()),
+            ]),
+            requires: Some(zpool.to_string()),
+        }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Node {
-    pub hostname: String,
-    pub zpools: Vec<Zpool>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Zpool {
-    pub name: String,
-    pub targets: Vec<Target>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Target {
-    pub device: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub mountpoint: String,
-    pub fstype: String,
 }

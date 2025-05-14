@@ -1,29 +1,35 @@
-[[nodes]]
+[[hosts]]
   hostname = "127.0.0.1:8001"
 
-  [[nodes.zpools]]
-    name = "test_mgt_zpool"
+  [hosts.resources.test_mgt_zpool]
+  kind = "heartbeat/ZFS"
 
-    [[nodes.zpools.targets]]
-      device = "test_mgt"
-      fstype = "zfs"
-      mountpoint = "/mnt/test_mgt"
-      type = ""
+    [hosts.resources.test_mgt_zpool.parameters]
+    pool = "test_mgt_zpool"
 
-    [[nodes.zpools.targets]]
-      device = "test_mdt"
-      fstype = "zfs"
-      mountpoint = "/mnt/test_mdt"
-      type = "mdt"
+  [hosts.resources.test_mgt]
+  kind = "lustre/Lustre"
+  requires = "test_mgt_zpool"
 
-[[nodes]]
+    [hosts.resources.test_mgt.parameters]
+    mountpoint = "/mnt/test_mgt"
+    target = "test_mgt"
+    type = "mgt"
+
+[[hosts]]
   hostname = "127.0.0.1:8002"
 
-  [[nodes.zpools]]
-    name = "test_ost_zpool"
+  [hosts.resources.test_ost_zpool]
+  kind = "heartbeat/ZFS"
 
-    [[nodes.zpools.targets]]
-      device = "test_ost"
-      fstype = "zfs"
-      mountpoint = "/mnt/test_ost"
-      type = "ost"
+    [hosts.resources.test_ost_zpool.parameters]
+    pool = "test_ost_zpool"
+
+  [hosts.resources.test_ost]
+  kind = "lustre/Lustre"
+  requires = "test_ost_zpool"
+
+    [hosts.resources.test_ost.parameters]
+    mountpoint = "/mnt/test_ost"
+    target = "test_ost"
+    type = "ost"

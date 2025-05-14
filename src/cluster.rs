@@ -4,9 +4,8 @@
 use futures::future;
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::config::*;
 use crate::host::*;
 use crate::manager::MgrContext;
 use crate::resource::*;
@@ -29,120 +28,6 @@ pub struct Cluster {
 }
 
 impl Cluster {
-    /// Create a new Cluster object given a reference to a MgrContext, which contains the arguments.
-    pub fn new(context: Arc<MgrContext>) -> Result<Self, Box<dyn Error>> {
-        let path = match &context.args.config {
-            Some(path) => path,
-            None => &crate::default_config_path(),
-        };
-        let config = std::fs::read_to_string(path).inspect_err(|e| {
-            eprintln!("Could not open config file \"{path}\": {e}");
-        })?;
-        let config: Config = toml::from_str(&config)?;
-        Ok(Self::from_config(&config, context))
-    }
-
-    fn from_config(conf: &Config, context: Arc<MgrContext>) -> Self {
-        let mut cluster = Cluster {
-            resource_groups: Vec::new(),
-            hosts: Vec::new(),
-            num_zpools: 0,
-            num_targets: 0,
-            context: Arc::clone(&context),
-        };
-
-        for node in conf.nodes.iter() {
-            let (hostname, port) = get_host_port(&node.hostname);
-            let host = Arc::new(Host::new(hostname, port));
-            cluster.hosts.push(Arc::clone(&host));
-
-            for z in node.zpools.iter() {
-                let mut zpool_resource = Resource {
-                    kind: "heartbeat/ZFS".to_string(),
-                    parameters: HashMap::from([("pool".to_string(), z.name.clone())]),
-                    dependents: vec![],
-                    status: Mutex::new(ResourceStatus::Unknown),
-                    home_node: Arc::clone(&host),
-                    failover_node: None,
-                    context: Arc::clone(&context),
-                };
-                cluster.num_zpools += 1;
-
-                for target in z.targets.iter() {
-                    let target_resource = Resource {
-                        kind: "lustre/Lustre".to_string(),
-                        parameters: HashMap::from([
-                            ("mountpoint".to_string(), target.mountpoint.clone()),
-                            ("target".to_string(), target.device.clone()),
-                            // "kind" is not actually a needed parameter for the OCF Resource
-                            // agent. It's included so that the lustre resources can be treated
-                            // differently in this software if is is MGS, MDS, or OST.
-                            ("kind".to_string(), target.kind.clone()),
-                        ]),
-                        dependents: vec![],
-                        status: Mutex::new(ResourceStatus::Unknown),
-                        home_node: Arc::clone(&host),
-                        failover_node: None,
-                        context: Arc::clone(&context),
-                    };
-                    cluster.num_targets += 1;
-                    zpool_resource.dependents.push(target_resource);
-                }
-
-                let resource_group = ResourceGroup::new(zpool_resource);
-
-                cluster.resource_groups.push(resource_group);
-            }
-        }
-
-        if let Some(failover_pairs) = &conf.failover_pairs {
-            let mut new_groups = Vec::new();
-            for group in cluster.resource_groups.iter() {
-                let mut new_zpool = Resource {
-                    kind: group.root.kind.clone(),
-                    parameters: group.root.parameters.clone(),
-                    dependents: vec![],
-                    status: Mutex::new(ResourceStatus::Unknown),
-                    home_node: group.root.home_node.clone(),
-                    failover_node: None,
-                    context: Arc::clone(&context),
-                };
-                let hostname: &str =
-                    get_failover_partner(&failover_pairs, &group.root.home_node.to_string())
-                        .unwrap();
-                let host: &Arc<Host> = cluster.get_host_by_name(hostname).unwrap();
-                new_zpool.failover_node = Some(Arc::clone(host));
-
-                let mut new_targets = Vec::new();
-                for target in &group.root.dependents {
-                    let mut new_target = Resource {
-                        kind: target.kind.clone(),
-                        parameters: target.parameters.clone(),
-                        dependents: vec![],
-                        status: Mutex::new(ResourceStatus::Unknown),
-                        home_node: target.home_node.clone(),
-                        failover_node: None,
-                        context: Arc::clone(&context),
-                    };
-                    let hostname: &str =
-                        get_failover_partner(&failover_pairs, &target.home_node.to_string())
-                            .unwrap();
-                    let host: &Arc<Host> = cluster.get_host_by_name(hostname).unwrap();
-                    new_target.failover_node = Some(Arc::clone(host));
-
-                    new_targets.push(new_target);
-                }
-
-                new_zpool.dependents = new_targets;
-
-                new_groups.push(ResourceGroup::new(new_zpool));
-            }
-            cluster.resource_groups = new_groups;
-        }
-
-        cluster
-    }
-
     /// The main management loop for a cluster consists of running the management loop for each
     /// resource group concurrently.
     pub async fn main_loop(&self) {
@@ -153,16 +38,6 @@ impl Cluster {
             .collect();
 
         let _ = future::join_all(futures).await;
-    }
-
-    /// Get reference to host from host string
-    fn get_host_by_name(&self, hoststr: &str) -> Option<&Arc<Host>> {
-        for host in self.hosts.iter() {
-            if host.to_string() == hoststr {
-                return Some(&host);
-            }
-        }
-        None
     }
 
     pub fn num_zpools(&self) -> u32 {
@@ -196,15 +71,164 @@ impl Cluster {
         self.lustre_resources()
             .find(|res| res.parameters.get("kind").unwrap() == "mgs")
     }
-}
 
-/// Given a string that may be of the form "<address>:port number>", split it out into the address
-/// and port number portions.
-fn get_host_port(host_str: &str) -> (&str, Option<u16>) {
-    let mut split = host_str.split(':');
-    let host = split.nth(0).unwrap();
-    let port = split.nth(0).map(|port| port.parse::<u16>().unwrap());
-    (host, port)
+    /// Create a Cluster given a context. The context contains the arguments, which holds the
+    /// (optional) path to the config file.
+    pub fn new(context: Arc<MgrContext>) -> Result<Self, Box<dyn Error>> {
+        let path = match &context.args.config {
+            Some(path) => path,
+            None => &crate::default_config_path(),
+        };
+        let config = std::fs::read_to_string(path).inspect_err(|e| {
+            eprintln!("Could not open config file \"{path}\": {e}");
+        })?;
+
+        let config: crate::config::Config = toml::from_str(&config).inspect_err(|e| {
+            eprintln!("Could not parse config file \"{path}\": {e}");
+        })?;
+
+        let mut new = Cluster {
+            resource_groups: Vec::new(),
+            hosts: Vec::new(),
+            num_zpools: 0,
+            num_targets: 0,
+            context: Arc::clone(&context),
+        };
+
+        let hosts: HashMap<String, Arc<Host>> = config
+            .hosts
+            .iter()
+            .map(|host| (host.hostname.clone(), Arc::new(Host::from_config(&host))))
+            .collect();
+
+        for config_host in config.hosts.iter() {
+            let failover_host: Option<Arc<Host>> = match &config.failover_pairs {
+                Some(pairs) => {
+                    let hostname = get_failover_partner(&pairs, &config_host.hostname).unwrap();
+                    // TODO: rather than unwrap() here, return an error to let the user know the
+                    // config was invalid:
+                    Some(Arc::clone(hosts.get(hostname).unwrap()))
+                }
+                None => None,
+            };
+            let host = Arc::clone(hosts.get(&config_host.hostname).unwrap());
+            let mut rg = Self::one_host_resource_groups(
+                config_host,
+                host,
+                failover_host,
+                Arc::clone(&context),
+            );
+            new.resource_groups.append(&mut rg);
+        }
+
+        Ok(new)
+    }
+
+    /// Given a config::Host object, convert it into a vector of ResourceGroups where each
+    /// ResourceGroup represents a complete dependency tree of resources on the Host.
+    fn one_host_resource_groups(
+        config_host: &crate::config::Host,
+        host: Arc<Host>,
+        failover_host: Option<Arc<Host>>,
+        context: Arc<MgrContext>,
+    ) -> Vec<ResourceGroup> {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        /// This type exists for convenience while building the resouce dependency tree.
+        /// A TransitionalResource knows both its parent (via me.requires),
+        /// and (some of) its children.
+        #[derive(Debug, Clone)]
+        struct TransitionalResource {
+            me: crate::config::Resource,
+            children: RefCell<Vec<Rc<TransitionalResource>>>,
+        }
+
+        impl TransitionalResource {
+            /// Given a TransitionalResource, recursively converts it into a Resource.
+            ///
+            /// This method assumes that self is the sole owner of self.children, meaning that it
+            /// holds the sole reference to those children. All other references must have been
+            /// dropped. This will panic if there are outstanding references!
+            fn into_resource(
+                self,
+                host: Arc<Host>,
+                failover_host: Option<Arc<Host>>,
+                context: Arc<MgrContext>,
+            ) -> Resource {
+                let dependents = RefCell::into_inner(self.children)
+                    .into_iter()
+                    .map(|child| {
+                        Rc::into_inner(child).unwrap().into_resource(
+                            Arc::clone(&host),
+                            failover_host.clone(),
+                            Arc::clone(&context),
+                        )
+                    })
+                    .collect();
+                Resource::from_config(self.me, dependents, host, failover_host, context)
+            }
+        }
+
+        let resources: HashMap<String, TransitionalResource> = config_host
+            .resources
+            .iter()
+            .map(|(id, res)| {
+                let trans_res = TransitionalResource {
+                    me: res.clone(),
+                    children: RefCell::new(Vec::new()),
+                };
+                (id.clone(), trans_res)
+            })
+            .collect();
+
+        // This will hold the roots of the resource dependency trees:
+        let mut roots: Vec<Rc<TransitionalResource>> = Vec::new();
+        // While building the dependency trees, it will be necessary to look up a resource in its
+        // tree given its ID, so processed_nodes enables that. It uses Rc<> to share a reference to
+        // the same underlying resources as roots.
+        let mut processed_nodes: HashMap<String, Rc<TransitionalResource>> = HashMap::new();
+
+        for (id, res) in resources.iter() {
+            let this_resource = Rc::new(res.clone());
+            processed_nodes.insert(id.clone(), Rc::clone(&this_resource));
+            match &this_resource.me.requires {
+                Some(parent) => {
+                    // Depending on whether this_resource's parent appeared before or after this
+                    // resource in the iteration order, we need to get a reference to it from
+                    // either processed_nodes, or resources.
+                    let parent = match processed_nodes.get(parent) {
+                        Some(parent) => parent,
+                        // TODO: rather than unwrap here, return an error so that the program can
+                        // report to the user that the config was invalid.
+                        None => resources.get(parent).unwrap(),
+                    };
+                    parent.children.borrow_mut().push(this_resource);
+                }
+                None => {
+                    // This resource is a root, so add to root list:
+                    roots.push(this_resource);
+                }
+            };
+        }
+
+        // Drop all non-root references to the TransitionalResources so that the returned vector
+        // can take ownership of them with into_inner():
+        std::mem::drop(processed_nodes);
+        std::mem::drop(resources);
+
+        roots
+            .into_iter()
+            .map(|root| {
+                let root = Rc::into_inner(root).unwrap().into_resource(
+                    Arc::clone(&host),
+                    failover_host.clone(),
+                    Arc::clone(&context),
+                );
+                ResourceGroup::new(root)
+            })
+            .collect()
+    }
 }
 
 /// Given a list `pairs` of failover pairs, and a hostname `name`, return its partner, if one

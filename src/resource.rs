@@ -196,6 +196,24 @@ pub struct Resource {
 }
 
 impl Resource {
+    pub fn from_config(
+        res: crate::config::Resource,
+        dependents: Vec<Resource>,
+        home_node: Arc<Host>,
+        failover_node: Option<Arc<Host>>,
+        context: Arc<MgrContext>,
+    ) -> Self {
+        Resource {
+            kind: res.kind,
+            parameters: res.parameters,
+            dependents,
+            status: Mutex::new(ResourceStatus::Unknown),
+            home_node,
+            failover_node,
+            context,
+        }
+    }
+
     /// This is the loop for tracking a resource's life cycle in Observe mode, where the manager
     /// only checks on resource state and does not actively start / stop a resource.
     async fn observe_loop(&self, args: &crate::commands::Cli) -> ! {
