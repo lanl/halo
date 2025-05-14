@@ -203,6 +203,7 @@ impl TestEnvironment {
                 handle: std::process::Command::new(&self.agent_binary_path)
                     .args(vec!["--test-id", &self.test_id])
                     .env("HALO_TEST_LOG", &self.log_file_path)
+                    .env("HALO_TEST_DIRECTORY", &self.private_dir_path)
                     .env("HALO_NET", &network)
                     .env("HALO_PORT", format!("{port}"))
                     .spawn()
