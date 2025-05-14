@@ -41,6 +41,21 @@ impl Host {
         }
     }
 
+    /// Create a Host object from a given config::Host object.
+    pub fn from_config(host: &crate::config::Host) -> Self {
+        let (name, port) = Self::get_host_port(&host.hostname);
+        Host::new(name, port)
+    }
+
+    /// Given a string that may be of the form "<address>:port number>", split it out into the address
+    /// and port number portions.
+    fn get_host_port(host_str: &str) -> (&str, Option<u16>) {
+        let mut split = host_str.split(':');
+        let host = split.nth(0).unwrap();
+        let port = split.nth(0).map(|port| port.parse::<u16>().unwrap());
+        (host, port)
+    }
+
     pub fn do_fence(&self, command: FenceCommand, agent: FenceAgent) -> Result<(), Box<dyn Error>> {
         let mut child = Command::new(agent.get_executable())
             .stdin(Stdio::piped())
