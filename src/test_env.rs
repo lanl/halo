@@ -194,9 +194,7 @@ impl TestEnvironment {
     ///
     /// Waits until the remotes are listening and ready to accept connections before returning, so
     /// that any subsequent code knows the remotes are up and ready.
-    pub fn start_remote_agents(&self, mut ports: Vec<u16>, network: &str) -> Vec<ChildHandle> {
-        let network = network.to_string();
-
+    pub fn start_remote_agents(&self, mut ports: Vec<u16>) -> Vec<ChildHandle> {
         let handles = ports
             .iter()
             .map(|port| ChildHandle {
@@ -204,7 +202,7 @@ impl TestEnvironment {
                     .args(vec!["--test-id", &self.test_id])
                     .env("HALO_TEST_LOG", &self.log_file_path)
                     .env("HALO_TEST_DIRECTORY", &self.private_dir_path)
-                    .env("HALO_NET", &network)
+                    .env("HALO_NET", "127.0.0.0/24")
                     .env("HALO_PORT", format!("{port}"))
                     .spawn()
                     .expect("could not launch process"),
@@ -221,7 +219,6 @@ impl TestEnvironment {
                     Ok(_) => false,
                     Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => true,
                     Err(e) => panic!(
-                        // "Unexpected error attempting to connect to agent at 127.0.0.1:{port}: {e}"
                         "Unexpected error attempting to connect to agent at {addr}: {e}"
                     ),
                 }

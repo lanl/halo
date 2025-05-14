@@ -25,7 +25,7 @@ mod tests {
     fn simple() {
         let mut env = test_env_helper("simple");
 
-        let _agent = env.start_remote_agents(vec![halo_lib::remote_port()], "127.0.0.0/24");
+        let _agent = env.start_remote_agents(vec![halo_lib::remote_port()]);
 
         let cluster = env.cluster(None);
 
@@ -54,7 +54,7 @@ mod tests {
     fn multi_agent() {
         let mut env = test_env_helper("multiagent");
 
-        let _agents = env.start_remote_agents(vec![8001, 8002], "127.0.0.0/24");
+        let _agents = env.start_remote_agents(vec![8001, 8002]);
 
         let cluster = env.cluster(None);
 
@@ -85,7 +85,7 @@ mod tests {
         let mut env = test_env_helper(&test_id);
 
         // Start an agent
-        let _agent = env.start_remote_agents(vec![8003], "127.0.0.0/24");
+        let _agent = env.start_remote_agents(vec![8003]);
 
         // Get a Cluster structure with a shared management context:
         let mut context = env.manager_context();
