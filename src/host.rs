@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
@@ -47,7 +47,10 @@ impl Host {
     /// Create a Host object from a given config::Host object.
     pub fn from_config(config: &crate::config::Host) -> Self {
         let (name, port) = Self::get_host_port(&config.hostname);
-        let fence_agent = config.fence_parameters.as_ref().map(|params| FenceAgent::from_params(params).unwrap());
+        let fence_agent = config
+            .fence_parameters
+            .as_ref()
+            .map(|params| FenceAgent::from_params(params).unwrap());
         Host::new(name, port, fence_agent)
     }
 
@@ -60,8 +63,15 @@ impl Host {
         (host, port)
     }
 
+    /// Attempt to power on or off this host.
+    ///
+    /// If self.fence_agent is not set, then panics.
     pub fn do_fence(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
         let agent = self.fence_agent.as_ref().unwrap();
+
+        if matches!(command, FenceCommand::Status) {
+            panic!("Please use is_powered_on() for power status.");
+        }
 
         let mut child = Command::new(agent.get_executable())
             .stdin(Stdio::piped())
@@ -77,8 +87,49 @@ impl Host {
             .write_all(&command_bytes)?;
         let status = child.wait()?;
 
+        let mut out = String::new();
+        child.stdout.unwrap().read_to_string(&mut out)?;
+        eprintln!("out: {out}");
+
         if status.success() {
             Ok(())
+        } else {
+            Err(Box::new(FenceError {}))
+        }
+    }
+
+    /// Attempt to check this host's power status.
+    ///
+    /// If self.fence_agent is not set, then panics.
+    pub fn is_powered_on(&self) -> Result<bool, Box<dyn Error>> {
+        let agent = self.fence_agent.as_ref().unwrap();
+
+        let mut child = Command::new(agent.get_executable())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let command_bytes = agent.generate_command_bytes(&self.id.name, FenceCommand::Status);
+
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin should have been captured")
+            .write_all(&command_bytes)?;
+        let status = child.wait()?;
+
+        if !status.success() {
+            return Err(Box::new(FenceError {}));
+        }
+
+        let mut out = String::new();
+        child.stdout.unwrap().read_to_string(&mut out)?;
+        eprintln!("out: {out}");
+
+        if out.contains("is ON") {
+            Ok(true)
+        } else if out.contains("is OFF") {
+            Ok(false)
         } else {
             Err(Box::new(FenceError {}))
         }
@@ -129,6 +180,7 @@ impl Error for FenceError {}
 pub enum FenceCommand {
     On,
     Off,
+    Status,
 }
 
 impl fmt::Display for FenceCommand {
@@ -139,6 +191,7 @@ impl fmt::Display for FenceCommand {
             match self {
                 FenceCommand::On => "on",
                 FenceCommand::Off => "off",
+                FenceCommand::Status => "status",
             }
         )
     }
@@ -149,7 +202,7 @@ impl fmt::Display for FenceCommand {
 pub enum FenceAgent {
     Powerman,
     Redfish(RedfishArgs),
-    Test(String),
+    Test(TestFenceArgs),
 }
 
 impl FenceAgent {
@@ -169,14 +222,17 @@ impl FenceAgent {
                     eprintln!("Password needed but not in parameters");
                     return None;
                 };
-                Some(Self::Redfish(RedfishArgs::new(user.to_string(), pass.to_string())))
+                Some(Self::Redfish(RedfishArgs::new(
+                    user.to_string(),
+                    pass.to_string(),
+                )))
             }
             "fence_test" => {
-                let Some(target) = params.get("target") else {
-                    eprintln!("Target needed but not in parameters");
+                let Some(args) = TestFenceArgs::new(params) else {
+                    eprintln!("Test fence agent is missing needed parameters");
                     return None;
                 };
-                Some(Self::Test(target.to_string()))
+                Some(Self::Test(args))
             }
             other => {
                 eprintln!("Unknown fence agent {other}");
@@ -194,7 +250,7 @@ impl FenceAgent {
     }
 
     fn generate_command_bytes(&self, host_id: &str, command: FenceCommand) -> Vec<u8> {
-        match self {
+        let args = match self {
             FenceAgent::Powerman => {
                 format!("ipaddr=localhost\naction={0}\nplug={1}\n", command, host_id)
             }
@@ -202,9 +258,34 @@ impl FenceAgent {
                 "ipaddr={0}\naction={1}\nusername={2}\npassword={3}\nssl-insecure=true",
                 host_id, command, redfish_args.username, redfish_args.password,
             ),
-            FenceAgent::Test(target) => format!("action={}\ntarget={}", command, target),
-        }
-        .into_bytes()
+            FenceAgent::Test(args) => format!(
+                "action={}\ntest_id={}\ntarget={}",
+                command, args.test_id, args.target
+            ),
+        };
+
+        eprintln!("{args}");
+
+        args.into_bytes()
+    }
+}
+
+/// Arguments for the test fence agent
+#[derive(Clone, Debug)]
+pub struct TestFenceArgs {
+    /// The name of the test that this fence agent will run within.
+    test_id: String,
+
+    /// The name of the specific remote agent within the test.
+    target: String,
+}
+
+impl TestFenceArgs {
+    pub fn new(params: &HashMap<String, String>) -> Option<Self> {
+        let test_id = params.get("test_id")?.to_string();
+        let target = params.get("target")?.to_string();
+
+        Some(Self { test_id, target })
     }
 }
 

@@ -72,6 +72,10 @@ impl Cluster {
             .find(|res| res.parameters.get("kind").unwrap() == "mgs")
     }
 
+    pub fn hosts(&self) -> &Vec<Arc<Host>> {
+        &self.hosts
+    }
+
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
     pub fn new(context: Arc<MgrContext>) -> Result<Self, Box<dyn Error>> {
@@ -120,6 +124,10 @@ impl Cluster {
             );
             new.resource_groups.append(&mut rg);
         }
+
+        let hosts: Vec<_> = hosts.into_iter().map(|(_, host)| host).collect();
+
+        new.hosts = hosts;
 
         Ok(new)
     }

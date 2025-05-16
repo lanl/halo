@@ -16,6 +16,26 @@ resource crashing / failing).
 
 ## Remote Agents
 
+### Environment Variables
+
+The remote agent needs to share state with the test runner program, and it does so via files whose
+locations are denoted by environment variables.
+
+- `HALO_TEST_DIRECTORY` - the private directory for all of the files used in a particular test. This
+  is typically set to `tests/test_output/{test_name}`.
+- `HALO_TEST_LOG` - the path to the shared log file that the OCF Resource Agent logs its actions to.
+- `HALO_TEST_ID` - this is the unique ID for each agent within a test, needed when a single test
+  runs multiple agents. This is used in the path to the resource state files so that the test
+  environment can tell which of several test agents is currently hosting a resource. It is also
+  used in the path to the agent's PID file so that each test agent can be uniquely identified by the
+  test fencing program.
+- `OCF_ROOT` - this tells the remote agent where to look for the OCF Resource Agent scripts, which
+  live under `tests/ocf_resources`.
+
+Because all the tests run concurrently in the same address space, the environment variables cannot
+be used by the tests themselves: the information must be stored in the test-specific `TestEnvironment`
+structure, or another private location.
+
 ### Launching Remote Agents
 
 Remote agents are run as separate processes on the test host. Each remote agent listens on the
@@ -23,9 +43,10 @@ localhost IP address. Because all tests run concurrently--and within one test, m
 may run--each remote agent must be assigned a unique port that does not collide with any other
 test agent in the whole test framework.
 
-Remote agents run with a test ID that is specified in each test, and generally should be the same
-as the name of the test. This test ID is used to specify the location of the resource state files
-used by the given agent.
+Remote agents run with an agent ID that is optionally specified in each test. If it is not
+specified, the test-wide test ID is used. However, if a test runs multiple agents, the test ID would
+not be unique, so a unique ID can be specified per-agent in that case. This agent ID is used to
+specify the location of the resource state files used by the given agent.
 
 For example, for the `simple` test, the remote agent has a test ID of `simple` and the state files
 live in `tests/test_output/simple/`.
@@ -48,9 +69,13 @@ commands over the network. In the test environment, however, fencing must work d
 Powering off a node can be simulated by killing the remote agent process, and potentially removing
 the resource state files for all of the resources that it owned.
 
-Being able to "power off" a test agent requires knowing its PID. Being able to "power on" a test
-agent requires storing the new PID somewhere so that it can be known when it next needs to be
-fenced.
+Being able to "power off" a test agent requires knowing its PID. A test agent shares its PID by
+writing it to a file in a known location (see the function `maybe_identify_self_for_test_fence_agent()`).
+This location is determined by two pieces of information: the test's private directory, and the
+unique agent ID.
+
+Being able to "power on" a test agent requires storing the new PID somewhere so that it can be known
+when it next needs to be fenced.
 
 ## Manager
 

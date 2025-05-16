@@ -92,14 +92,6 @@ impl TestEnvironment {
 
         let log_file_path = test_path(&format!("test_output/{test_id}/test_log"));
 
-        // The test OCF resource agents check this environment variable to know what file to use to
-        // log the actions they take.
-        std::env::set_var("HALO_TEST_LOG", &log_file_path);
-
-        // The halo_remote program needs this environment variable to know where to find the OCF
-        // resource agent scripts.
-        std::env::set_var("OCF_ROOT", test_path("ocf_resources"));
-
         std::fs::create_dir(test_path("test_output"))
             .ignore_eexist()
             .unwrap();
@@ -205,6 +197,7 @@ impl TestEnvironment {
                     ])
                     .env("HALO_TEST_LOG", &self.log_file_path)
                     .env("HALO_TEST_DIRECTORY", &self.private_dir_path)
+                    .env("OCF_ROOT", test_path("ocf_resources"))
                     .env("HALO_NET", "127.0.0.0/24")
                     .env("HALO_PORT", format!("{}", agent.port))
                     .spawn()
@@ -309,4 +302,41 @@ pub fn agent_expected_line(op: &str, res: &Resource) -> String {
         ),
         _ => unreachable!(),
     }
+}
+
+/// When a remote agent is running in the test environment, it may need to be fenced. In order to
+/// enable fencing, the test fence program needs to know this agent's PID so that it can be killed
+/// with a signal.
+///
+/// This knowledge is shared with the test fence program by writing this agent's PID to a file in a
+/// location known to the test fence program. That location is:
+///
+///     `{private_test_directory}/{agent_id}.pid`
+///
+/// `private_test_directory` is typically `tests/test_output/{test_name}`, and this agent gets that
+/// directory from the environment variable `HALO_TEST_DIRECTORY`.
+///
+/// `agent_id` passed as an optional argument.
+///
+/// This function only writes to a file when both `private_test_directory` and `agent_id` are
+/// known. If one or both is not specified, it is assumed that the agent is either not running in
+/// the test environment, or it is running in a test that does not use fencing and does not need
+/// this shared information.
+pub fn maybe_identify_agent_for_test_fence(args: &crate::remote::Cli) {
+    let Some(ref agent_id) = args.test_id else {
+        return;
+    };
+
+    let Ok(test_directory) = std::env::var("HALO_TEST_DIRECTORY") else {
+        return;
+    };
+
+    // It is important that the remote agent NOT proceed if it is unable to write its PID to the
+    // required file. This is because the test fence agent uses the presence or absence of this
+    // file as a way to know whether a particular remote agent is "powered on". Thus, these
+    // `unwrap()`s are needed to maintain the test environment's invariants.
+    let pid_file = format!("{test_directory}/{agent_id}.pid");
+    let mut file = std::fs::File::create(pid_file).unwrap();
+    let me = format!("{}", std::process::id());
+    file.write_all(me.as_bytes()).unwrap();
 }

@@ -11,20 +11,63 @@
 #               Note: `on` is not truly supported; in the test environment, agents must be started
 #               by the test program itself, not via the fence agent.
 #
-#     `target`: a test agent ID
+#     `test_id`: the test ID
+#     `target`: the agent ID
 #
 # The script is run like:
 #
-#     printf "action=status\ntarget=test_agent" | tests/fence_test
+#     printf "action=status\ntest_id=fence_test\ntarget=mds00" | tests/fence_test
 
 fence_off() {
 	echo "fencing OFF $target"
+	pid=$(<$test_directory/$target.pid)
+	if [ -z "$pid" ]; then
+		echo "$target is already OFF"
+		exit 0
+	fi
+
+	# Verify the remote agent's identity
+	local remote_agent_args=$(ps -p $pid -o args=)
+	# If the process at the given PID is *not* the expected agent, then assume that the
+	# agent is not running:
+	if [[ ! $remote_agent_args == *"--test-id $target"* ]]; then
+		echo "$target is already OFF"
+		exit 0
+	fi
+
+	kill $pid
+
+	sleep 1 # sure hope this is enough!
+
+	# Verify the remote agent's identity, again
+	local remote_agent_args=$(ps -p $pid -o args=)
+	# If the process at the given PID is *not* the expected agent, then assume that the
+	# agent is not running:
+	if [[ $remote_agent_args == *"--test-id $target"* ]]; then
+		echo "it would appear that fencing $target failed..."
+		exit 1
+	fi
+
+	echo "it would appear that fencing succeeded..."
+
+	exit 0
 }
 
 fence_status() {
-	echo "checking STATUS of $target"
-	pid=$(<tests/test_output/$target/pid)
-	echo "$pid"
+	pid=$(<$test_directory/$target.pid)
+	# If we couldn't read the file to get a PID, then assume the agent is not running:
+	if [ -z "$pid" ]; then
+		echo "$target is OFF"
+		exit 0
+	fi
+
+	# Verify the remote agent's identity
+	local remote_agent_args=$(ps -p $pid -o args=)
+	if [[ $remote_agent_args == *"--test-id $target"* ]]; then
+		echo "$target is ON"
+	else
+		echo "$target is OFF"
+	fi
 }
 
 args=$(</dev/stdin)
@@ -35,6 +78,9 @@ while IFS= read -r line ; do
 	case ${argument[0]} in
 		action)
 			action=${argument[1]}
+			;;
+		test_id)
+			test_id=${argument[1]}
 			;;
 		target)
 			target=${argument[1]}
@@ -52,9 +98,22 @@ if [ -z "$action" ]; then
 	exit 1
 fi
 
+if [ -z "$test_id" ]; then
+	echo "missing argument 'test_id'"
+	exit 1
+fi
+
 if [ -z "$target" ]; then
 	echo "missing argument 'target'"
 	exit 1
+fi
+
+# Determine the directory to run in: if running under `cargo test`, then `CARGO_MANIFEST_DIR` should
+# be set to the root of the source tree, otherwise, assume that the CWD is the root of the source:
+if [ -z "$CARGO_MANIFEST_DIR" ]; then
+	test_directory="./tests/test_output/$test_id"
+else
+	test_directory="$CARGO_MANIFEST_DIR/tests/test_output/$test_id"
 fi
 
 # Do the requested `action` on the `target`:

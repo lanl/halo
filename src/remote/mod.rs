@@ -49,6 +49,8 @@ pub struct Cli {
 
 /// Launches the remote agent, which listens on an IP address in `network` using `port`.
 pub fn agent_main(args: Cli) -> Result<(), Box<dyn Error>> {
+    crate::test_env::maybe_identify_agent_for_test_fence(&args);
+
     let network = args.network.clone().unwrap_or(crate::default_network());
     let network = cidr::Ipv4Cidr::from_str(&network).unwrap();
     let port = args.port.unwrap_or(crate::remote_port());

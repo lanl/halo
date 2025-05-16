@@ -6,6 +6,7 @@ mod tests {
     use std::sync::Arc;
     use tokio::runtime::Runtime;
 
+    use halo_lib::host::FenceCommand;
     use halo_lib::remote::ocf;
     use halo_lib::resource::{Location, Resource, ResourceStatus};
     use halo_lib::Buffer;
@@ -86,8 +87,7 @@ mod tests {
 
     #[test]
     fn recover() {
-        let test_id = "recover";
-        let mut env = test_env_helper(&test_id);
+        let mut env = test_env_helper("recover");
 
         // Start an agent
         let _agent = env.start_remote_agents(vec![TestAgent::new(8003, None)]);
@@ -130,5 +130,36 @@ mod tests {
                 &res.status_update_string(ResourceStatus::Stopped, ResourceStatus::RunningOnHome),
             );
         }
+    }
+
+    #[test]
+    fn fencing() {
+        let env = test_env_helper("fencing");
+
+        let cluster = env.cluster(None);
+        let host = &cluster.hosts()[0];
+
+        // First, make sure that the fence agent correctly reports that the remote is NOT yet
+        // running:
+        let powered_on = host.is_powered_on().unwrap();
+        assert!(!powered_on);
+
+        let _agent =
+            env.start_remote_agents(vec![TestAgent::new(8004, Some("fence_mds00".to_string()))]);
+
+        // Now, after starting the remote, the fence agent should report it is powered on:
+        let powered_on = host.is_powered_on().unwrap();
+        assert!(powered_on);
+
+        // Fencing the agent OFF should succeed:
+        host.do_fence(FenceCommand::Off).unwrap();
+
+        // Now, start the agent again:
+        let _agent =
+            env.start_remote_agents(vec![TestAgent::new(8004, Some("fence_mds00".to_string()))]);
+
+        // The remote agent should appear ON now:
+        let powered_on = host.is_powered_on().unwrap();
+        assert!(powered_on);
     }
 }
