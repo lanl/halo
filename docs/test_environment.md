@@ -47,3 +47,12 @@ commands over the network. In the test environment, however, fencing must work d
 
 Powering off a node can be simulated by killing the remote agent process, and potentially removing
 the resource state files for all of the resources that it owned.
+
+Being able to "power off" a test agent requires knowing its PID. Being able to "power on" a test
+agent requires storing the new PID somewhere so that it can be known when it next needs to be
+fenced.
+
+## Manager
+
+Some tests don't use the manager at all and directly call the methods on `Resource` to start, stop,
+and monitor resources. Other tests launch the manager as a separate thread in the test process.

@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# SPDX-License-Identifier: MIT
+# Copyright 2025. Triad National Security, LLC.
+
+
+# This is a "fence agent" for the HALO test environment. It takes its arguments via stdin.
+# The arguments are:
+#
+#     `action`: `on`, `off`, or `status`
+#               Note: `on` is not truly supported; in the test environment, agents must be started
+#               by the test program itself, not via the fence agent.
+#
+#     `target`: a test agent ID
+#
+# The script is run like:
+#
+#     printf "action=status\ntarget=test_agent" | tests/fence_test
+
+fence_off() {
+	echo "fencing OFF $target"
+}
+
+fence_status() {
+	echo "checking STATUS of $target"
+	pid=$(<tests/test_output/$target/pid)
+	echo "$pid"
+}
+
+args=$(</dev/stdin)
+
+# Try to get the `action` and `target` arguemnts, failing if any unknown arguments are passed:
+while IFS= read -r line ; do
+	IFS='=' read -ra argument <<< "$line"
+	case ${argument[0]} in
+		action)
+			action=${argument[1]}
+			;;
+		target)
+			target=${argument[1]}
+			;;
+		*)
+			echo "unknown argument: ${argument[0]}"
+			exit 1
+			;;
+	esac
+done <<< "$args"
+
+# Make sure all required arguments were passed, failing if not:
+if [ -z "$action" ]; then
+	echo "missing argument 'action'"
+	exit 1
+fi
+
+if [ -z "$target" ]; then
+	echo "missing argument 'target'"
+	exit 1
+fi
+
+# Do the requested `action` on the `target`:
+case $action in
+	on)
+		echo "fence_test doesn't know how to power on a test agent"
+		exit 1
+		;;
+	off)
+		fence_off
+		;;
+	status)
+		fence_status
+		;;
+	*)
+		echo "unknown action $action"
+		exit 1
+		;;
+esac
+
+exit 0
