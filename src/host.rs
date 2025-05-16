@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::io::Write;
@@ -25,10 +26,11 @@ pub enum HostStatus {
 pub struct Host {
     id: HostIdentity,
     status: Mutex<HostStatus>,
+    fence_agent: Option<FenceAgent>,
 }
 
 impl Host {
-    pub fn new(name: &str, port: Option<u16>) -> Self {
+    pub fn new(name: &str, port: Option<u16>, fence_agent: Option<FenceAgent>) -> Self {
         Host {
             id: HostIdentity {
                 name: name.to_string(),
@@ -38,13 +40,15 @@ impl Host {
                 },
             },
             status: Mutex::new(HostStatus::Unknown),
+            fence_agent,
         }
     }
 
     /// Create a Host object from a given config::Host object.
-    pub fn from_config(host: &crate::config::Host) -> Self {
-        let (name, port) = Self::get_host_port(&host.hostname);
-        Host::new(name, port)
+    pub fn from_config(config: &crate::config::Host) -> Self {
+        let (name, port) = Self::get_host_port(&config.hostname);
+        let fence_agent = config.fence_parameters.as_ref().map(|params| FenceAgent::from_params(params).unwrap());
+        Host::new(name, port, fence_agent)
     }
 
     /// Given a string that may be of the form "<address>:port number>", split it out into the address
@@ -56,7 +60,9 @@ impl Host {
         (host, port)
     }
 
-    pub fn do_fence(&self, command: FenceCommand, agent: FenceAgent) -> Result<(), Box<dyn Error>> {
+    pub fn do_fence(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
+        let agent = self.fence_agent.as_ref().unwrap();
+
         let mut child = Command::new(agent.get_executable())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -119,6 +125,7 @@ impl fmt::Display for FenceError {
 impl Error for FenceError {}
 
 /// The supported fence actions.
+#[derive(Clone, Copy)]
 pub enum FenceCommand {
     On,
     Off,
@@ -138,41 +145,84 @@ impl fmt::Display for FenceCommand {
 }
 
 /// The list of supported fence agents.
+#[derive(Debug, Clone)]
 pub enum FenceAgent {
-    PowerMan,
-    RedFish(RedFishArgs),
+    Powerman,
+    Redfish(RedfishArgs),
+    Test(String),
 }
 
 impl FenceAgent {
+    pub fn from_params(params: &HashMap<String, String>) -> Option<Self> {
+        let Some(agent) = params.get("agent") else {
+            eprintln!("No fence agent specified in parameters");
+            return None;
+        };
+        match agent.as_str() {
+            "powerman" => Some(Self::Powerman),
+            "redfish" => {
+                let Some(user) = params.get("username") else {
+                    eprintln!("Username needed but not in parameters");
+                    return None;
+                };
+                let Some(pass) = params.get("password") else {
+                    eprintln!("Password needed but not in parameters");
+                    return None;
+                };
+                Some(Self::Redfish(RedfishArgs::new(user.to_string(), pass.to_string())))
+            }
+            "fence_test" => {
+                let Some(target) = params.get("target") else {
+                    eprintln!("Target needed but not in parameters");
+                    return None;
+                };
+                Some(Self::Test(target.to_string()))
+            }
+            other => {
+                eprintln!("Unknown fence agent {other}");
+                None
+            }
+        }
+    }
+
     fn get_executable(&self) -> &str {
         match self {
-            FenceAgent::PowerMan => "fence_powerman",
-            FenceAgent::RedFish(_) => "fence_redfish",
+            FenceAgent::Powerman => "fence_powerman",
+            FenceAgent::Redfish(_) => "fence_redfish",
+            FenceAgent::Test(_) => "tests/fence_test",
         }
     }
 
     fn generate_command_bytes(&self, host_id: &str, command: FenceCommand) -> Vec<u8> {
         match self {
-            FenceAgent::PowerMan => {
+            FenceAgent::Powerman => {
                 format!("ipaddr=localhost\naction={0}\nplug={1}\n", command, host_id)
             }
-            FenceAgent::RedFish(redfish_args) => format!(
+            FenceAgent::Redfish(redfish_args) => format!(
                 "ipaddr={0}\naction={1}\nusername={2}\npassword={3}\nssl-insecure=true",
                 host_id, command, redfish_args.username, redfish_args.password,
             ),
+            FenceAgent::Test(target) => format!("action={}\ntarget={}", command, target),
         }
         .into_bytes()
     }
 }
 
 /// Redfish fence agent arguments.
-pub struct RedFishArgs {
+#[derive(Clone)]
+pub struct RedfishArgs {
     username: String,
     password: String,
 }
 
-impl RedFishArgs {
+impl RedfishArgs {
     pub fn new(username: String, password: String) -> Self {
-        RedFishArgs { username, password }
+        Self { username, password }
+    }
+}
+
+impl fmt::Debug for RedfishArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{username: {}, password: ***}}", self.username)
     }
 }

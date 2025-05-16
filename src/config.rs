@@ -16,6 +16,9 @@ pub struct Host {
 
     /// Resources should be given a unique identifier to identify them in this hashmap.
     pub resources: HashMap<String, Resource>,
+
+    /// Fence parameters for this host.
+    pub fence_parameters: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

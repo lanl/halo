@@ -21,44 +21,41 @@ pub struct FenceArgs {
     fence_agent: String,
 
     #[arg(short = 'l', long)]
-    redfish_username: Option<String>,
+    username: Option<String>,
 
     #[arg(short = 'p', long)]
-    redfish_password: Option<String>,
+    password: Option<String>,
 }
 
 pub fn fence(args: &FenceArgs) {
+    let fence_agent = match args.fence_agent.as_str() {
+        "powerman" => FenceAgent::Powerman,
+        "redfish" => {
+            let user = args.username.clone().unwrap();
+            let pass = args.password.clone().unwrap();
+            FenceAgent::Redfish(RedfishArgs::new(user, pass))
+        }
+        other => panic!("unsupported fence agent {other}"),
+    };
+
+    let command = match args.action.as_str() {
+        "on" => FenceCommand::On,
+        "off" => FenceCommand::Off,
+        other => panic!("Invalid fence command {other}"),
+    };
+
+    eprintln!("{:?}", fence_agent);
     let hosts: Vec<Host> = args
         .hostnames
         .iter()
-        .map(|host| Host::new(host, None))
+        .map(|host| Host::new(host, None, Some(fence_agent.clone())))
         .collect();
-
-    if args.fence_agent == "redfifsh"
-        && (args.redfish_username.is_none() || args.redfish_password.is_none())
-    {
-        panic!("No redfish user and or password passed, Exiting.");
-    }
 
     for host in hosts {
         if args.verbose {
             eprintln!("Fencing Host: {}", host.name());
         }
-        match host.do_fence(
-            match args.action.as_str() {
-                "On" => FenceCommand::On,
-                "Off" => FenceCommand::Off,
-                _ => panic!("Invalid fencing command passed, Cannot continue, Exiting."),
-            },
-            match args.fence_agent.as_str() {
-                "powerman" => FenceAgent::PowerMan,
-                "redfish" => FenceAgent::RedFish(RedFishArgs::new(
-                    args.redfish_username.clone().unwrap(),
-                    args.redfish_password.clone().unwrap(),
-                )),
-                _ => panic!("Invalid fence agent passed, Cannot continue, Exiting."),
-            },
-        ) {
+        match host.do_fence(command) {
             Ok(()) => {
                 eprintln!("{} Fence: Success", host.name());
             }

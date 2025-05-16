@@ -47,6 +47,7 @@ fn discover_one_host(hostname: &str, verbose: bool) -> io::Result<config::Host> 
     Ok(config::Host {
         hostname: hostname.to_string(),
         resources,
+        fence_parameters: None,
     })
 }
 
