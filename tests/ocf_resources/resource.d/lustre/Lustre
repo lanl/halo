@@ -6,7 +6,7 @@ HALO_TEST_ID=${HALO_TEST_ID:-test_agent}
 if [[ -z "${HALO_TEST_DIRECTORY}" ]]; then
 	res_state_file="$HALO_TEST_ID.lustre.$(echo $OCF_RESKEY_mountpoint | tr / _)"
 else
-	res_state_file="$HALO_TEST_DIRECTORY/lustre.$(echo $OCF_RESKEY_mountpoint | tr / _)"
+	res_state_file="$HALO_TEST_DIRECTORY/$HALO_TEST_ID.lustre.$(echo $OCF_RESKEY_mountpoint | tr / _)"
 fi
 
 start () {

@@ -126,10 +126,14 @@ pub enum FenceCommand {
 
 impl fmt::Display for FenceCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            FenceCommand::On => "on",
-            FenceCommand::Off => "off",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                FenceCommand::On => "on",
+                FenceCommand::Off => "off",
+            }
+        )
     }
 }
 
@@ -149,17 +153,12 @@ impl FenceAgent {
 
     fn generate_command_bytes(&self, host_id: &str, command: FenceCommand) -> Vec<u8> {
         match self {
-            FenceAgent::PowerMan => format!(
-                "ipaddr=localhost\naction={0}\nplug={1}\n",
-                command,
-                host_id
-            ),
+            FenceAgent::PowerMan => {
+                format!("ipaddr=localhost\naction={0}\nplug={1}\n", command, host_id)
+            }
             FenceAgent::RedFish(redfish_args) => format!(
                 "ipaddr={0}\naction={1}\nusername={2}\npassword={3}\nssl-insecure=true",
-                host_id,
-                command,
-                redfish_args.username,
-                redfish_args.password,
+                host_id, command, redfish_args.username, redfish_args.password,
             ),
         }
         .into_bytes()

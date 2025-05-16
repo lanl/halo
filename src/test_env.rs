@@ -194,33 +194,36 @@ impl TestEnvironment {
     ///
     /// Waits until the remotes are listening and ready to accept connections before returning, so
     /// that any subsequent code knows the remotes are up and ready.
-    pub fn start_remote_agents(&self, mut ports: Vec<u16>) -> Vec<ChildHandle> {
-        let handles = ports
+    pub fn start_remote_agents(&self, mut agents: Vec<TestAgent>) -> Vec<ChildHandle> {
+        let handles = agents
             .iter()
-            .map(|port| ChildHandle {
+            .map(|agent| ChildHandle {
                 handle: std::process::Command::new(&self.agent_binary_path)
-                    .args(vec!["--test-id", &self.test_id])
+                    .args(vec![
+                        "--test-id",
+                        &agent.id.as_ref().unwrap_or(&self.test_id),
+                    ])
                     .env("HALO_TEST_LOG", &self.log_file_path)
                     .env("HALO_TEST_DIRECTORY", &self.private_dir_path)
                     .env("HALO_NET", "127.0.0.0/24")
-                    .env("HALO_PORT", format!("{port}"))
+                    .env("HALO_PORT", format!("{}", agent.port))
                     .spawn()
                     .expect("could not launch process"),
             })
             .collect();
 
         let mut counter = 20;
-        while !ports.is_empty() && counter > 0 {
+        while !agents.is_empty() && counter > 0 {
             // Try to connect to each port; when connecting to one succeeds, remove it from the list
             // but keep trying the others.
-            ports.retain(|port| {
-                let addr: net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+            agents.retain(|agent| {
+                let addr: net::SocketAddr = format!("127.0.0.1:{}", agent.port).parse().unwrap();
                 match net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(50)) {
                     Ok(_) => false,
                     Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => true,
-                    Err(e) => panic!(
-                        "Unexpected error attempting to connect to agent at {addr}: {e}"
-                    ),
+                    Err(e) => {
+                        panic!("Unexpected error attempting to connect to agent at {addr}: {e}")
+                    }
                 }
             });
 
@@ -249,6 +252,10 @@ impl TestEnvironment {
     ///
     /// Simulates a resource stopping by removing the state file that the test OCF resource
     /// script checks to determine if the resource is running.
+    // TODO: once test agents are ran with an agent-specific ID, instead of a test ID that applies
+    // to the entire test, then this should be updated to use that agent-specific ID in the
+    // statefile name instead of the test ID. (the test ID will continue to be used for the
+    // directory name.)
     pub fn stop_resource(&self, resource: &Resource) {
         let path = match resource.kind.as_str() {
             "heartbeat/ZFS" => &format!("zfs.{}", resource.parameters.get("pool").unwrap()),
@@ -262,8 +269,30 @@ impl TestEnvironment {
             ),
             _ => unreachable!(),
         };
-        let path = test_path(&format!("test_output/{}/", self.test_id)) + path;
+        let path = format!("{}.{}", self.test_id, path);
+        let path = test_path(&format!("test_output/{}/", self.test_id)) + &path;
         std::fs::remove_file(&path).expect(&format!("failed to remove file '{}'", &path));
+    }
+}
+
+/// The information needed to launch a remote agent binary in the test environment.
+pub struct TestAgent {
+    /// The port must be unique across all tests, since all tests run concurrently and thus every
+    /// remote agent in the test environment can try to listen on the localhost IP Address at the
+    /// same time.
+    pub port: u16,
+
+    /// If an agent ID is specified here, it is passed to the agent binary as the `--test-id`
+    /// instead of the test ID used for the whole test. This is for tests that run multiple remote
+    /// agents, so that they can uniquely identify the agents. (Technically the port number could
+    /// be used as a unique ID for the different agents, but it's not very meaningful, so this
+    /// allows using a meaningful string as the unique ID.)
+    pub id: Option<String>,
+}
+
+impl TestAgent {
+    pub fn new(port: u16, id: Option<String>) -> Self {
+        Self { port, id }
     }
 }
 

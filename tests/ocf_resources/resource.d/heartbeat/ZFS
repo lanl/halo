@@ -6,7 +6,7 @@ HALO_TEST_ID=${HALO_TEST_ID:-test_agent}
 if [[ -z "${HALO_TEST_DIRECTORY}" ]]; then
 	res_state_file="$HALO_TEST_ID.zfs.$OCF_RESKEY_pool"
 else
-	res_state_file="$HALO_TEST_DIRECTORY/zfs.$OCF_RESKEY_pool"
+	res_state_file="$HALO_TEST_DIRECTORY/$HALO_TEST_ID.zfs.$OCF_RESKEY_pool"
 fi
 
 start () {
