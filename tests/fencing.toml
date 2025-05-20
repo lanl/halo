@@ -1,8 +1,8 @@
 [[hosts]]
 hostname = "127.0.0.1:8004"
+fence_agent = "fence_test"
 
   [hosts.fence_parameters]
-  agent = "fence_test"
   target = "fence_mds00"
   test_id = "fencing"
 

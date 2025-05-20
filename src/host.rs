@@ -48,9 +48,9 @@ impl Host {
     pub fn from_config(config: &crate::config::Host) -> Self {
         let (name, port) = Self::get_host_port(&config.hostname);
         let fence_agent = config
-            .fence_parameters
+            .fence_agent
             .as_ref()
-            .map(|params| FenceAgent::from_params(params).unwrap());
+            .map(|agent| FenceAgent::from_params(agent, &config.fence_parameters));
         Host::new(name, port, fence_agent)
     }
 
@@ -206,41 +206,48 @@ pub enum FenceAgent {
 }
 
 impl FenceAgent {
-    pub fn from_params(params: &HashMap<String, String>) -> Option<Self> {
-        let Some(agent) = params.get("agent") else {
-            eprintln!("No fence agent specified in parameters");
-            return None;
-        };
-        match agent.as_str() {
-            "powerman" => Some(Self::Powerman),
+    /// Create a fence agent given the agent name and its configuration parameters.
+    ///
+    /// The agent name corresponds to the executable file used to run the agent, and the params are
+    /// the arguements passed to that executable when running it for a particular host.
+    ///
+    /// If the given parameters are not valid for the given agent, this panics rather than try to
+    /// run with an unusable fence agent. Note that the parameters are not required for powerman,
+    /// since the hostname is the only needed parameter, and that is already stored on the Host
+    /// object. However, the other fence agents need additional parameters.
+    pub fn from_params(agent: &str, params: &Option<HashMap<String, String>>) -> Self {
+        if agent == "powerman" {
+            return Self::Powerman;
+        }
+
+        let params = params.as_ref().expect("Could not load config: Fence params are needed but not set.");
+
+        match agent {
             "redfish" => {
                 let Some(user) = params.get("username") else {
-                    eprintln!("Username needed but not in parameters");
-                    return None;
+                    panic!("Redfish username needed but not in config parameters");
                 };
                 let Some(pass) = params.get("password") else {
-                    eprintln!("Password needed but not in parameters");
-                    return None;
+                    panic!("Redfish password needed but not in config parameters");
                 };
-                Some(Self::Redfish(RedfishArgs::new(
+                Self::Redfish(RedfishArgs::new(
                     user.to_string(),
                     pass.to_string(),
-                )))
+                ))
             }
             "fence_test" => {
                 let Some(args) = TestFenceArgs::new(params) else {
-                    eprintln!("Test fence agent is missing needed parameters");
-                    return None;
+                    panic!("Test fence agent is missing needed parameters");
                 };
-                Some(Self::Test(args))
+                Self::Test(args)
             }
             other => {
-                eprintln!("Unknown fence agent {other}");
-                None
+                panic!("Could not load config: Unknown fence agent \"{other}\".");
             }
         }
     }
 
+    /// Gets the name of the executable file used for a given fence agent.
     fn get_executable(&self) -> &str {
         match self {
             FenceAgent::Powerman => "fence_powerman",
@@ -249,6 +256,8 @@ impl FenceAgent {
         }
     }
 
+    /// Fence agents take their arguments on stdin. This function generates the input arguments to
+    /// send to a fence agent to do a fence action on the given host.
     fn generate_command_bytes(&self, host_id: &str, command: FenceCommand) -> Vec<u8> {
         let args = match self {
             FenceAgent::Powerman => {

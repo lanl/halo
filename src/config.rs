@@ -17,6 +17,9 @@ pub struct Host {
     /// Resources should be given a unique identifier to identify them in this hashmap.
     pub resources: HashMap<String, Resource>,
 
+    /// Name of the fence agent binary to use for fencing this host.
+    pub fence_agent: Option<String>,
+
     /// Fence parameters for this host.
     pub fence_parameters: Option<HashMap<String, String>>,
 }
