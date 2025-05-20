@@ -220,7 +220,9 @@ impl FenceAgent {
             return Self::Powerman;
         }
 
-        let params = params.as_ref().expect("Could not load config: Fence params are needed but not set.");
+        let params = params
+            .as_ref()
+            .expect("Could not load config: Fence params are needed but not set.");
 
         match agent {
             "redfish" => {
@@ -230,10 +232,7 @@ impl FenceAgent {
                 let Some(pass) = params.get("password") else {
                     panic!("Redfish password needed but not in config parameters");
                 };
-                Self::Redfish(RedfishArgs::new(
-                    user.to_string(),
-                    pass.to_string(),
-                ))
+                Self::Redfish(RedfishArgs::new(user.to_string(), pass.to_string()))
             }
             "fence_test" => {
                 let Some(args) = TestFenceArgs::new(params) else {

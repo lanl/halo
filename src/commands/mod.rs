@@ -2,13 +2,13 @@
 // Copyright 2025. Triad National Security, LLC.
 
 pub mod discover;
-pub mod fence;
+pub mod power;
 pub mod start;
 pub mod status;
 pub mod stop;
 
 pub use discover::DiscoverArgs;
-pub use fence::FenceArgs;
+pub use power::PowerArgs;
 pub use status::StatusArgs;
 
 use clap::{Parser, Subcommand};
@@ -58,7 +58,7 @@ pub enum Commands {
     Start,
     Stop,
     Discover(DiscoverArgs),
-    Fence(FenceArgs),
+    Power(PowerArgs),
 }
 
 pub fn main(cli: &Cli, command: &Commands) -> Result<(), Box<dyn std::error::Error>> {
@@ -66,8 +66,8 @@ pub fn main(cli: &Cli, command: &Commands) -> Result<(), Box<dyn std::error::Err
         return discover::discover(args);
     };
 
-    if let Commands::Fence(args) = command {
-        return Ok(fence::fence(args));
+    if let Commands::Power(args) = command {
+        return Ok(power::power(args));
     }
 
     let rt = tokio::runtime::Runtime::new()?;

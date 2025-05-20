@@ -6,7 +6,7 @@ use clap::Args;
 use crate::host::*;
 
 #[derive(Args, Debug)]
-pub struct FenceArgs {
+pub struct PowerArgs {
     #[arg()]
     hostnames: Vec<String>,
 
@@ -27,7 +27,7 @@ pub struct FenceArgs {
     password: Option<String>,
 }
 
-pub fn fence(args: &FenceArgs) {
+pub fn power(args: &PowerArgs) {
     let fence_agent = match args.fence_agent.as_str() {
         "powerman" => FenceAgent::Powerman,
         "redfish" => {
