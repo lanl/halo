@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
-pub struct HostIdentity {
+struct HostIdentity {
     name: String,
     port: u16,
 }
