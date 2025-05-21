@@ -8,7 +8,7 @@ use futures::AsyncReadExt;
 use crate::commands::Cli;
 use crate::halo_capnp::halo_mgmt;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct StatusArgs {
     #[arg(short = 'x')]
     exclude_normal: bool,

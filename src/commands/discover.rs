@@ -9,7 +9,7 @@ use std::process::Command;
 
 use crate::config;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct DiscoverArgs {
     #[arg(short, long)]
     verbose: bool,

@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 
 use crate::Cluster;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
     #[arg(long)]
@@ -52,7 +52,7 @@ impl Default for Cli {
     }
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     Status(StatusArgs),
     Start,
@@ -72,7 +72,7 @@ pub fn main(cli: &Cli, command: &Commands) -> Result<(), Box<dyn std::error::Err
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
-        let context_arc = std::sync::Arc::new(crate::manager::MgrContext::default());
+        let context_arc = std::sync::Arc::new(crate::manager::MgrContext::new(cli.clone()));
         match command {
             Commands::Status(args) => status::status(cli, args).await,
             Commands::Start => {
