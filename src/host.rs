@@ -124,7 +124,6 @@ impl Host {
 
         let mut out = String::new();
         child.stdout.unwrap().read_to_string(&mut out)?;
-        eprintln!("out: {out}");
 
         if out.contains("is ON") {
             Ok(true)
@@ -271,8 +270,6 @@ impl FenceAgent {
                 command, args.test_id, args.target
             ),
         };
-
-        eprintln!("{args}");
 
         args.into_bytes()
     }

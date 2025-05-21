@@ -67,7 +67,7 @@ pub fn main(cli: &Cli, command: &Commands) -> Result<(), Box<dyn std::error::Err
     };
 
     if let Commands::Power(args) = command {
-        return Ok(power::power(args));
+        return power::power(&cli, args);
     }
 
     let rt = tokio::runtime::Runtime::new()?;
