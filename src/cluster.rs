@@ -134,6 +134,9 @@ impl Cluster {
             new.resource_groups.append(&mut rg);
         }
 
+        // In the Cluster object, hosts should be mapped by their "unique" ID, which is different
+        // in the test environment and a "real" environment. The id() method on host gives the
+        // right value:
         let hosts = hosts
             .into_iter()
             .map(|(_, host)| (host.id(), host))

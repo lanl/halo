@@ -8,6 +8,8 @@ use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
+use clap::ValueEnum;
+
 #[derive(Debug, Clone)]
 struct HostAddress {
     name: String,
@@ -197,7 +199,7 @@ impl fmt::Display for FenceError {
 impl Error for FenceError {}
 
 /// The supported fence actions.
-#[derive(Clone, Copy)]
+#[derive(ValueEnum, Debug, Clone, Copy)]
 pub enum FenceCommand {
     On,
     Off,
@@ -206,15 +208,11 @@ pub enum FenceCommand {
 
 impl fmt::Display for FenceCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                FenceCommand::On => "on",
-                FenceCommand::Off => "off",
-                FenceCommand::Status => "status",
-            }
-        )
+        match self {
+            FenceCommand::On => write!(f, "on"),
+            FenceCommand::Off => write!(f, "off"),
+            FenceCommand::Status => write!(f, "status"),
+        }
     }
 }
 
