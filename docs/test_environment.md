@@ -81,3 +81,38 @@ when it next needs to be fenced.
 
 Some tests don't use the manager at all and directly call the methods on `Resource` to start, stop,
 and monitor resources. Other tests launch the manager as a separate thread in the test process.
+
+
+## How to Test Fencing by Hand
+
+To test fencing by hand, use the failover config at `tests/failover.toml`. This config defines two
+hosts that are in a failover pair, and which use the test fence agent.
+
+1. Launch one or both of the test agents:
+
+```bash
+$ HALO_TEST_DIRECTORY=tests/test_output/failover OCF_ROOT=tests/ocf_resources/ ./target/debug/halo_remote --network 127.0.0.0/24 --port 8005  --test-id fence_mds00
+$ HALO_TEST_DIRECTORY=tests/test_output/failover OCF_ROOT=tests/ocf_resources/ ./target/debug/halo_remote --network 127.0.0.0/24 --port 8006  --test-id fence_mds01
+```
+
+(Note that `HALO_TEST_DIRECTORY` must be defined as shown above for fencing to work, because the
+test fence agent at `tests/fence_test` is hardcoded to assume that the remote PID file is under
+`tests/test_output/{test_id}`.)
+
+2. Run the manager service:
+
+```bash
+./target/debug/halo --config tests/failover.toml --socket halo.socket  --manage-resources --verbose
+```
+
+3. Run `power status` to confirm that the fence agent is able to check the status of each remote:
+
+```bash
+./target/debug/halo --config tests/failover.toml  power status
+```
+
+4. Run `power off` to try killing a remote agent, and see how the manager responds:
+
+```bash
+./target/debug/halo --config tests/failover.toml  power off fence_mds00
+```

@@ -27,7 +27,7 @@ Look in the halo directory for files named `test_agent.*` -- these are created w
 3. Run the `status` command:
 
 ```bash
-$ ./target/debug/halo --config tests/simple.toml --socket halo.socket  status
+$ ./target/debug/halo --socket halo.socket  status
 ```
 
 This outputs information on the state of the resources at the current moment.
