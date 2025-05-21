@@ -137,7 +137,7 @@ mod tests {
         let env = test_env_helper("fencing");
 
         let cluster = env.cluster(None);
-        let host = &cluster.hosts()[0];
+        let host = cluster.hosts().nth(0).unwrap();
 
         // First, make sure that the fence agent correctly reports that the remote is NOT yet
         // running:

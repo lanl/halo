@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
-struct HostIdentity {
+struct HostAddress {
     name: String,
     port: u16,
 }
@@ -24,7 +24,7 @@ pub enum HostStatus {
 /// A server on which services can run.
 #[derive(Debug)]
 pub struct Host {
-    id: HostIdentity,
+    address: HostAddress,
     status: Mutex<HostStatus>,
     fence_agent: Option<FenceAgent>,
 }
@@ -32,7 +32,7 @@ pub struct Host {
 impl Host {
     pub fn new(name: &str, port: Option<u16>, fence_agent: Option<FenceAgent>) -> Self {
         Host {
-            id: HostIdentity {
+            address: HostAddress {
                 name: name.to_string(),
                 port: match port {
                     Some(p) => p,
@@ -78,7 +78,7 @@ impl Host {
             .stdout(Stdio::piped())
             .spawn()?;
 
-        let command_bytes = agent.generate_command_bytes(&self.id.name, command);
+        let command_bytes = agent.generate_command_bytes(&self.address.name, command);
 
         child
             .stdin
@@ -109,7 +109,7 @@ impl Host {
             .stdout(Stdio::piped())
             .spawn()?;
 
-        let command_bytes = agent.generate_command_bytes(&self.id.name, FenceCommand::Status);
+        let command_bytes = agent.generate_command_bytes(&self.address.name, FenceCommand::Status);
 
         child
             .stdin
@@ -149,17 +149,28 @@ impl Host {
     }
 
     pub fn name(&self) -> &str {
-        &self.id.name
+        &self.address.name
     }
 
     pub fn port(&self) -> u16 {
-        self.id.port
+        self.address.port
+    }
+
+    pub fn address(&self) -> String {
+        format!("{}:{}", self.name(), self.port())
     }
 }
 
 impl fmt::Display for Host {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.name(), self.port())
+        // In the test environment, a Host is more usefully identified via its "target" name which
+        // is defined in its Fence Agent parameters. Otherwise, in a real environment, just use the
+        // hostname.
+        if let Some(FenceAgent::Test(test_args)) = &self.fence_agent {
+            write!(f, "{} ({}:{})", test_args.target, self.name(), self.port())
+        } else {
+            write!(f, "{}", self.name())
+        }
     }
 }
 

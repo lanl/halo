@@ -21,7 +21,12 @@ pub struct Cluster {
     resource_groups: Vec<ResourceGroup>,
     num_zpools: u32,
     num_targets: u32,
-    hosts: Vec<Arc<Host>>,
+
+    /// The hosts in the Cluster are mapped by their ID, a unique identifier which is the hostname
+    /// normally. However, in the test environment, it is a test-defined identifier since the
+    /// hostname would not be a useful unique ID in the test environment.
+    hosts: HashMap<String, Arc<Host>>,
+
     /// A reference to the shared manager context which contains the verbose output stream and a
     /// copy of the CLI arguments.
     pub context: Arc<MgrContext>,
@@ -72,8 +77,10 @@ impl Cluster {
             .find(|res| res.parameters.get("kind").unwrap() == "mgs")
     }
 
-    pub fn hosts(&self) -> &Vec<Arc<Host>> {
-        &self.hosts
+    pub fn hosts(&self) -> impl Iterator<Item = &Arc<Host>> {
+        self.hosts
+            .iter()
+            .map(|(_, host)| host)
     }
 
     /// Create a Cluster given a context. The context contains the arguments, which holds the
@@ -93,7 +100,7 @@ impl Cluster {
 
         let mut new = Cluster {
             resource_groups: Vec::new(),
-            hosts: Vec::new(),
+            hosts: HashMap::new(),
             num_zpools: 0,
             num_targets: 0,
             context: Arc::clone(&context),
@@ -124,8 +131,6 @@ impl Cluster {
             );
             new.resource_groups.append(&mut rg);
         }
-
-        let hosts: Vec<_> = hosts.into_iter().map(|(_, host)| host).collect();
 
         new.hosts = hosts;
 

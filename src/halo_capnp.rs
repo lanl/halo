@@ -78,12 +78,12 @@ async fn get_ocf_request(
     op: ocf_resource_agent::Operation,
 ) -> Result<OperationRequest, Box<dyn Error>> {
     let hostname = match loc {
-        Location::Home => res.home_node.to_string(),
+        Location::Home => res.home_node.address(),
         Location::Away => res
             .failover_node
             .as_ref()
             .expect("Called operation on failover node for resource without failover node")
-            .to_string(),
+            .address(),
     };
     let stream = tokio::net::TcpStream::connect(hostname).await?;
     stream.set_nodelay(true)?;

@@ -121,11 +121,11 @@ fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> Result<(), B
     let context = Arc::new(MgrContext::new(main_args.clone()));
     let cluster = Cluster::new(context)?;
 
-    for host in cluster.hosts().iter() {
+    for host in cluster.hosts() {
         match host.is_powered_on() {
-            Ok(true) => println!("{:?} is on", host),
-            Ok(false) => println!("{:?} is off", host),
-            Err(e) => println!("Could not determine power status for {:?}, {e}", host),
+            Ok(true) => println!("{} is on", host),
+            Ok(false) => println!("{} is off", host),
+            Err(e) => println!("Could not determine power status for {}, {e}", host),
         }
     }
 
