@@ -3,7 +3,6 @@
 
 use clap::Args;
 use std::collections::HashMap;
-use std::error::Error;
 use std::io;
 use std::process::Command;
 
@@ -18,7 +17,7 @@ pub struct DiscoverArgs {
     hostnames: Vec<String>,
 }
 
-pub fn discover(args: &DiscoverArgs) -> Result<(), Box<dyn Error>> {
+pub fn discover(args: &DiscoverArgs) -> crate::commands::Result {
     let mut config = config::Config {
         hosts: Vec::new(),
         failover_pairs: None,

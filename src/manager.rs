@@ -4,7 +4,6 @@
 use capnp::capability::Promise;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::AsyncReadExt;
-use std::error::Error;
 use std::sync::Arc;
 
 use crate::cluster;
@@ -128,7 +127,7 @@ async fn manager_main(cluster: Arc<cluster::Cluster>) {
 ///
 /// - A server that listens on a unix socket (/var/run/halo.socket) for
 ///     commands from the command line interface.
-pub fn main(cluster: cluster::Cluster) -> Result<(), Box<dyn Error>> {
+pub fn main(cluster: cluster::Cluster) -> crate::commands::Result {
     let cluster = Arc::new(cluster);
 
     let manager_rt = tokio::runtime::Runtime::new()

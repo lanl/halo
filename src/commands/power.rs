@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::error::Error;
 use std::sync::Arc;
 
 use clap::Args;
 
-use crate::commands::Cli;
+use crate::commands::{self, Cli};
 use crate::host::*;
 use crate::manager::MgrContext;
 use crate::Cluster;
@@ -33,7 +32,7 @@ pub struct PowerArgs {
     password: Option<String>,
 }
 
-pub fn power(main_args: &Cli, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
+pub fn power(main_args: &Cli, args: &PowerArgs) -> commands::Result {
     if args.hostnames.len() == 0 {
         return status_all_hosts_in_config(main_args, args);
     }
@@ -56,7 +55,6 @@ pub fn power(main_args: &Cli, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
             }
             Err(e) => {
                 eprintln!("{} Fence result: Failure: {e}", host.name());
-                // error_seen = Some(e);
             }
         }
     }
@@ -67,7 +65,7 @@ pub fn power(main_args: &Cli, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
 /// Perform a fence action, with the fence agent specified on the command line. In this case, the
 /// specified fence agent will override any potential fence agent found in a config file (if a
 /// config is passed as an argument.)
-fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
+fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> commands::Result {
     let fence_agent = match fence_agent {
         "powerman" => FenceAgent::Powerman,
         "redfish" => {
@@ -84,7 +82,7 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> Result<(), Box<d
         .map(|host| Host::new(host, None, Some(fence_agent.clone())))
         .collect();
 
-    let mut error_seen: Option<Box<dyn Error>> = None;
+    let mut error_seen = false;
 
     for host in hosts {
         if args.verbose {
@@ -96,26 +94,26 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> Result<(), Box<d
             }
             Err(e) => {
                 eprintln!("{} Fence result: Failure: {e}", host.name());
-                error_seen = Some(e);
+                error_seen = true;
             }
         }
     }
 
-    if let Some(e) = error_seen {
-        return Err(e);
+    if error_seen {
+        commands::err()
+    } else {
+        Ok(())
     }
-
-    Ok(())
 }
 
 /// When no hostnames are specified, it is assumed that the user is requesting the power status of
 /// every host in the config.
-fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
+fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> commands::Result {
     match &args.action {
         FenceCommand::Status => {}
         other => {
             eprintln!("Must specify host names to perform action \"{other}\".");
-            return Err(Box::new(FenceError {}));
+            return commands::err()
         }
     };
 

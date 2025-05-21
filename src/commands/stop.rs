@@ -2,11 +2,11 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use futures::future;
-use std::error::Error;
 
 use crate::cluster;
+use crate::commands;
 
-pub async fn stop(cluster: cluster::Cluster) -> Result<(), Box<dyn Error>> {
+pub async fn stop(cluster: cluster::Cluster) -> commands::Result {
     // 1. All Lustre targets but MGS.
     let target_statuses: Vec<_> = cluster
         .lustre_resources_no_mgs()
@@ -20,7 +20,7 @@ pub async fn stop(cluster: cluster::Cluster) -> Result<(), Box<dyn Error>> {
     let mgs = cluster.get_mgs();
     match mgs {
         Some(mgs) => {
-            let status = mgs.stop().await?;
+            let status = mgs.stop().await;
             println!("{:?}", ("mgs", status));
         }
         None => eprintln!("Could not find mgs target."),

@@ -3,7 +3,6 @@
 
 use futures::future;
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::Arc;
 
 use crate::host::*;
@@ -87,7 +86,7 @@ impl Cluster {
 
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
-    pub fn new(context: Arc<MgrContext>) -> Result<Self, Box<dyn Error>> {
+    pub fn new(context: Arc<MgrContext>) -> Result<Self, crate::commands::EmptyError> {
         let path = match &context.args.config {
             Some(path) => path,
             None => &crate::default_config_path(),

@@ -2,12 +2,12 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use futures::future;
-use std::error::Error;
 
 use crate::cluster;
+use crate::commands;
 use crate::resource;
 
-pub async fn start(cluster: cluster::Cluster) -> Result<(), Box<dyn Error>> {
+pub async fn start(cluster: cluster::Cluster) -> commands::Result {
     // 1. All zpools.
     let zpool_statuses: Vec<_> = cluster
         .zpool_resources()
@@ -26,7 +26,7 @@ pub async fn start(cluster: cluster::Cluster) -> Result<(), Box<dyn Error>> {
     let mgs = cluster.get_mgs();
     match mgs {
         Some(mgs) => {
-            let status = mgs.start(resource::Location::Home).await?;
+            let status = mgs.start(resource::Location::Home).await;
             println!("{:?}", ("mgs", status));
         }
         None => eprintln!("Could not find mgs target."),
