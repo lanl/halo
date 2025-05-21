@@ -2,23 +2,24 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use clap::Args;
+use clap::ValueEnum;
 
 use crate::host::*;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct PowerArgs {
+    /// The fencing action to perform.
+    action: PowerAction,
+
     #[arg()]
     hostnames: Vec<String>,
 
     #[arg(short, long)]
     verbose: bool,
 
-    #[arg(short = 'a', long)]
-    action: String,
-
     /// Fence agent to use, "powerman" or "redfish", case sensitive
     #[arg(short = 'f', long)]
-    fence_agent: String,
+    fence_agent: Option<String>,
 
     #[arg(short = 'l', long)]
     username: Option<String>,
@@ -27,8 +28,15 @@ pub struct PowerArgs {
     password: Option<String>,
 }
 
+#[derive(ValueEnum, Debug, Clone)]
+enum PowerAction {
+    On,
+    Off,
+    Status,
+}
+
 pub fn power(args: &PowerArgs) {
-    let fence_agent = match args.fence_agent.as_str() {
+    let fence_agent = match args.fence_agent.as_ref().unwrap().as_str() {
         "powerman" => FenceAgent::Powerman,
         "redfish" => {
             let user = args.username.clone().unwrap();
@@ -38,10 +46,10 @@ pub fn power(args: &PowerArgs) {
         other => panic!("unsupported fence agent {other}"),
     };
 
-    let command = match args.action.as_str() {
-        "on" => FenceCommand::On,
-        "off" => FenceCommand::Off,
-        other => panic!("Invalid fence command {other}"),
+    let command = match args.action {
+        PowerAction::On => FenceCommand::On,
+        PowerAction::Off => FenceCommand::Off,
+        PowerAction::Status => FenceCommand::Status,
     };
 
     eprintln!("{:?}", fence_agent);
