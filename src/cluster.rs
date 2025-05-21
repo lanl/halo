@@ -78,9 +78,7 @@ impl Cluster {
     }
 
     pub fn hosts(&self) -> impl Iterator<Item = &Arc<Host>> {
-        self.hosts
-            .iter()
-            .map(|(_, host)| host)
+        self.hosts.iter().map(|(_, host)| host)
     }
 
     pub fn get_host(&self, name: &str) -> Option<&Arc<Host>> {

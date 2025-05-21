@@ -170,7 +170,6 @@ impl Host {
             self.name().to_string()
         }
     }
-
 }
 
 impl fmt::Display for Host {

@@ -44,15 +44,11 @@ enum PowerAction {
 
 impl fmt::Display for PowerAction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                PowerAction::On => "on",
-                PowerAction::Off => "off",
-                PowerAction::Status => "status",
-            }
-        )
+        match self {
+            PowerAction::On => write!(f, "on"),
+            PowerAction::Off => write!(f, "off"),
+            PowerAction::Status => write!(f, "status"),
+        }
     }
 }
 
