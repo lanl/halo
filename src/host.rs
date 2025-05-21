@@ -159,6 +159,18 @@ impl Host {
     pub fn address(&self) -> String {
         format!("{}:{}", self.name(), self.port())
     }
+
+    /// Get a unique identifier for this host. Typically, this will just be the hostname, but in
+    /// the test environment, where Hosts do not have a unique hostname, the fencing target is used
+    /// instead as a unique ID.
+    pub fn id(&self) -> String {
+        if let Some(FenceAgent::Test(test_args)) = &self.fence_agent {
+            test_args.target.to_string()
+        } else {
+            self.name().to_string()
+        }
+    }
+
 }
 
 impl fmt::Display for Host {

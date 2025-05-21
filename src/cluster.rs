@@ -83,6 +83,10 @@ impl Cluster {
             .map(|(_, host)| host)
     }
 
+    pub fn get_host(&self, name: &str) -> Option<&Arc<Host>> {
+        self.hosts.get(name)
+    }
+
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
     pub fn new(context: Arc<MgrContext>) -> Result<Self, Box<dyn Error>> {
@@ -131,6 +135,11 @@ impl Cluster {
             );
             new.resource_groups.append(&mut rg);
         }
+
+        let hosts = hosts
+            .into_iter()
+            .map(|(_, host)| (host.id(), host))
+            .collect();
 
         new.hosts = hosts;
 

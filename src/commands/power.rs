@@ -61,7 +61,43 @@ pub fn power(main_args: &Cli, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
         return status_all_hosts_in_config(main_args, args);
     }
 
-    let fence_agent = match args.fence_agent.as_ref().unwrap().as_str() {
+    if let Some(fence_agent) = args.fence_agent.as_ref() {
+        return do_fence_given_agent(fence_agent, args);
+    }
+
+    // If the user has not specified a fence agent, then assume that the fence parameters for the
+    // requested host(s) are found in the config file.
+
+    let command = match args.action {
+        PowerAction::On => FenceCommand::On,
+        PowerAction::Off => FenceCommand::Off,
+        PowerAction::Status => FenceCommand::Status,
+    };
+
+    let context = Arc::new(MgrContext::new(main_args.clone()));
+    let cluster = Cluster::new(context)?;
+
+    for hostname in args.hostnames.iter() {
+        let host = cluster.get_host(hostname).unwrap();
+        match host.do_fence(command) {
+            Ok(()) => {
+                eprintln!("{} Fence: Success", host.name());
+            }
+            Err(e) => {
+                eprintln!("{} Fence result: Failure: {e}", host.name());
+                // error_seen = Some(e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Perform a fence action, with the fence agent specified on the command line. In this case, the
+/// specified fence agent will override any potential fence agent found in a config file (if a
+/// config is passed as an argument.)
+fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
+    let fence_agent = match fence_agent {
         "powerman" => FenceAgent::Powerman,
         "redfish" => {
             let user = args.username.clone().unwrap();
@@ -71,17 +107,17 @@ pub fn power(main_args: &Cli, args: &PowerArgs) -> Result<(), Box<dyn Error>> {
         other => panic!("unsupported fence agent {other}"),
     };
 
-    let command = match args.action {
-        PowerAction::On => FenceCommand::On,
-        PowerAction::Off => FenceCommand::Off,
-        PowerAction::Status => FenceCommand::Status,
-    };
-
     let hosts: Vec<Host> = args
         .hostnames
         .iter()
         .map(|host| Host::new(host, None, Some(fence_agent.clone())))
         .collect();
+
+    let command = match args.action {
+        PowerAction::On => FenceCommand::On,
+        PowerAction::Off => FenceCommand::Off,
+        PowerAction::Status => FenceCommand::Status,
+    };
 
     let mut error_seen: Option<Box<dyn Error>> = None;
 
