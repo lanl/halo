@@ -150,6 +150,10 @@ impl Host {
         *self.status.lock().unwrap() = status;
     }
 
+    pub fn fence_agent(&self) -> &Option<FenceAgent> {
+        &self.fence_agent
+    }
+
     pub fn name(&self) -> &str {
         &self.address.name
     }

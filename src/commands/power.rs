@@ -113,7 +113,7 @@ fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> commands::Re
         FenceCommand::Status => {}
         other => {
             eprintln!("Must specify host names to perform action \"{other}\".");
-            return commands::err()
+            return commands::err();
         }
     };
 

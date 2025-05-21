@@ -84,6 +84,14 @@ impl Cluster {
         self.hosts.get(name)
     }
 
+    /// Create a Cluster given a path to a config file.
+    pub fn from_config(config: String) -> Result<Self, crate::commands::EmptyError> {
+        let mut args = crate::commands::Cli::default();
+        args.config = Some(config);
+        let context = Arc::new(MgrContext::new(args));
+        Self::new(context)
+    }
+
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
     pub fn new(context: Arc<MgrContext>) -> Result<Self, crate::commands::EmptyError> {
@@ -250,6 +258,28 @@ impl Cluster {
                 ResourceGroup::new(root)
             })
             .collect()
+    }
+
+    /// Print out a summary of the cluster to stdout. Mainly intended for debugging purposes.
+    pub fn print_summary(&self) {
+        println!("=== Resource Groups ===");
+        for rg in &self.resource_groups {
+            for res in rg.resources() {
+                println!("{}", res.params_string());
+                println!("\thome node: {}", res.home_node.id());
+                println!(
+                    "\tfailover node: {:?}",
+                    res.failover_node.as_ref().map(|h| h.id())
+                );
+            }
+        }
+
+        println!("");
+        println!("=== Hosts ===");
+        for (_, host) in &self.hosts {
+            println!("{}", host);
+            println!("\tfence agent: {:?}", host.fence_agent());
+        }
     }
 }
 

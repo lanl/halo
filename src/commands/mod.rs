@@ -11,6 +11,7 @@ pub mod validate;
 pub use discover::DiscoverArgs;
 pub use power::PowerArgs;
 pub use status::StatusArgs;
+use validate::ValidateArgs;
 
 use clap::{Parser, Subcommand};
 
@@ -85,7 +86,7 @@ pub enum Commands {
     Stop,
     Discover(DiscoverArgs),
     Power(PowerArgs),
-    Validate,
+    Validate(ValidateArgs),
 }
 
 pub fn main(cli: &Cli, command: &Commands) -> Result {
@@ -97,8 +98,8 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
         return power::power(&cli, args);
     }
 
-    if let Commands::Validate = command {
-        return validate::validate(&cli);
+    if let Commands::Validate(args) = command {
+        return validate::validate(&args);
     }
 
     let rt = tokio::runtime::Runtime::new()?;

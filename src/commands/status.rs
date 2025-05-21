@@ -52,10 +52,7 @@ pub async fn status(cli: &Cli, args: &StatusArgs) -> commands::Result {
         .await
 }
 
-fn print_status(
-    response: halo_mgmt::cluster::Reader,
-    _args: &StatusArgs,
-) -> commands::Result {
+fn print_status(response: halo_mgmt::cluster::Reader, _args: &StatusArgs) -> commands::Result {
     let resources = response.get_resources()?;
     for i in 0..resources.len() {
         let res = resources.get(i);
