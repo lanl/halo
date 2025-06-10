@@ -42,8 +42,8 @@ impl ResourceGroup {
     /// performed on that resource, across both its home and away hosts, this function tracks that
     /// state.
     async fn manage_loop(&self, args: &crate::commands::Cli) {
-        // TODO: Determine high availability from config
-        let high_availability = false;
+        let high_availability = self.root.failover_node.is_some();
+
         match high_availability {
             true => self.manage_ha(args).await,
             false => self.manage_non_ha(args).await,
@@ -133,10 +133,6 @@ impl ResourceGroup {
         self.set_overall_status(overall_status);
     }
 
-    async fn manage_ha(&self, _args: &crate::commands::Cli) -> ! {
-        todo!();
-    }
-
     async fn observe_loop(&self, args: &crate::commands::Cli) {
         let futures = self.resources().map(|r| r.observe_loop(args));
         let _ = future::join_all(futures).await;
@@ -145,6 +141,22 @@ impl ResourceGroup {
     pub fn resources(&self) -> ResourceIterator {
         ResourceIterator {
             queue: VecDeque::from([&self.root]),
+        }
+    }
+}
+
+/// Implementations for a ResourceGroup with a failover host
+impl ResourceGroup {
+    /// Main loop for managing a ResourceGroup with a failover host
+    async fn manage_ha(&self, _args: &crate::commands::Cli) -> ! {
+        let loc = self.check_location().await;
+        loop {}
+    }
+
+    /// Check if the ResourceGroup's root resource is running on either of its hosts.
+    async fn check_location(&self) -> Option<Location> {
+        match self.root.monitor(Location::Home) {
+            _ => todo!(),
         }
     }
 }
@@ -264,6 +276,7 @@ impl Resource {
         }
     }
 
+    /// Perform a monitor RPC for this resource.
     pub async fn monitor(&self, loc: Location) -> Result<ocf::Status, Box<dyn Error>> {
         tokio::task::LocalSet::new()
             .run_until(async {
@@ -290,6 +303,7 @@ impl Resource {
             .await
     }
 
+    /// Perform a start RPC for this resource.
     pub async fn start(&self, loc: Location) -> Result<ocf::Status, Box<dyn Error>> {
         tokio::task::LocalSet::new()
             .run_until(async {
@@ -315,6 +329,7 @@ impl Resource {
             .await
     }
 
+    /// Perform a stop RPC for this resource.
     pub async fn stop(&self) -> Result<ocf::Status, Box<dyn Error>> {
         tokio::task::LocalSet::new()
             .run_until(async {
@@ -339,6 +354,27 @@ impl Resource {
                 }
             })
             .await
+    }
+
+    /// Given the result of a monitor operation--which could have either succesfully returned an
+    /// OCF status (like running, not running, etc.) or failed due to a network error, etc.--
+    /// update the status of this resource based on that result.
+    pub fn update_status(&self, status: Result<ocf::Status, Box<dyn Error>>) {
+        match status {
+            Ok(monitor_res) => {
+                match monitor_res {
+                    ocf::Status::Success => self.set_status(ResourceStatus::RunningOnHome),
+                    ocf::Status::ErrNotRunning => self.set_status(ResourceStatus::Stopped),
+                    // XXX: connection timed out is probably caught in this branch?
+                    // needs to set error_seen to true?
+                    // need better error model...
+                    _ => self.set_status(ResourceStatus::Unknown),
+                };
+            }
+            Err(_) => {
+                self.set_status(ResourceStatus::Unknown);
+            }
+        };
     }
 
     pub fn get_status(&self) -> ResourceStatus {
