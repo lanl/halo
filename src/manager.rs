@@ -150,6 +150,20 @@ pub fn main(cluster: cluster::Cluster) -> crate::commands::Result {
                 Some(s) => s,
                 None => &crate::default_socket(),
             };
+            // Check for existing socket in use
+            let _ = match tokio::net::UnixStream::connect(&addr).await {
+                Ok(_) => {
+                    eprintln!("Address already in use: {addr}");
+                    std::process::exit(1);
+                },
+                Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {},
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Err(e) => {
+                    eprintln!("Unexpected error: {e}");
+                    std::process::exit(1);
+                }
+            };
+
             // check for errors? (ENOENT expected)
             let _ = std::fs::remove_file(&addr);
             let listener = tokio::net::UnixListener::bind(&addr).unwrap_or_else(|e| {
