@@ -5,6 +5,7 @@ use capnp::capability::Promise;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::AsyncReadExt;
 use std::sync::Arc;
+use std::io;
 
 use crate::cluster;
 use crate::halo_capnp::halo_mgmt;
@@ -74,6 +75,37 @@ impl halo_mgmt::Server for HaloMgmtImpl {
             Err(e) => Promise::err(e),
         }
     }
+}
+
+/// Get a unix socket listener from a given socket path.
+///
+/// To avoid clobbering an already-in-use unix socket, a connection is attempted to an existing
+/// unix socket first. If this fails, a new socket listener can be returned, since an existing
+/// in-use socket was determined to be absent at the given location.
+async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListener> {
+    // Check for existing socket in use
+    match tokio::net::UnixStream::connect(&addr).await {
+        Ok(_) => {
+            eprintln!("Address already in use: {addr}");
+            Err(io::Error::from(io::ErrorKind::AddrInUse))
+        },
+        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused || e.kind() == io::ErrorKind::NotFound => {
+            // check for errors? (ENOENT expected)
+            let _ = std::fs::remove_file(&addr);
+            match tokio::net::UnixListener::bind(&addr) {
+                Ok(l) => Ok(l),
+                Err(e) => {
+                    eprintln!("listening on socket '{addr}'");
+                    Err(e)
+                }
+            }
+        },
+        Err(e) => {
+            eprintln!("Unexpected error: {e}");
+            Err(e)
+        }
+    }
+
 }
 
 /// Main entrypoint for the command server.
@@ -150,26 +182,12 @@ pub fn main(cluster: cluster::Cluster) -> crate::commands::Result {
                 Some(s) => s,
                 None => &crate::default_socket(),
             };
-            // Check for existing socket in use
-            let _ = match tokio::net::UnixStream::connect(&addr).await {
-                Ok(_) => {
-                    eprintln!("Address already in use: {addr}");
-                    std::process::exit(1);
-                },
-                Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {},
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
-                Err(e) => {
-                    eprintln!("Unexpected error: {e}");
+            let listener = match prepare_unix_socket(&addr).await {
+                Ok(l) => l,
+                Err(_) => {
                     std::process::exit(1);
                 }
             };
-
-            // check for errors? (ENOENT expected)
-            let _ = std::fs::remove_file(&addr);
-            let listener = tokio::net::UnixListener::bind(&addr).unwrap_or_else(|e| {
-                eprintln!("Could not listen on \"{addr}\": {e}");
-                std::process::exit(1);
-            });
             if cluster.context.args.verbose {
                 eprintln!("listening on socket '{addr}'");
             }
