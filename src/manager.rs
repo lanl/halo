@@ -87,25 +87,24 @@ async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListen
     match tokio::net::UnixStream::connect(&addr).await {
         Ok(_) => {
             eprintln!("Address already in use: {addr}");
-            Err(io::Error::from(io::ErrorKind::AddrInUse))
+            return Err(io::Error::from(io::ErrorKind::AddrInUse));
         },
-        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused || e.kind() == io::ErrorKind::NotFound => {
-            // check for errors? (ENOENT expected)
-            let _ = std::fs::remove_file(&addr);
-            match tokio::net::UnixListener::bind(&addr) {
-                Ok(l) => Ok(l),
-                Err(e) => {
-                    eprintln!("listening on socket '{addr}'");
-                    Err(e)
-                }
-            }
-        },
+        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {},
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {},
         Err(e) => {
-            eprintln!("Unexpected error: {e}");
+            eprintln!("Unexpected error while preparing unix socket '{addr}': {e}");
+            return Err(io::Error::from(e));
+        }
+    };
+    let _ = std::fs::remove_file(&addr);
+    // Create new socket
+    match tokio::net::UnixListener::bind(&addr) {
+        Ok(l) => Ok(l),
+        Err(e) => {
+            eprintln!("error binding to socket '{addr}': {e}");
             Err(e)
         }
     }
-
 }
 
 /// Main entrypoint for the command server.
