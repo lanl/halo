@@ -96,7 +96,14 @@ async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListen
             return Err(io::Error::from(e));
         }
     };
-    let _ = std::fs::remove_file(&addr);
+    match std::fs::remove_file(&addr) {
+        Ok(_) => {},
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+        Err(e) => {
+            eprintln!("error removing old socket: {e}");
+            return Err(io::Error::from(e));
+        }
+    };
     // Create new socket
     match tokio::net::UnixListener::bind(&addr) {
         Ok(l) => Ok(l),
