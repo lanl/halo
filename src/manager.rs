@@ -4,8 +4,8 @@
 use capnp::capability::Promise;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use futures::AsyncReadExt;
-use std::sync::Arc;
 use std::io;
+use std::sync::Arc;
 
 use crate::cluster;
 use crate::halo_capnp::halo_mgmt;
@@ -88,17 +88,17 @@ async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListen
         Ok(_) => {
             eprintln!("Address already in use: {addr}");
             return Err(io::Error::from(io::ErrorKind::AddrInUse));
-        },
-        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {},
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+        }
+        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => {
             eprintln!("Unexpected error while preparing unix socket '{addr}': {e}");
             return Err(io::Error::from(e));
         }
     };
     match std::fs::remove_file(&addr) {
-        Ok(_) => {},
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => {
             eprintln!("error removing old socket: {e}");
             return Err(io::Error::from(e));
