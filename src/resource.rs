@@ -143,7 +143,7 @@ impl ResourceGroup {
         let _ = future::join_all(futures).await;
     }
 
-    pub fn resources(&self) -> ResourceIterator {
+    pub fn resources(&self) -> ResourceIterator<'_> {
         ResourceIterator {
             queue: VecDeque::from([&self.root]),
         }
@@ -154,7 +154,7 @@ impl ResourceGroup {
 impl ResourceGroup {
     /// Main loop for managing a ResourceGroup with a failover host
     async fn manage_ha(&self, _args: &crate::commands::Cli) -> ! {
-        let loc = self.check_location().await;
+        let _loc = self.check_location().await;
         loop {}
     }
 
