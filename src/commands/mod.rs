@@ -94,11 +94,10 @@ pub enum Commands {
 /// 'node[00-05]').
 fn combine_nodesets(nodesets: &Vec<String>) -> nodeset::NodeSet {
     let mut nodeset = nodeset::NodeSet::new();
-    nodesets.iter()
-        .for_each(|curr_nodeset| {
-            nodeset = nodeset.union(&curr_nodeset.parse().unwrap());
-        });
-    return nodeset
+    nodesets.iter().for_each(|curr_nodeset| {
+        nodeset = nodeset.union(&curr_nodeset.parse().unwrap());
+    });
+    return nodeset;
 }
 
 /// Convert multiple nodesets into a vector of hostname strings.
