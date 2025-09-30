@@ -21,7 +21,15 @@ pub fn discover(args: &DiscoverArgs) -> crate::commands::Result {
         hosts: Vec::new(),
         failover_pairs: None,
     };
-    for hostname in crate::commands::nodesets2hostnames(&args.hostnames) {
+    let hostnames = match crate::commands::nodesets2hostnames(&args.hostnames) {
+        Ok(hns) => hns,
+        Err(e) => {
+            eprintln!("{e}");
+            return crate::commands::err();
+        }
+    };
+
+    for hostname in hostnames {
         let host = discover_one_host(&hostname, args.verbose).unwrap();
         config.hosts.push(host);
     }

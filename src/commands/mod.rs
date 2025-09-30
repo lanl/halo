@@ -89,20 +89,28 @@ pub enum Commands {
     Validate(ValidateArgs),
 }
 
-/// Convert multiple nodesets into a single, deduplicated NodeSet object.
+/// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
 /// A "nodeset" is a string representing shorthand notation for a group of hosts (e.g.,
 /// 'node[00-05]').
-fn combine_nodesets(nodesets: &Vec<String>) -> nodeset::NodeSet {
+fn merge_nodesets(nodesets: &[String]) -> std::result::Result<nodeset::NodeSet, String> {
     let mut nodeset = nodeset::NodeSet::new();
-    nodesets.iter().for_each(|curr_nodeset| {
-        nodeset = nodeset.union(&curr_nodeset.parse().unwrap());
-    });
-    return nodeset;
+    for curr_nodeset in nodesets.iter() {
+        nodeset = match &curr_nodeset.parse() {
+            Ok(ns) => nodeset.union(ns),
+            Err(e) => {
+                return Err(format!("nodeset syntax error: '{curr_nodeset}': {e}").to_string());
+            }
+        }
+    }
+    Ok(nodeset)
 }
 
 /// Convert multiple nodesets into a vector of hostname strings.
-fn nodesets2hostnames(nodesets: &Vec<String>) -> Vec<String> {
-    combine_nodesets(nodesets).iter().collect()
+fn nodesets2hostnames(nodesets: &[String]) -> std::result::Result<Vec<String>, String> {
+    match merge_nodesets(nodesets) {
+        Ok(ns) => Ok(ns.iter().collect()),
+        Err(e) => Err(e),
+    }
 }
 
 pub fn main(cli: &Cli, command: &Commands) -> Result {
