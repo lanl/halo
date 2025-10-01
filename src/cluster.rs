@@ -119,7 +119,7 @@ impl Cluster {
             .map(|host| (host.hostname.clone(), Arc::new(Host::from_config(host))))
             .collect();
 
-        for config_host in config.hosts.iter() {
+        for config_host in config.hosts.into_iter() {
             let failover_host: Option<Arc<Host>> = match &config.failover_pairs {
                 Some(pairs) => {
                     let hostname = get_failover_partner(pairs, &config_host.hostname).unwrap();
@@ -152,7 +152,7 @@ impl Cluster {
     /// Given a config::Host object, convert it into a vector of ResourceGroups where each
     /// ResourceGroup represents a complete dependency tree of resources on the Host.
     fn one_host_resource_groups(
-        config_host: &crate::config::Host,
+        config_host: crate::config::Host,
         host: Arc<Host>,
         failover_host: Option<Arc<Host>>,
         context: Arc<MgrContext>,
@@ -198,14 +198,14 @@ impl Cluster {
 
         let resources: HashMap<String, TransitionalResource> = config_host
             .resources
-            .iter()
+            .into_iter()
             .map(|(id, res)| {
                 let trans_res = TransitionalResource {
-                    me: res.clone(),
+                    me: res,
                     children: RefCell::new(Vec::new()),
                     id: id.clone(),
                 };
-                (id.clone(), trans_res)
+                (id, trans_res)
             })
             .collect();
 
