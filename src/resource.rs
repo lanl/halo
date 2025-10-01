@@ -162,9 +162,8 @@ impl ResourceGroup {
 
     /// Check if the ResourceGroup's root resource is running on either of its hosts.
     async fn check_location(&self) -> Option<Location> {
-        match self.root.monitor(Location::Home) {
-            _ => todo!(),
-        }
+        let _ = self.root.monitor(Location::Home).await;
+        todo!()
     }
 }
 
@@ -240,22 +239,23 @@ impl Resource {
     /// only checks on resource state and does not actively start / stop a resource.
     async fn observe_loop(&self, args: &crate::commands::Cli) -> ! {
         loop {
-            let new_status = self.monitor(Location::Home).await;
-            let mut old_status = self.status.lock().unwrap();
-            *old_status = match &new_status {
-                Ok(s) => match *s {
-                    ocf::Status::Success => ResourceStatus::RunningOnHome,
-                    ocf::Status::ErrNotRunning => ResourceStatus::Stopped,
-                    _ => ResourceStatus::Unknown,
-                },
-                Err(e) => {
-                    if args.verbose {
-                        eprintln!("Could not monitor {:?}: {}\n", self, e);
+            {
+                let new_status = self.monitor(Location::Home).await;
+                let mut old_status = self.status.lock().unwrap();
+                *old_status = match &new_status {
+                    Ok(s) => match *s {
+                        ocf::Status::Success => ResourceStatus::RunningOnHome,
+                        ocf::Status::ErrNotRunning => ResourceStatus::Stopped,
+                        _ => ResourceStatus::Unknown,
+                    },
+                    Err(e) => {
+                        if args.verbose {
+                            eprintln!("Could not monitor {:?}: {}\n", self, e);
+                        }
+                        ResourceStatus::Unknown
                     }
-                    ResourceStatus::Unknown
-                }
-            };
-            std::mem::drop(old_status);
+                };
+            }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
@@ -413,10 +413,10 @@ impl Resource {
     }
 
     fn is_running(&self) -> bool {
-        match self.get_status() {
-            ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => true,
-            _ => false,
-        }
+        matches!(
+            self.get_status(),
+            ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway
+        )
     }
 
     pub fn set_running_on_loc(&self, loc: Location) {

@@ -84,8 +84,10 @@ impl Cluster {
 
     /// Create a Cluster given a path to a config file.
     pub fn from_config(config: String) -> Result<Self, crate::commands::EmptyError> {
-        let mut args = crate::commands::Cli::default();
-        args.config = Some(config);
+        let args = crate::commands::Cli {
+            config: Some(config),
+            ..Default::default()
+        };
         let context = Arc::new(MgrContext::new(args));
         Self::new(context)
     }
@@ -283,10 +285,7 @@ impl Cluster {
 
 /// Given a list `pairs` of failover pairs, and a hostname `name`, return its partner, if one
 /// exists.
-fn get_failover_partner<'pairs>(
-    pairs: &'pairs Vec<Vec<String>>,
-    name: &str,
-) -> Option<&'pairs str> {
+fn get_failover_partner<'pairs>(pairs: &'pairs [Vec<String>], name: &str) -> Option<&'pairs str> {
     for pair in pairs.iter() {
         if name == pair[0] {
             return Some(&pair[1]);
