@@ -2,13 +2,20 @@
 // Copyright 2025. Triad National Security, LLC.
 
 pub mod discover;
+pub mod manage;
 pub mod power;
 pub mod start;
 pub mod status;
 pub mod stop;
 pub mod validate;
 
-use {discover::DiscoverArgs, power::PowerArgs, status::StatusArgs, validate::ValidateArgs};
+use {
+    discover::DiscoverArgs,
+    manage::{ManageArgs, UnManageArgs},
+    power::PowerArgs,
+    status::StatusArgs,
+    validate::ValidateArgs,
+};
 
 use clap::{Parser, Subcommand};
 
@@ -102,6 +109,8 @@ pub enum Commands {
     Discover(DiscoverArgs),
     Power(PowerArgs),
     Validate(ValidateArgs),
+    Manage(ManageArgs),
+    Unmanage(UnManageArgs),
 }
 
 /// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
@@ -136,9 +145,12 @@ pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
 
     let rt = tokio::runtime::Runtime::new()
         .handle_err(|e| eprintln!("Error launching tokio runtime: {e}"))?;
+
     rt.block_on(async {
         let context_arc = std::sync::Arc::new(crate::manager::MgrContext::new(cli.clone()));
         match command {
+            Commands::Manage(args) => manage::manage(cli, args).await,
+            Commands::Unmanage(args) => manage::unmanage(cli, args).await,
             Commands::Status(args) => status::status(cli, args).await,
             Commands::Start => {
                 let cluster = Cluster::new(context_arc)?;

@@ -56,7 +56,6 @@ fn get_and_print_status(reply: MonitorResults, _args: &StatusArgs) -> Result<(),
                 param.get_value()?.to_str()?
             );
         }
-
         println!("]");
     }
 
