@@ -145,7 +145,7 @@ impl TestEnvironment {
             .expect("Could not create cluster from config file");
 
         std::thread::spawn(move || {
-            if let Err(_) = crate::manager::main(cluster) {
+            if crate::manager::main(cluster).is_err() {
                 std::process::exit(1);
             }
         });

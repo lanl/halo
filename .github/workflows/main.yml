@@ -22,3 +22,5 @@ jobs:
       run: cargo test --verbose --features slow_tests
     - name: Format
       run: cargo fmt --check
+    - name: Clippy
+      run: cargo clippy -- -D warnings

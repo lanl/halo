@@ -21,17 +21,9 @@ pub struct MgrContext {
 
 impl MgrContext {
     pub fn new(args: crate::commands::Cli) -> Self {
-        let mut context = Self::default();
-        context.args = args;
-        context
-    }
-}
-
-impl Default for MgrContext {
-    fn default() -> MgrContext {
         MgrContext {
             out_stream: crate::LogStream::new_stdout(),
-            args: crate::commands::Cli::default(),
+            args,
         }
     }
 }
@@ -160,11 +152,11 @@ async fn manager_main(cluster: Arc<cluster::Cluster>) {
 /// This launches two "services".
 ///
 /// - A manager service which continuously monitors the state of the cluster.
-///     The monitoring service takes actions based on cluster status, such as migrating resources,
-///     fencing nodes, etc.
+///   The monitoring service takes actions based on cluster status, such as migrating resources,
+///   fencing nodes, etc.
 ///
 /// - A server that listens on a unix socket (/var/run/halo.socket) for
-///     commands from the command line interface.
+///   commands from the command line interface.
 pub fn main(cluster: cluster::Cluster) -> crate::commands::Result {
     let cluster = Arc::new(cluster);
 
