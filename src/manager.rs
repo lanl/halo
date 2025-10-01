@@ -5,7 +5,7 @@ use std::{io, sync::Arc};
 
 use {
     capnp::capability::Promise,
-    capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem},
+    capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem},
     futures::AsyncReadExt,
 };
 
@@ -71,6 +71,37 @@ impl halo_mgmt::Server for HaloMgmtImpl {
             Ok(_) => Promise::ok(()),
             Err(e) => Promise::err(e),
         }
+    }
+    fn set_managed(
+        &mut self,
+        params: halo_mgmt::SetManagedParams,
+        mut results: halo_mgmt::SetManagedResults,
+    ) -> Promise<(), ::capnp::Error> {
+        let params = pry!(params.get());
+        let resource = pry!(params.get_resource());
+        let managed = params.get_managed();
+
+        let mut error: Option<String> = Some(format!("Resource {:?} not found", resource));
+        for res in self.cluster.resources() {
+            if res.id == resource {
+                error = None;
+                if res.get_managed() == managed {
+                    error = Some(format!(
+                        "Resource {:?} is already {}",
+                        resource,
+                        if managed { "managed" } else { "unmanaged" }
+                    ));
+                } else {
+                    res.set_managed(managed);
+                }
+            }
+        }
+        match error {
+            Some(e) => pry!(results.get().get_res()).set_err(e),
+            None => pry!(results.get().get_res()).set_ok(()),
+        };
+
+        Promise::ok(())
     }
 }
 

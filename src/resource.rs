@@ -198,6 +198,8 @@ pub struct Resource {
     /// Unique identifier for the resource.
     pub id: String,
 
+    pub managed: Mutex<bool>,
+
     // TODO: better privacy here
     pub status: Mutex<ResourceStatus>,
     pub home_node: Arc<Host>,
@@ -224,6 +226,7 @@ impl Resource {
             failover_node,
             context,
             id,
+            managed: Mutex::new(true),
         }
     }
 
@@ -385,6 +388,21 @@ impl Resource {
             }
         });
         output
+    }
+
+    /// Get management status of resource, to be used in status
+    pub fn get_managed(&self) -> bool {
+        let managed_status = self.managed.lock().unwrap();
+        *managed_status
+    }
+
+    /// Sets resources's managed status to true, used recursively for dependents.
+    pub fn set_managed(&self, managed: bool) {
+        let mut managed_status = self.managed.lock().unwrap();
+        *managed_status = managed;
+        for d in &self.dependents {
+            d.set_managed(managed);
+        }
     }
 }
 

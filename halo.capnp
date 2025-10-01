@@ -30,7 +30,21 @@ interface HaloMgmt {
     }
 
     monitor @0 () -> (status: Cluster);
+
+    struct CommandResult {
+        union {
+            ok @0 :Void;
+            err @1 :Text;
+        }
+    }
+
+    setManaged @1 (
+        managed :Bool,
+        resource :Text, 
+    ) -> (res :CommandResult);
 }
+
+
 
 interface OcfResourceAgent {
     # The interface for sending commnds to OCF Resource Agents.
