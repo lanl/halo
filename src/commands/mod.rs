@@ -6,9 +6,13 @@ pub mod power;
 pub mod start;
 pub mod status;
 pub mod stop;
+pub mod unmanage;
 pub mod validate;
 
-use {discover::DiscoverArgs, power::PowerArgs, status::StatusArgs, validate::ValidateArgs};
+use {
+    discover::DiscoverArgs, power::PowerArgs, status::StatusArgs, unmanage::UnmanageArgs,
+    validate::ValidateArgs,
+};
 
 use clap::{Parser, Subcommand};
 
@@ -87,6 +91,7 @@ pub enum Commands {
     Discover(DiscoverArgs),
     Power(PowerArgs),
     Validate(ValidateArgs),
+    Unmanage(UnmanageArgs),
 }
 
 /// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
@@ -123,8 +128,8 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
         return validate::validate(args);
     }
 
-    if let Commands::Unmanage(args) = command {
-        todo!();
+    if let Commands::Unmanage(_args) = command {
+        todo!("Implement command");
     }
 
     let rt = tokio::runtime::Runtime::new()?;
