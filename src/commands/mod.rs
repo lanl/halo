@@ -123,6 +123,10 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
         return validate::validate(args);
     }
 
+    if let Commands::Unmanage(args) = command {
+        todo!();
+    }
+
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         let context_arc = std::sync::Arc::new(crate::manager::MgrContext::new(cli.clone()));
