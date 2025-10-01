@@ -7,10 +7,12 @@ pub mod start;
 pub mod status;
 pub mod stop;
 pub mod validate;
+pub mod unmanage;
 
 pub use discover::DiscoverArgs;
 pub use power::PowerArgs;
 pub use status::StatusArgs;
+pub use unmanage::UnmanageArgs;
 
 use clap::{Parser, Subcommand};
 
@@ -87,6 +89,7 @@ pub enum Commands {
     Discover(DiscoverArgs),
     Power(PowerArgs),
     Validate(ValidateArgs),
+    Unmanage(UnmanageArgs),
 }
 
 pub fn main(cli: &Cli, command: &Commands) -> Result {
@@ -100,6 +103,10 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
 
     if let Commands::Validate(args) = command {
         return validate::validate(args);
+    }
+
+    if let Commands::Unmanage(_args) = command {
+        todo!("Implement command");
     }
 
     let rt = tokio::runtime::Runtime::new()?;

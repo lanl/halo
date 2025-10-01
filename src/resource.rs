@@ -206,6 +206,8 @@ pub struct Resource {
     /// Unique identifier for the resource.
     pub id: String,
 
+    pub managed: bool,
+
     // TODO: better privacy here
     pub status: Mutex<ResourceStatus>,
     pub home_node: Arc<Host>,
@@ -232,6 +234,7 @@ impl Resource {
             failover_node,
             context,
             id,
+            managed: true,
         }
     }
 
@@ -312,6 +315,8 @@ impl Resource {
             })
             .await
     }
+
+
 
     /// Perform a start RPC for this resource.
     pub async fn start(&self, loc: Location) -> Result<ocf::Status, Box<dyn Error>> {
@@ -440,6 +445,22 @@ impl Resource {
         });
         output
     }
+
+    /// Sets resources's managed status to false, used recursively for dependents.
+    fn unmanage_resource(&mut self){
+        self.managed = false;
+        if !self.dependents.is_empty(){
+            self.unmanage_recursively();
+        }
+    }
+
+    /// Recursively set dependents managed status to unmaged, false.
+    fn unmanage_recursively(&mut self){
+        for resource in &mut self.dependents{
+            let _ = &mut resource.unmanage_resource();
+        }
+    }
+
 }
 
 /// The ordering on ResourceStatus is used to rank statuses from "worst" to "best". Statuses that
