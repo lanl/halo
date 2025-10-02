@@ -10,7 +10,7 @@ pub mod unmanage;
 pub mod validate;
 
 use {
-    discover::DiscoverArgs, power::PowerArgs, status::StatusArgs, unmanage::UnmanageArgs,
+    discover::DiscoverArgs, power::PowerArgs, status::StatusArgs, manage::ManageArgs, unmanage::UnmanageArgs,
     validate::ValidateArgs,
 };
 
@@ -92,6 +92,7 @@ pub enum Commands {
     Power(PowerArgs),
     Validate(ValidateArgs),
     Unmanage(UnmanageArgs),
+    Manage(ManageArgs),
 }
 
 /// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
@@ -128,14 +129,16 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
         return validate::validate(args);
     }
 
-    if let Commands::Unmanage(_args) = command {
-        todo!("Implement command");
-    }
-
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         let context_arc = std::sync::Arc::new(crate::manager::MgrContext::new(cli.clone()));
         match command {
+            Commands::Manage(args) => {
+                todo!("Implement command");
+            }
+            Commands::Unmanage(args) => {
+                todo!("Implement Command");
+            }
             Commands::Status(args) => status::status(cli, args).await,
             Commands::Start => {
                 let cluster = Cluster::new(context_arc)?;
