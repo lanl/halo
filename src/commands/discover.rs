@@ -23,8 +23,7 @@ pub fn discover(args: &DiscoverArgs) -> crate::commands::Result {
     };
     let hostnames = match crate::commands::nodesets2hostnames(&args.hostnames) {
         Ok(hns) => hns,
-        Err(e) => {
-            eprintln!("{e}");
+        Err(_) => {
             return crate::commands::err();
         }
     };

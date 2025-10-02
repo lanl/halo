@@ -92,13 +92,14 @@ pub enum Commands {
 /// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
 /// A "nodeset" is a string representing shorthand notation for a group of hosts (e.g.,
 /// 'node[00-05]').
-fn merge_nodesets(nodesets: &[String]) -> std::result::Result<nodeset::NodeSet, String> {
+fn merge_nodesets(nodesets: &[String]) -> std::result::Result<nodeset::NodeSet, EmptyError> {
     let mut nodeset = nodeset::NodeSet::new();
     for curr_nodeset in nodesets.iter() {
         nodeset = match &curr_nodeset.parse() {
             Ok(ns) => nodeset.union(ns),
             Err(e) => {
-                return Err(format!("nodeset syntax error: '{curr_nodeset}': {e}").to_string());
+                eprintln!("nodeset syntax error: '{curr_nodeset}': {e}");
+                return Err(EmptyError {});
             }
         }
     }
@@ -106,7 +107,7 @@ fn merge_nodesets(nodesets: &[String]) -> std::result::Result<nodeset::NodeSet, 
 }
 
 /// Convert multiple nodesets into a vector of hostname strings.
-fn nodesets2hostnames(nodesets: &[String]) -> std::result::Result<Vec<String>, String> {
+fn nodesets2hostnames(nodesets: &[String]) -> std::result::Result<Vec<String>, EmptyError> {
     match merge_nodesets(nodesets) {
         Ok(ns) => Ok(ns.iter().collect()),
         Err(e) => Err(e),
