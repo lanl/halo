@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{env, error::Error, fmt};
+use std::{env, error::Error, fmt, io};
 
 use {futures::AsyncReadExt, rustls::pki_types::ServerName};
 
@@ -77,7 +77,7 @@ async fn get_ocf_request(
     res: &Resource,
     loc: Location,
     op: ocf_resource_agent::Operation,
-) -> Result<OperationRequest, Box<dyn Error>> {
+) -> io::Result<OperationRequest> {
     let hostname = match loc {
         Location::Home => res.home_node.address(),
         Location::Away => res
