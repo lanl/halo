@@ -87,7 +87,7 @@ async fn get_ocf_request(
             .address(),
     };
     let stream = tokio::net::TcpStream::connect(hostname).await?;
-    stream.set_nodelay(true)?;
+    stream.set_nodelay(true).expect("Setting nodelay failed.");
 
     if res.context.args.mtls {
         // Create mtls connector
@@ -102,9 +102,9 @@ async fn get_ocf_request(
         // Perform mtls handshake
         let mtls_stream = mtls_connector.connect(domain, stream).await?;
 
-        __get_ocf_request(mtls_stream, res, op)
+        Ok(__get_ocf_request(mtls_stream, res, op))
     } else {
-        __get_ocf_request(stream, res, op)
+        Ok(__get_ocf_request(stream, res, op))
     }
 }
 
@@ -112,7 +112,7 @@ fn __get_ocf_request<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static>(
     stream: S,
     res: &Resource,
     op: ocf_resource_agent::Operation,
-) -> Result<OperationRequest, Box<dyn Error>> {
+) -> OperationRequest {
     let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
     let rpc_network = Box::new(twoparty::VatNetwork::new(
         futures::io::BufReader::new(reader),
@@ -128,7 +128,7 @@ fn __get_ocf_request<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static>(
     let mut request = client.operation_request();
     prep_request(&mut request, res, op);
 
-    Ok(request)
+    request
 }
 
 pub async fn do_ocf_request(
