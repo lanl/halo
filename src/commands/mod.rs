@@ -12,7 +12,10 @@ use {discover::DiscoverArgs, power::PowerArgs, status::StatusArgs, validate::Val
 
 use clap::{Parser, Subcommand};
 
-use crate::Cluster;
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
+use futures::AsyncReadExt;
+
+use crate::{halo_capnp::halo_mgmt, Cluster};
 
 #[derive(Debug)]
 pub struct EmptyError {}
@@ -115,4 +118,29 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
             _ => unreachable!(),
         }
     })
+}
+
+/// Get an RPC client that is used to make RPC calls from the CLI programs to the management
+/// service.
+async fn get_rpc_client(cli: &Cli) -> std::result::Result<halo_mgmt::Client, EmptyError> {
+    let addr = match &cli.socket {
+        Some(s) => s,
+        None => &crate::default_socket(),
+    };
+    let stream = tokio::net::UnixStream::connect(addr)
+        .await
+        .inspect_err(|e| eprintln!("Could not connect to socket \"{addr}\": {e}"))?;
+    let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+    let rpc_network = Box::new(twoparty::VatNetwork::new(
+        futures::io::BufReader::new(reader),
+        futures::io::BufWriter::new(writer),
+        rpc_twoparty_capnp::Side::Client,
+        Default::default(),
+    ));
+    let mut rpc_system = RpcSystem::new(rpc_network, None);
+    let client: halo_mgmt::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+
+    tokio::task::spawn_local(rpc_system);
+
+    Ok(client)
 }
