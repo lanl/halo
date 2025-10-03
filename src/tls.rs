@@ -4,8 +4,11 @@
 use std::{fs::File, io::BufReader, path::PathBuf, sync::Arc};
 
 use {
-    rustls::pki_types::{CertificateDer, PrivateKeyDer},
-    rustls::{server::WebPkiClientVerifier, ClientConfig, RootCertStore, ServerConfig},
+    rustls::{
+        pki_types::{CertificateDer, PrivateKeyDer},
+        server::WebPkiClientVerifier,
+        ClientConfig, RootCertStore, ServerConfig,
+    },
     rustls_pemfile::{certs, private_key},
     tokio_rustls::{TlsAcceptor, TlsConnector},
 };
