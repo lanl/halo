@@ -8,14 +8,11 @@ pub mod status;
 pub mod stop;
 pub mod validate;
 
-pub use discover::DiscoverArgs;
-pub use power::PowerArgs;
-pub use status::StatusArgs;
+use {discover::DiscoverArgs, power::PowerArgs, status::StatusArgs, validate::ValidateArgs};
 
 use clap::{Parser, Subcommand};
 
 use crate::Cluster;
-use validate::ValidateArgs;
 
 #[derive(Debug)]
 pub struct EmptyError {}
