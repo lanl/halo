@@ -17,6 +17,52 @@ use futures::AsyncReadExt;
 
 use crate::{halo_capnp::halo_mgmt, Cluster};
 
+/// A `HandledError` represents an error that has already been handled. When you call a function
+/// that returns a `HandledError` or `HandledResult`, you don't need to do anything with that error,
+/// other than just be aware that it happened, and return it on to your caller.
+///
+/// `main()` has a special responsibility: since its "caller" is, in a certain sense, the operating
+/// system, `main()` must return a nonzero exit status when it gets a `HandledError`.
+///
+/// The primary way to construct a `HandledError` is with the `handle_err()` function, which turns a
+/// generic error into a `HandledError`, and also runs some caller-provided code to handle the
+/// error. That provided code would normally do something like report the error to stderr.
+///
+/// A `HandledError` inentionally has no data about what the specific error was; the process of
+/// handling the error "consumes" that information, and it is no longer needed as the error was
+/// already appropriately handled.
+#[derive(Debug)]
+pub struct HandledError {}
+
+pub type HandledResult<T> = std::result::Result<T, HandledError>;
+
+pub fn handled_error() -> HandledResult<()> {
+    HandledResult::Err(HandledError {})
+}
+
+pub trait Handle<T, F> {
+    fn handle_err(self, handler: F) -> HandledResult<T>;
+}
+
+impl<T, E, F: FnOnce(E)> Handle<T, F> for std::result::Result<T, E> {
+    /// Handle an error by running the provided `handler` code, giving it the error.
+    ///
+    /// Then, return a `HandledResult`, so that transitive callers of this function know that they
+    /// do not need to do anything further to handle the error.
+    fn handle_err(self, handler: F) -> HandledResult<T> {
+        self.map_err(|e| {
+            handler(e);
+            HandledError {}
+        })
+    }
+}
+
+impl From<EmptyError> for HandledError {
+    fn from(_error: EmptyError) -> Self {
+        HandledError {}
+    }
+}
+
 #[derive(Debug)]
 pub struct EmptyError {}
 
