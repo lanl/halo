@@ -9,7 +9,12 @@ use {
     futures::AsyncReadExt,
 };
 
-use crate::{cluster, halo_capnp::halo_mgmt, LogStream};
+use crate::{
+    cluster,
+    commands::{Handle, HandledResult},
+    halo_capnp::halo_mgmt,
+    LogStream,
+};
 
 /// An object that can be passed to manager functions holding some state that should be shared
 /// between these functions.
@@ -157,14 +162,14 @@ async fn manager_main(cluster: Arc<cluster::Cluster>) {
 ///
 /// - A server that listens on a unix socket (/var/run/halo.socket) for
 ///   commands from the command line interface.
-pub fn main(cluster: cluster::Cluster) -> crate::commands::Result {
+pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
     let cluster = Arc::new(cluster);
 
     let manager_rt = tokio::runtime::Runtime::new()
-        .inspect_err(|e| eprintln!("Could not launch manager runtime: {e}"))?;
+        .handle_err(|e| eprintln!("Could not launch manager runtime: {e}"))?;
 
     let cli_rt = tokio::runtime::Runtime::new()
-        .inspect_err(|e| eprintln!("Could not launch CLI server runtime: {e}"))?;
+        .handle_err(|e| eprintln!("Could not launch CLI server runtime: {e}"))?;
 
     std::thread::scope(|s| {
         // Launch the Management thread:

@@ -3,8 +3,7 @@
 
 use clap::Args;
 
-use crate::cluster::Cluster;
-use crate::commands;
+use crate::{cluster::Cluster, commands::HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct ValidateArgs {
@@ -13,7 +12,7 @@ pub struct ValidateArgs {
     config: String,
 }
 
-pub fn validate(args: &ValidateArgs) -> commands::Result {
+pub fn validate(args: &ValidateArgs) -> HandledResult<()> {
     let cluster = Cluster::from_config(args.config.to_string())?;
 
     cluster.print_summary();

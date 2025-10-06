@@ -3,9 +3,9 @@
 
 use futures::future;
 
-use crate::{cluster, commands};
+use crate::{cluster, commands::HandledResult};
 
-pub async fn stop(cluster: cluster::Cluster) -> commands::Result {
+pub async fn stop(cluster: cluster::Cluster) -> HandledResult<()> {
     // 1. All Lustre targets but MGS.
     let target_statuses: Vec<_> = cluster
         .lustre_resources_no_mgs()
