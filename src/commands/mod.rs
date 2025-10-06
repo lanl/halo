@@ -156,7 +156,7 @@ fn nodesets2hostnames(
     Ok(merge_nodesets(nodesets)?.iter().collect())
 }
 
-pub fn main(cli: &Cli, command: &Commands) -> Result {
+pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
     if let Commands::Discover(args) = command {
         return discover::discover(args);
     };
@@ -169,7 +169,8 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
         return validate::validate(args);
     }
 
-    let rt = tokio::runtime::Runtime::new()?;
+    let rt = tokio::runtime::Runtime::new()
+        .handle_err(|e| eprintln!("Error launching tokio runtime: {e}"))?;
     rt.block_on(async {
         let context_arc = std::sync::Arc::new(crate::manager::MgrContext::new(cli.clone()));
         match command {
@@ -189,14 +190,14 @@ pub fn main(cli: &Cli, command: &Commands) -> Result {
 
 /// Get an RPC client that is used to make RPC calls from the CLI programs to the management
 /// service.
-async fn get_rpc_client(cli: &Cli) -> std::result::Result<halo_mgmt::Client, EmptyError> {
+async fn get_rpc_client(cli: &Cli) -> HandledResult<halo_mgmt::Client> {
     let addr = match &cli.socket {
         Some(s) => s,
         None => &crate::default_socket(),
     };
     let stream = tokio::net::UnixStream::connect(addr)
         .await
-        .inspect_err(|e| eprintln!("Could not connect to socket \"{addr}\": {e}"))?;
+        .handle_err(|e| eprintln!("Could not connect to socket \"{addr}\": {e}"))?;
     let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
     let rpc_network = Box::new(twoparty::VatNetwork::new(
         futures::io::BufReader::new(reader),

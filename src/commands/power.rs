@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clap::Args;
 
 use crate::{
-    commands::{self, Cli},
+    commands::{self, Cli, HandledResult},
     host::*,
     manager::MgrContext,
     Cluster,
@@ -34,7 +34,7 @@ pub struct PowerArgs {
     password: Option<String>,
 }
 
-pub fn power(main_args: &Cli, args: &PowerArgs) -> commands::Result {
+pub fn power(main_args: &Cli, args: &PowerArgs) -> HandledResult<()> {
     if args.hostnames.is_empty() {
         return status_all_hosts_in_config(main_args, args);
     }
@@ -67,7 +67,7 @@ pub fn power(main_args: &Cli, args: &PowerArgs) -> commands::Result {
 /// Perform a fence action, with the fence agent specified on the command line. In this case, the
 /// specified fence agent will override any potential fence agent found in a config file (if a
 /// config is passed as an argument.)
-fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> commands::Result {
+fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()> {
     let fence_agent = match fence_agent {
         "powerman" => FenceAgent::Powerman,
         "redfish" => {
@@ -102,7 +102,7 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> commands::Result
     }
 
     if error_seen {
-        commands::err()
+        commands::handled_error()
     } else {
         Ok(())
     }
@@ -110,12 +110,12 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> commands::Result
 
 /// When no hostnames are specified, it is assumed that the user is requesting the power status of
 /// every host in the config.
-fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> commands::Result {
+fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> HandledResult<()> {
     match &args.action {
         FenceCommand::Status => {}
         other => {
             eprintln!("Must specify host names to perform action \"{other}\".");
-            return commands::err();
+            return commands::handled_error();
         }
     };
 

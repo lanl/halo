@@ -3,9 +3,9 @@
 
 use futures::future;
 
-use crate::{cluster, commands, resource};
+use crate::{cluster, commands::HandledResult, resource};
 
-pub async fn start(cluster: cluster::Cluster) -> commands::Result {
+pub async fn start(cluster: cluster::Cluster) -> HandledResult<()> {
     // 1. All zpools.
     let zpool_statuses: Vec<_> = cluster
         .zpool_resources()

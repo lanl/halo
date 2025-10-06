@@ -5,7 +5,10 @@ use std::{collections::HashMap, io, process::Command};
 
 use clap::Args;
 
-use crate::config;
+use crate::{
+    commands::{Handle, HandledResult},
+    config,
+};
 
 #[derive(Args, Debug, Clone)]
 pub struct DiscoverArgs {
@@ -16,13 +19,13 @@ pub struct DiscoverArgs {
     hostnames: Vec<String>,
 }
 
-pub fn discover(args: &DiscoverArgs) -> crate::commands::Result {
+pub fn discover(args: &DiscoverArgs) -> HandledResult<()> {
     let mut config = config::Config {
         hosts: Vec::new(),
         failover_pairs: None,
     };
     let hostnames = crate::commands::nodesets2hostnames(&args.hostnames)
-        .inspect_err(|e| eprintln!("nodeset syntax error: {e}"))?;
+        .handle_err(|e| eprintln!("nodeset syntax error: {e}"))?;
 
     for hostname in hostnames {
         let host = discover_one_host(&hostname, args.verbose).unwrap();

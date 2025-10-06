@@ -23,6 +23,8 @@ type OperationRequest = ::capnp::capability::Request<
 pub type OcfOperationResults =
     ::capnp::capability::Response<ocf_resource_agent::operation_results::Owned>;
 
+pub type MonitorResults = ::capnp::capability::Response<halo_mgmt::monitor_results::Owned>;
+
 impl std::convert::From<resource::ResourceStatus> for halo_mgmt::Status {
     fn from(stat: resource::ResourceStatus) -> Self {
         match stat {

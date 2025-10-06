@@ -5,7 +5,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use futures::future;
 
-use crate::{host::*, manager::MgrContext, resource::*};
+use crate::{
+    commands::{Handle, HandledResult},
+    host::*,
+    manager::MgrContext,
+    resource::*,
+};
 
 /// Cluster is the model used to represent the dynamic state of a cluster in memory.
 /// Unlike the persistent model which views a cluster as made up of nodes, which own services,
@@ -83,7 +88,7 @@ impl Cluster {
     }
 
     /// Create a Cluster given a path to a config file.
-    pub fn from_config(config: String) -> Result<Self, crate::commands::EmptyError> {
+    pub fn from_config(config: String) -> HandledResult<Self> {
         let args = crate::commands::Cli {
             config: Some(config),
             ..Default::default()
@@ -94,16 +99,16 @@ impl Cluster {
 
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
-    pub fn new(context: Arc<MgrContext>) -> Result<Self, crate::commands::EmptyError> {
+    pub fn new(context: Arc<MgrContext>) -> HandledResult<Self> {
         let path = match &context.args.config {
             Some(path) => path,
             None => &crate::default_config_path(),
         };
-        let config = std::fs::read_to_string(path).inspect_err(|e| {
+        let config = std::fs::read_to_string(path).handle_err(|e| {
             eprintln!("Could not open config file \"{path}\": {e}");
         })?;
 
-        let config: crate::config::Config = toml::from_str(&config).inspect_err(|e| {
+        let config: crate::config::Config = toml::from_str(&config).handle_err(|e| {
             eprintln!("Could not parse config file \"{path}\": {e}");
         })?;
 
