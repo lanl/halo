@@ -89,6 +89,27 @@ pub enum Commands {
     Validate(ValidateArgs),
 }
 
+/// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
+/// A "nodeset" is a string representing shorthand notation for a group of hosts (e.g.,
+/// 'node[00-05]').
+fn merge_nodesets(
+    nodesets: &[String],
+) -> std::result::Result<nodeset::NodeSet, nodeset::NodeSetParseError> {
+    let mut nodeset = nodeset::NodeSet::new();
+    for nodeset_str in nodesets.iter() {
+        let curr_nodeset = &nodeset_str.parse()?;
+        nodeset = nodeset.union(curr_nodeset);
+    }
+    Ok(nodeset)
+}
+
+/// Convert multiple nodesets into a vector of hostname strings.
+fn nodesets2hostnames(
+    nodesets: &[String],
+) -> std::result::Result<Vec<String>, nodeset::NodeSetParseError> {
+    Ok(merge_nodesets(nodesets)?.iter().collect())
+}
+
 pub fn main(cli: &Cli, command: &Commands) -> Result {
     if let Commands::Discover(args) = command {
         return discover::discover(args);
