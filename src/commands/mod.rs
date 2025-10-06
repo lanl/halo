@@ -57,37 +57,6 @@ impl<T, E, F: FnOnce(E)> Handle<T, F> for std::result::Result<T, E> {
     }
 }
 
-impl From<EmptyError> for HandledError {
-    fn from(_error: EmptyError) -> Self {
-        HandledError {}
-    }
-}
-
-#[derive(Debug)]
-pub struct EmptyError {}
-
-use std::fmt;
-impl fmt::Display for EmptyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "error")
-    }
-}
-
-impl<T: std::error::Error> From<T> for EmptyError {
-    fn from(_error: T) -> Self {
-        EmptyError {}
-    }
-}
-
-/// Commands use a custom Result type which does not contain any error metadata. This is because
-/// the binary's main() function is not supposed to interpret the Result of a command in any way,
-/// except to set the exit status.
-pub type Result = std::result::Result<(), EmptyError>;
-
-pub fn err() -> Result {
-    Result::Err(EmptyError {})
-}
-
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
@@ -138,9 +107,7 @@ pub enum Commands {
 /// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
 /// A "nodeset" is a string representing shorthand notation for a group of hosts (e.g.,
 /// 'node[00-05]').
-fn merge_nodesets(
-    nodesets: &[String],
-) -> std::result::Result<nodeset::NodeSet, nodeset::NodeSetParseError> {
+fn merge_nodesets(nodesets: &[String]) -> Result<nodeset::NodeSet, nodeset::NodeSetParseError> {
     let mut nodeset = nodeset::NodeSet::new();
     for nodeset_str in nodesets.iter() {
         let curr_nodeset = &nodeset_str.parse()?;
@@ -150,9 +117,7 @@ fn merge_nodesets(
 }
 
 /// Convert multiple nodesets into a vector of hostname strings.
-fn nodesets2hostnames(
-    nodesets: &[String],
-) -> std::result::Result<Vec<String>, nodeset::NodeSetParseError> {
+fn nodesets2hostnames(nodesets: &[String]) -> Result<Vec<String>, nodeset::NodeSetParseError> {
     Ok(merge_nodesets(nodesets)?.iter().collect())
 }
 
