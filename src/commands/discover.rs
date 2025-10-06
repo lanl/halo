@@ -21,12 +21,8 @@ pub fn discover(args: &DiscoverArgs) -> crate::commands::Result {
         hosts: Vec::new(),
         failover_pairs: None,
     };
-    let hostnames = match crate::commands::nodesets2hostnames(&args.hostnames) {
-        Ok(hns) => hns,
-        Err(_) => {
-            return crate::commands::err();
-        }
-    };
+    let hostnames = crate::commands::nodesets2hostnames(&args.hostnames)
+        .inspect_err(|e| eprintln!("nodeset syntax error: {e}"))?;
 
     for hostname in hostnames {
         let host = discover_one_host(&hostname, args.verbose).unwrap();

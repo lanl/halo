@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn discover_nodeset() {
-        let invalid_nodesets = ["node[0-2", "node[a]", "host0[-1]"];
+        let invalid_nodesets = ["node[", "node[0-2", "node[a]", "host0[-1]"];
         for invalid_nodeset in invalid_nodesets.iter() {
             let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo"))
                 .args(vec!["discover", invalid_nodeset])
@@ -69,7 +69,7 @@ mod tests {
 
             assert!(!result.status.success());
             let err_message = String::from_utf8(result.stderr).unwrap();
-            assert!(err_message.contains(invalid_nodeset));
+            assert!(err_message.contains("nodeset syntax error: unable to parse"));
         }
     }
 }
