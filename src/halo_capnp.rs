@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{env, error::Error, fmt, io};
+use std::{env, fmt, io};
 
 use {futures::AsyncReadExt, rustls::pki_types::ServerName};
 
@@ -21,7 +21,7 @@ type OperationRequest = ::capnp::capability::Request<
     ocf_resource_agent::operation_results::Owned,
 >;
 
-pub type OcfOperationResults =
+type OcfOperationResults =
     ::capnp::capability::Response<ocf_resource_agent::operation_results::Owned>;
 
 pub type MonitorResults = ::capnp::capability::Response<halo_mgmt::monitor_results::Owned>;
@@ -123,23 +123,6 @@ fn get_status(reply: OcfOperationResults) -> Result<AgentReply, capnp::Error> {
     })
 }
 
-/// Prepare a capnp operation RPC request.
-/// res: The resource that the operation will be performed on.
-/// op: The operation to perform.
-fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource_agent::Operation) {
-    let mut request = request.get();
-
-    request.set_op(op);
-
-    request.set_resource(res.kind.clone());
-    let mut args = request.init_args(res.parameters.len() as u32);
-    for (i, param) in res.parameters.iter().enumerate() {
-        let mut arg = args.reborrow().get(i as u32);
-        arg.set_key(param.0.clone());
-        arg.set_value(param.1.clone());
-    }
-}
-
 /// Create a capnp RPC client and set up the client to perform the operation() RPC.
 async fn get_ocf_request(
     res: &Resource,
@@ -199,13 +182,17 @@ fn __get_ocf_request<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static>(
     request
 }
 
-pub async fn do_ocf_request(
-    res: &Resource,
-    loc: Location,
-    op: ocf_resource_agent::Operation,
-) -> Result<OcfOperationResults, Box<dyn Error>> {
-    let request = get_ocf_request(res, loc, op).await?;
+/// Prepare a capnp operation RPC request.
+fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource_agent::Operation) {
+    let mut request = request.get();
 
-    let reply = request.send().promise.await?;
-    Ok(reply)
+    request.set_op(op);
+
+    request.set_resource(res.kind.clone());
+    let mut args = request.init_args(res.parameters.len() as u32);
+    for (i, param) in res.parameters.iter().enumerate() {
+        let mut arg = args.reborrow().get(i as u32);
+        arg.set_key(param.0.clone());
+        arg.set_value(param.1.clone());
+    }
 }

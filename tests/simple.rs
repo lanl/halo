@@ -8,7 +8,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use halo_lib::{
-        halo_capnp::{AgentReply, OcfResult},
+        halo_capnp::AgentReply,
         host::FenceCommand,
         remote::ocf,
         resource::{Location, Resource, ResourceStatus},
