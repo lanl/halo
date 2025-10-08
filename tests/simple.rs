@@ -4,14 +4,17 @@
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
     use tokio::runtime::Runtime;
 
-    use halo_lib::host::FenceCommand;
-    use halo_lib::remote::ocf;
-    use halo_lib::resource::{Location, Resource, ResourceStatus};
-    use halo_lib::Buffer;
-
-    use halo_lib::test_env::*;
+    use halo_lib::{
+        halo_capnp::{AgentReply, OcfResult},
+        host::FenceCommand,
+        remote::ocf,
+        resource::{Location, Resource, ResourceStatus},
+        test_env::*,
+        Buffer,
+    };
 
     /// Create a TestEnvironment for a test.
     ///
@@ -47,7 +50,10 @@ mod tests {
 
                 env.assert_agent_next_line(&agent_expected_line("monitor", res));
 
-                assert_eq!(res.stop().await.unwrap(), ocf::Status::Success);
+                assert!(matches!(
+                    res.stop().await,
+                    Ok(AgentReply::Success(ocf::Status::Success))
+                ));
                 env.assert_agent_next_line(&agent_expected_line("stop", res));
             }
         });
@@ -79,7 +85,10 @@ mod tests {
 
                 env.assert_agent_next_line(&agent_expected_line("monitor", res));
 
-                assert_eq!(res.stop().await.unwrap(), ocf::Status::Success);
+                assert!(matches!(
+                    res.stop().await,
+                    Ok(AgentReply::Success(ocf::Status::Success))
+                ));
                 env.assert_agent_next_line(&agent_expected_line("stop", res));
             }
         });
