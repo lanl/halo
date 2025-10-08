@@ -38,10 +38,10 @@ mod tests {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             for res in cluster.resources() {
-                assert_eq!(
-                    res.start(Location::Home).await.unwrap(),
-                    ocf::Status::Success
-                );
+                assert!(matches!(
+                    res.start(Location::Home).await,
+                    Ok(AgentReply::Success(ocf::Status::Success))
+                ));
 
                 env.assert_agent_next_line(&agent_expected_line("start", res));
 
@@ -73,10 +73,10 @@ mod tests {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             for res in cluster.resources() {
-                assert_eq!(
-                    res.start(Location::Home).await.unwrap(),
-                    ocf::Status::Success
-                );
+                assert!(matches!(
+                    res.start(Location::Home).await,
+                    Ok(AgentReply::Success(ocf::Status::Success))
+                ));
 
                 env.assert_agent_next_line(&agent_expected_line("start", res));
 

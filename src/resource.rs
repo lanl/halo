@@ -9,12 +9,7 @@ use std::{
 
 use futures::future;
 
-use crate::{
-    halo_capnp::{do_ocf_request, ocf_resource_agent, remote_ocf_operation, OcfResult},
-    host::*,
-    manager::MgrContext,
-    remote::ocf,
-};
+use crate::{halo_capnp::*, host::*, manager::MgrContext, remote::ocf};
 
 /// Resource Group contains a zpool resource together with all of the Lustre resources that depend
 /// on it.
@@ -266,13 +261,20 @@ impl Resource {
         // If this resource is already running, don't bother doing anything:
         if !self.is_running() {
             match self.start(loc).await {
-                Ok(status) => match status {
-                    ocf::Status::Success => {
-                        self.set_running_on_loc(loc);
-                    }
-                    _ => self.set_status(ResourceStatus::Stopped),
-                },
-                Err(_) => self.set_status(ResourceStatus::Unknown),
+                Ok(AgentReply::Success(ocf::Status::Success)) => self.set_running_on_loc(loc),
+                Ok(AgentReply::Success(_)) => self.set_status(ResourceStatus::Stopped),
+                Ok(AgentReply::Error(e)) => {
+                    eprintln!("Warning: Remote agent returned error {e} when attempting to start resource {}.",
+                        self.id);
+                    self.set_status(ResourceStatus::Unknown);
+                }
+                e => {
+                    eprintln!(
+                        "Error: '{e:?}' when attempting to start resource '{}'.",
+                        self.id
+                    );
+                    self.set_status(ResourceStatus::Unknown);
+                }
             };
         }
 
@@ -314,26 +316,10 @@ impl Resource {
     }
 
     /// Perform a start RPC for this resource.
-    pub async fn start(&self, loc: Location) -> Result<ocf::Status, Box<dyn Error>> {
+    pub async fn start(&self, loc: Location) -> Result<AgentReply, AgentError> {
         tokio::task::LocalSet::new()
             .run_until(async {
-                let reply = do_ocf_request(self, loc, ocf_resource_agent::Operation::Start).await?;
-                let status = reply.get()?.get_result()?;
-                match status.which() {
-                    Ok(ocf_resource_agent::result::Ok(st)) => {
-                        let st: ocf::Status = st.into();
-                        Ok(st)
-                    }
-                    Ok(ocf_resource_agent::result::Err(e)) => {
-                        let e = e?.to_str()?;
-                        println!("Remote agent returned error: {e}");
-                        Ok(ocf::Status::ErrGeneric)
-                    }
-                    Err(::capnp::NotInSchema(_)) => {
-                        eprintln!("unknown result");
-                        Ok(ocf::Status::ErrUnimplemented)
-                    }
-                }
+                remote_ocf_operation(self, loc, ocf_resource_agent::Operation::Start).await
             })
             .await
     }
