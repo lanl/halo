@@ -6,6 +6,7 @@ use std::{env, error::Error, fmt, io};
 use {futures::AsyncReadExt, rustls::pki_types::ServerName};
 
 use crate::{
+    remote::ocf,
     resource::{self, Location, Resource},
     tls::get_connector,
 };
@@ -55,6 +56,71 @@ impl fmt::Display for halo_mgmt::Status {
             }
         )
     }
+}
+
+#[derive(Debug)]
+pub enum AgentReply {
+    /// A reply from the remote agent, indicating that the operation was attempted. The ocf::Status
+    /// contains the result of attempting the operation.
+    Success(ocf::Status),
+
+    /// A reply from the remote agent, indicating that the operation could not be attempted, due to
+    /// an error on the remote server.
+    Error(String),
+}
+
+#[derive(Debug)]
+pub enum AgentError {
+    /// An IO error occurred while trying to send/receive.
+    Io(io::Error),
+
+    /// An error occurred in the RPC protocol.
+    Rpc(capnp::Error),
+}
+
+impl From<io::Error> for AgentError {
+    fn from(e: io::Error) -> Self {
+        AgentError::Io(e)
+    }
+}
+
+impl From<capnp::Error> for AgentError {
+    fn from(e: capnp::Error) -> Self {
+        AgentError::Rpc(e)
+    }
+}
+
+/// Sends an OCF request to perform `op` to a remote agent, determined by `res` and `loc`.
+///
+/// Returns a `Result` that contains whether an error occurred while attempting the remote
+/// operation, or contains the result of the operation if the request was succesful.
+///
+/// Note that an `Ok(_)` variant does *not* mean that the operation completed succesfully! It
+/// simply means that the client was able to succesfully communicate with the remote agent. An
+/// error could have occurred while the remote agent attempted the operation, and such an error is
+/// held in the `Ok(_)` variant.
+///
+/// An `Err(_)` variant means that succesful communication did not occur, so it is unknown whether
+/// the operation was attempted or what the outcome was if it was attempted.
+pub async fn remote_ocf_operation(
+    res: &Resource,
+    loc: Location,
+    op: ocf_resource_agent::Operation,
+) -> Result<AgentReply, AgentError> {
+    let request = get_ocf_request(res, loc, op).await?;
+
+    let reply = request.send().promise.await?;
+
+    Ok(get_status(reply)?)
+}
+
+fn get_status(reply: OcfOperationResults) -> Result<AgentReply, capnp::Error> {
+    let status = reply.get()?.get_result()?;
+
+    Ok(match status.which()? {
+        ocf_resource_agent::result::Ok(status) => AgentReply::Success(status.into()),
+        ocf_resource_agent::result::Err(e) => AgentReply::Error(e?.to_str()?.into()),
+    })
 }
 
 /// Prepare a capnp operation RPC request.
