@@ -45,8 +45,10 @@ mod tests {
 
                 env.assert_agent_next_line(&agent_expected_line("start", res));
 
-                let status = res.monitor(Location::Home).await.unwrap();
-                assert_eq!(status, ocf::Status::Success);
+                assert!(matches!(
+                    res.monitor(Location::Home).await,
+                    Ok(AgentReply::Success(ocf::Status::Success))
+                ));
 
                 env.assert_agent_next_line(&agent_expected_line("monitor", res));
 
@@ -80,8 +82,10 @@ mod tests {
 
                 env.assert_agent_next_line(&agent_expected_line("start", res));
 
-                let status = res.monitor(Location::Home).await.unwrap();
-                assert_eq!(status, ocf::Status::Success);
+                assert!(matches!(
+                    res.monitor(Location::Home).await,
+                    Ok(AgentReply::Success(ocf::Status::Success))
+                ));
 
                 env.assert_agent_next_line(&agent_expected_line("monitor", res));
 

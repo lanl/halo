@@ -85,22 +85,19 @@ impl ResourceGroup {
         let mut error_seen = false;
         for (resource, status) in statuses.iter() {
             match status {
-                Ok(monitor_res) => {
-                    match monitor_res {
-                        ocf::Status::Success => resource.set_status(ResourceStatus::RunningOnHome),
-                        ocf::Status::ErrNotRunning => resource.set_status(ResourceStatus::Stopped),
-                        // XXX: connection timed out is probably caught in this branch?
-                        // needs to set error_seen to true?
-                        // need better error model...
-                        _ => resource.set_status(ResourceStatus::Unknown),
-                    };
+                Ok(AgentReply::Success(ocf::Status::Success)) => {
+                    resource.set_status(ResourceStatus::RunningOnHome)
                 }
-                Err(_) => {
-                    resource.set_status(ResourceStatus::Unknown);
+                Ok(AgentReply::Success(ocf::Status::ErrNotRunning)) => {
+                    resource.set_status(ResourceStatus::Stopped)
+                }
+                _ => {
                     error_seen = true;
+                    resource.set_status(ResourceStatus::Unknown)
                 }
             }
         }
+
         if error_seen {
             self.root.home_node.set_status(HostStatus::Unknown);
         } else {
@@ -234,22 +231,20 @@ impl Resource {
     /// only checks on resource state and does not actively start / stop a resource.
     async fn observe_loop(&self, args: &crate::commands::Cli) -> ! {
         loop {
-            {
-                let new_status = self.monitor(Location::Home).await;
-                let mut old_status = self.status.lock().unwrap();
-                *old_status = match &new_status {
-                    Ok(s) => match *s {
-                        ocf::Status::Success => ResourceStatus::RunningOnHome,
-                        ocf::Status::ErrNotRunning => ResourceStatus::Stopped,
-                        _ => ResourceStatus::Unknown,
-                    },
-                    Err(e) => {
-                        if args.verbose {
-                            eprintln!("Could not monitor {:?}: {}\n", self, e);
-                        }
-                        ResourceStatus::Unknown
+            let new_status = match self.monitor(Location::Home).await {
+                Ok(AgentReply::Success(ocf::Status::Success)) => ResourceStatus::RunningOnHome,
+                Ok(AgentReply::Success(ocf::Status::ErrNotRunning)) => ResourceStatus::Stopped,
+                Ok(AgentReply::Success(_)) => ResourceStatus::Unknown,
+                e => {
+                    if args.verbose {
+                        eprintln!("Could not monitor {}: {e:?}\n", self.id);
                     }
-                };
+                    ResourceStatus::Unknown
+                }
+            };
+            {
+                let mut old_status = self.status.lock().unwrap();
+                *old_status = new_status;
             }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
@@ -289,28 +284,10 @@ impl Resource {
     }
 
     /// Perform a monitor RPC for this resource.
-    pub async fn monitor(&self, loc: Location) -> Result<ocf::Status, Box<dyn Error>> {
+    pub async fn monitor(&self, loc: Location) -> Result<AgentReply, AgentError> {
         tokio::task::LocalSet::new()
             .run_until(async {
-                let reply =
-                    do_ocf_request(self, loc, ocf_resource_agent::Operation::Monitor).await?;
-                let status = reply.get()?.get_result()?;
-                match status.which() {
-                    Ok(ocf_resource_agent::result::Ok(st)) => {
-                        let st: ocf::Status = st.into();
-                        Ok(st)
-                    }
-                    Ok(ocf_resource_agent::result::Err(e)) => {
-                        let err_str = e?.to_str()?;
-                        println!("Remote agent returned error: {err_str}");
-                        // XXX: return an actual Err(_) here?
-                        Ok(ocf::Status::ErrGeneric)
-                    }
-                    Err(::capnp::NotInSchema(_)) => {
-                        eprintln!("unknown result");
-                        Ok(ocf::Status::ErrUnimplemented)
-                    }
-                }
+                remote_ocf_operation(self, loc, ocf_resource_agent::Operation::Monitor).await
             })
             .await
     }
