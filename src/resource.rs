@@ -10,7 +10,7 @@ use std::{
 use futures::future;
 
 use crate::{
-    halo_capnp::{do_ocf_request, ocf_resource_agent},
+    halo_capnp::{do_ocf_request, ocf_resource_agent, remote_ocf_operation, OcfResult},
     host::*,
     manager::MgrContext,
     remote::ocf,
@@ -339,28 +339,11 @@ impl Resource {
     }
 
     /// Perform a stop RPC for this resource.
-    pub async fn stop(&self) -> Result<ocf::Status, Box<dyn Error>> {
+    pub async fn stop(&self) -> Result<AgentReply, AgentError> {
         tokio::task::LocalSet::new()
             .run_until(async {
-                let reply =
-                    do_ocf_request(self, Location::Home, ocf_resource_agent::Operation::Stop)
-                        .await?;
-                let status = reply.get()?.get_result()?;
-                match status.which() {
-                    Ok(ocf_resource_agent::result::Ok(st)) => {
-                        let st: ocf::Status = st.into();
-                        Ok(st)
-                    }
-                    Ok(ocf_resource_agent::result::Err(e)) => {
-                        let e = e?.to_str()?;
-                        println!("Remote agent returned error: {e}");
-                        Ok(ocf::Status::ErrGeneric)
-                    }
-                    Err(::capnp::NotInSchema(_)) => {
-                        eprintln!("unknown result");
-                        Ok(ocf::Status::ErrUnimplemented)
-                    }
-                }
+                remote_ocf_operation(self, Location::Home, ocf_resource_agent::Operation::Stop)
+                    .await
             })
             .await
     }
