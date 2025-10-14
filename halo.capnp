@@ -26,7 +26,8 @@ interface HaloMgmt {
             key @0 :Text;
             value @1 :Text;
         }
-	status @1 :Status;
+	    status @1 :Status;
+        managed @2 :Bool;
     }
 
     monitor @0 () -> (status: Cluster);

@@ -38,6 +38,7 @@ fn get_and_print_status(reply: MonitorResults, _args: &StatusArgs) -> Result<(),
     let resources = cluster_status.get_resources()?;
     for i in 0..resources.len() {
         let res = resources.get(i);
+        let managed = res.get_managed();
         let status = match res.get_status()? {
             halo_mgmt::Status::RunningOnHome => "OK".to_string(),
             other => format!("{}", other),
@@ -55,6 +56,9 @@ fn get_and_print_status(reply: MonitorResults, _args: &StatusArgs) -> Result<(),
                 param.get_key()?.to_str()?,
                 param.get_value()?.to_str()?
             );
+        }
+        if !managed {
+            print!(" unmanaged");
         }
         println!("]");
     }

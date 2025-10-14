@@ -57,6 +57,7 @@ impl halo_mgmt::Server for HaloMgmtImpl {
         for (i, res) in cluster.resources().enumerate() {
             let mut message = resource_messages.reborrow().get(i as u32);
             message.set_status(res.get_status().into());
+            message.set_managed(res.get_managed());
             let mut parameters = message
                 .reborrow()
                 .init_parameters(res.parameters.len() as u32);
