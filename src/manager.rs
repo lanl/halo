@@ -115,35 +115,29 @@ async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListen
 ///
 /// This listens for commands on a unix socket and acts on them.
 async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<cluster::Cluster>) {
-    tokio::task::LocalSet::new()
-        .run_until(async move {
-            let mgmt_client: halo_mgmt::Client = capnp_rpc::new_client(HaloMgmtImpl { cluster });
+    let mgmt_client: halo_mgmt::Client = capnp_rpc::new_client(HaloMgmtImpl { cluster });
 
-            loop {
-                let (stream, _) = match listener.accept().await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        // XXX: why might accept() fail? How to properly handle error here?
-                        eprintln!("Could not accept connection: {e}");
-                        continue;
-                    }
-                };
-                let (reader, writer) =
-                    tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
-                let network = twoparty::VatNetwork::new(
-                    futures::io::BufReader::new(reader),
-                    futures::io::BufWriter::new(writer),
-                    rpc_twoparty_capnp::Side::Server,
-                    Default::default(),
-                );
-
-                let rpc_system =
-                    RpcSystem::new(Box::new(network), Some(mgmt_client.clone().client));
-
-                tokio::task::spawn_local(rpc_system);
+    loop {
+        let (stream, _) = match listener.accept().await {
+            Ok(s) => s,
+            Err(e) => {
+                // XXX: why might accept() fail? How to properly handle error here?
+                eprintln!("Could not accept connection: {e}");
+                continue;
             }
-        })
-        .await
+        };
+        let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+        let network = twoparty::VatNetwork::new(
+            futures::io::BufReader::new(reader),
+            futures::io::BufWriter::new(writer),
+            rpc_twoparty_capnp::Side::Server,
+            Default::default(),
+        );
+
+        let rpc_system = RpcSystem::new(Box::new(network), Some(mgmt_client.clone().client));
+
+        tokio::task::spawn_local(rpc_system);
+    }
 }
 
 /// Main entrypoint for the management service, which monitors and controls the state of
@@ -163,40 +157,35 @@ async fn manager_main(cluster: Arc<cluster::Cluster>) {
 /// - A server that listens on a unix socket (/var/run/halo.socket) for
 ///   commands from the command line interface.
 pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
-    let cluster = Arc::new(cluster);
-
-    let manager_rt = tokio::runtime::Runtime::new()
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
         .handle_err(|e| eprintln!("Could not launch manager runtime: {e}"))?;
 
-    let cli_rt = tokio::runtime::Runtime::new()
-        .handle_err(|e| eprintln!("Could not launch CLI server runtime: {e}"))?;
+    rt.block_on(tokio::task::LocalSet::new().run_until(async {
+        let addr = match &cluster.context.args.socket {
+            Some(s) => s,
+            None => &crate::default_socket(),
+        };
 
-    std::thread::scope(|s| {
-        // Launch the Management thread:
-        s.spawn(|| {
-            manager_rt.block_on(async {
-                manager_main(Arc::clone(&cluster)).await;
-            });
-        });
-
-        // Launch the CLI Server process to listen for CLI commands:
-        cli_rt.block_on(async {
-            let addr = match &cluster.context.args.socket {
-                Some(s) => s,
-                None => &crate::default_socket(),
-            };
-            let listener = match prepare_unix_socket(addr).await {
-                Ok(l) => l,
-                Err(_) => {
-                    std::process::exit(1);
-                }
-            };
-            if cluster.context.args.verbose {
-                eprintln!("listening on socket '{addr}'");
+        let listener = match prepare_unix_socket(addr).await {
+            Ok(l) => l,
+            Err(_) => {
+                std::process::exit(1);
             }
-            server_main(listener, Arc::clone(&cluster)).await;
-        })
-    });
+        };
+
+        if cluster.context.args.verbose {
+            eprintln!("listening on socket '{addr}'");
+        }
+
+        let cluster = Arc::new(cluster);
+
+        futures::join!(
+            server_main(listener, Arc::clone(&cluster)),
+            manager_main(cluster)
+        );
+    }));
 
     Ok(())
 }
