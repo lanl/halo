@@ -114,6 +114,19 @@ pub async fn remote_ocf_operation(
     Ok(get_status(reply)?)
 }
 
+pub async fn remote_ocf_operation_given_client(
+    res: &Resource,
+    client: &ocf_resource_agent::Client,
+    op: ocf_resource_agent::Operation,
+) -> Result<AgentReply, capnp::Error> {
+    let mut request = client.operation_request();
+    prep_request(&mut request, res, op);
+
+    let reply = request.send().promise.await?;
+
+    get_status(reply)
+}
+
 fn get_status(reply: OcfOperationResults) -> Result<AgentReply, capnp::Error> {
     let status = reply.get()?.get_result()?;
 

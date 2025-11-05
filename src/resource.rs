@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use futures::future;
+use {futures::future, tokio::sync::Notify};
 
 use crate::{halo_capnp::*, host::*, manager::MgrContext, remote::ocf};
 
@@ -17,6 +17,10 @@ use crate::{halo_capnp::*, host::*, manager::MgrContext, remote::ocf};
 pub struct ResourceGroup {
     pub root: Resource,
     overall_status: Mutex<ResourceStatus>,
+
+    /// A notification mechanism used to tell a resource group management task to cancel. This
+    /// could occur, for example, because the host that the task is using is going to be fenced.
+    pub cancel: tokio::sync::Notify,
 }
 
 impl ResourceGroup {
@@ -25,49 +29,40 @@ impl ResourceGroup {
         Self {
             root,
             overall_status: Mutex::new(ResourceStatus::Unknown),
-        }
-    }
-    pub async fn main_loop(&self, args: &crate::commands::Cli) {
-        if args.manage_resources {
-            self.manage_loop(args).await
-        } else {
-            self.observe_loop(args).await
+            cancel: Notify::new(),
         }
     }
 
-    /// This is the main loop for tracking a resource's life cycle in Manage mode. In this mode,
-    /// the manager actively starts, and fails over resources to keep them alive.
-    ///
-    /// A resource starts out in ResourceState::Unknown. As monitor, start, and stop operations are
-    /// performed on that resource, across both its home and away hosts, this function tracks that
-    /// state.
-    async fn manage_loop(&self, args: &crate::commands::Cli) {
-        let high_availability = self.root.failover_node.is_some();
-
-        match high_availability {
-            true => self.manage_ha(args).await,
-            false => self.manage_non_ha(args).await,
-        };
+    pub fn id(&self) -> &str {
+        &self.root.id
     }
 
-    async fn manage_non_ha(&self, _args: &crate::commands::Cli) -> ! {
-        self.update_resources(Location::Home).await;
+    pub fn home_node(&self) -> &Arc<Host> {
+        &self.root.home_node
+    }
+
+    /// The host-driven resource management loop manages resources on a given location until an
+    /// error is observed, at which point it returns back to the host management code so that the
+    /// host can take the appropriate action, whether that be fencing or trying again.
+    pub async fn manage_loop(
+        &self,
+        client: &ocf_resource_agent::Client,
+        loc: Location,
+    ) -> Result<(), capnp::Error> {
+        println!("managing rg {}", self.id());
         loop {
+            self.update_resources(client, loc).await?;
             match self.get_overall_status() {
-                ResourceStatus::Unknown => self.update_resources(Location::Home).await,
-                ResourceStatus::Stopped => self.try_start_resources(Location::Home).await,
-                ResourceStatus::RunningOnHome => self.update_resources(Location::Home).await,
-                ResourceStatus::RunningOnAway => {
-                    panic!("RunningOnAway shouldn't be reachable in a non-HA cluster.")
+                ResourceStatus::Stopped => self.try_start_resources(client, loc).await,
+                ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
+                    self.update_resources(client, loc).await?
                 }
-                ResourceStatus::Unrunnable => {}
-                ResourceStatus::CheckingHome => panic!("CheckingHome shouldn't be reachable here."),
-                ResourceStatus::CheckingAway => {
-                    panic!("CheckingAway shouldn't be reachable in a non-HA cluster.")
+                other => {
+                    eprintln!("Handle resource status {other:?}");
+                    todo!()
                 }
             };
-            self.update_overall_status();
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     }
 
@@ -75,39 +70,44 @@ impl ResourceGroup {
     ///
     /// This function updates the status of each resource (zpool and target) in the resource
     /// group, and the host.
-    async fn update_resources(&self, loc: Location) {
+    async fn update_resources(
+        &self,
+        client: &ocf_resource_agent::Client,
+        loc: Location,
+    ) -> Result<(), capnp::Error> {
         let futures = self
             .resources()
-            .map(|r| async move { (r, r.monitor(loc).await) });
+            .map(|r| async move { (r, r.monitor_client(client).await) });
 
         let statuses = future::join_all(futures).await;
 
-        let mut error_seen = false;
         for (resource, status) in statuses.iter() {
+            println!("got status {status:?} for resource {}", resource.id);
             match status {
                 Ok(AgentReply::Success(ocf::Status::Success)) => {
-                    resource.set_status(ResourceStatus::RunningOnHome)
+                    resource.set_status(if loc == Location::Home {
+                        ResourceStatus::RunningOnHome
+                    } else {
+                        ResourceStatus::RunningOnAway
+                    })
                 }
                 Ok(AgentReply::Success(ocf::Status::ErrNotRunning)) => {
                     resource.set_status(ResourceStatus::Stopped)
                 }
-                _ => {
-                    error_seen = true;
-                    resource.set_status(ResourceStatus::Unknown)
+                Ok(_) => todo!(),
+                Err(e) => {
+                    resource.set_status(ResourceStatus::Unknown);
+                    return Err(e.clone());
                 }
             }
         }
-
-        if error_seen {
-            self.root.home_node.set_status(HostStatus::Unknown);
-        } else {
-            self.root.home_node.set_status(HostStatus::Up);
-        }
+        self.update_overall_status();
+        Ok(())
     }
 
     /// Attempt to start the resources in this resource group on the given location.
-    async fn try_start_resources(&self, loc: Location) {
-        self.root.start_if_needed_recursive(loc).await;
+    async fn try_start_resources(&self, client: &ocf_resource_agent::Client, loc: Location) {
+        self.root.start_if_needed_recursive(client, loc).await;
     }
 
     fn get_overall_status(&self) -> ResourceStatus {
@@ -130,32 +130,10 @@ impl ResourceGroup {
         self.set_overall_status(overall_status);
     }
 
-    async fn observe_loop(&self, args: &crate::commands::Cli) {
-        let futures = self.resources().map(|r| r.observe_loop(args));
-        let _ = future::join_all(futures).await;
-    }
-
     pub fn resources(&self) -> ResourceIterator<'_> {
         ResourceIterator {
             queue: VecDeque::from([&self.root]),
         }
-    }
-}
-
-/// Implementations for a ResourceGroup with a failover host
-impl ResourceGroup {
-    /// Main loop for managing a ResourceGroup with a failover host
-    async fn manage_ha(&self, _args: &crate::commands::Cli) -> ! {
-        let _loc = self.check_location().await;
-        loop {
-            todo!()
-        }
-    }
-
-    /// Check if the ResourceGroup's root resource is running on either of its hosts.
-    async fn check_location(&self) -> Option<Location> {
-        let _ = self.root.monitor(Location::Home).await;
-        todo!()
     }
 }
 
@@ -230,35 +208,12 @@ impl Resource {
         }
     }
 
-    /// This is the loop for tracking a resource's life cycle in Observe mode, where the manager
-    /// only checks on resource state and does not actively start / stop a resource.
-    async fn observe_loop(&self, args: &crate::commands::Cli) -> ! {
-        loop {
-            let new_status = match self.monitor(Location::Home).await {
-                Ok(AgentReply::Success(ocf::Status::Success)) => ResourceStatus::RunningOnHome,
-                Ok(AgentReply::Success(ocf::Status::ErrNotRunning)) => ResourceStatus::Stopped,
-                Ok(AgentReply::Success(_)) => ResourceStatus::Unknown,
-                e => {
-                    if args.verbose {
-                        eprintln!("Could not monitor {}: {e:?}\n", self.id);
-                    }
-                    ResourceStatus::Unknown
-                }
-            };
-            {
-                let mut old_status = self.status.lock().unwrap();
-                *old_status = new_status;
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        }
-    }
-
     /// Recursively start a resource as well as all of its dependents.
     /// Updates the status of each resource based on the outcome of the start attempt.
-    async fn start_if_needed_recursive(&self, loc: Location) {
+    async fn start_if_needed_recursive(&self, client: &ocf_resource_agent::Client, loc: Location) {
         // If this resource is already running, don't bother doing anything:
         if !self.is_running() {
-            match self.start(loc).await {
+            match self.start_client(client).await {
                 Ok(AgentReply::Success(ocf::Status::Success)) => self.set_running_on_loc(loc),
                 Ok(AgentReply::Success(_)) => self.set_status(ResourceStatus::Stopped),
                 Ok(AgentReply::Error(e)) => {
@@ -281,9 +236,34 @@ impl Resource {
             let futures = self
                 .dependents
                 .iter()
-                .map(|r| r.start_if_needed_recursive(loc));
+                .map(|r| r.start_if_needed_recursive(client, loc));
             future::join_all(futures).await;
         }
+    }
+
+    /// Perform a monitor RPC for this resource given a client.
+    pub async fn monitor_client(
+        &self,
+        client: &ocf_resource_agent::Client,
+    ) -> Result<AgentReply, capnp::Error> {
+        remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Monitor)
+            .await
+    }
+
+    /// Perform a start RPC for this resource given a client.
+    pub async fn start_client(
+        &self,
+        client: &ocf_resource_agent::Client,
+    ) -> Result<AgentReply, capnp::Error> {
+        remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Start).await
+    }
+
+    /// Perform a stop RPC for this resource given a client.
+    pub async fn stop_client(
+        &self,
+        client: &ocf_resource_agent::Client,
+    ) -> Result<AgentReply, capnp::Error> {
+        remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Stop).await
     }
 
     /// Perform a monitor RPC for this resource.
@@ -436,7 +416,7 @@ impl ResourceStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Location {
     Home,
     Away,

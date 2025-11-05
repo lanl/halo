@@ -26,6 +26,9 @@ fence_off() {
 		exit 0
 	fi
 
+	# remove all of the state files managed by this agent so that the resources appear stopped:
+	rm $test_directory/$target.*
+
 	# Verify the remote agent's identity
 	local remote_agent_args=$(ps -p $pid -o args=)
 	# If the process at the given PID is *not* the expected agent, then assume that the
@@ -41,8 +44,7 @@ fence_off() {
 
 	# Verify the remote agent's identity, again
 	local remote_agent_args=$(ps -p $pid -o args=)
-	# If the process at the given PID is *not* the expected agent, then assume that the
-	# agent is not running:
+	# If the process at the given PID is *still* the agent, then assume that fencing failed:
 	if [[ $remote_agent_args == *"--test-id $target"* ]]; then
 		echo "it would appear that fencing $target failed..."
 		exit 1
