@@ -35,14 +35,8 @@ pub struct Cluster {
 }
 
 impl Cluster {
-    /// The main management loop for a cluster consists of running the management loop for each
-    /// resource group concurrently.
     pub async fn main_loop(&self) {
-        let futures: Vec<_> = self
-            .resource_groups
-            .iter()
-            .map(|r| r.main_loop(&self.context.args))
-            .collect();
+        let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(self)).collect();
 
         let _ = future::join_all(futures).await;
     }
@@ -72,6 +66,22 @@ impl Cluster {
     pub fn lustre_resources_no_mgs(&self) -> impl Iterator<Item = &Resource> {
         self.lustre_resources()
             .filter(|res| res.parameters.get("kind").unwrap() != "mgs")
+    }
+
+    pub fn host_home_resource_groups<'a>(
+        &'a self,
+        host: &'a Host,
+    ) -> impl Iterator<Item = &'a ResourceGroup> {
+        self.resource_groups
+            .iter()
+            .filter(|rg| std::ptr::eq(Arc::as_ptr(rg.home_node()), host))
+    }
+
+    pub fn get_resource_group(&self, id: &str) -> &ResourceGroup {
+        self.resource_groups
+            .iter()
+            .find(|rg| rg.id() == id)
+            .unwrap()
     }
 
     pub fn get_mgs(&self) -> Option<&Resource> {

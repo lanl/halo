@@ -70,7 +70,7 @@ Powering off a node can be simulated by killing the remote agent process, and po
 the resource state files for all of the resources that it owned.
 
 Being able to "power off" a test agent requires knowing its PID. A test agent shares its PID by
-writing it to a file in a known location (see the function `maybe_identify_self_for_test_fence_agent()`).
+writing it to a file in a known location (see the function `maybe_identify_agent_for_test_fence()`).
 This location is determined by two pieces of information: the test's private directory, and the
 unique agent ID.
 
