@@ -127,16 +127,19 @@ impl Cluster {
             .collect();
 
         for config_host in config.hosts.into_iter() {
+            let host = Arc::clone(hosts.get(&config_host.hostname).unwrap());
+
             let failover_host: Option<Arc<Host>> = match &config.failover_pairs {
                 Some(pairs) => {
                     let hostname = get_failover_partner(pairs, &config_host.hostname).unwrap();
+                    host.set_failover_partner(hosts.get(hostname).unwrap());
                     // TODO: rather than unwrap() here, return an error to let the user know the
                     // config was invalid:
                     Some(Arc::clone(hosts.get(hostname).unwrap()))
                 }
                 None => None,
             };
-            let host = Arc::clone(hosts.get(&config_host.hostname).unwrap());
+
             let mut rg = Self::one_host_resource_groups(
                 config_host,
                 host,
