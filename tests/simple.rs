@@ -176,4 +176,24 @@ mod tests {
         let powered_on = host.is_powered_on().unwrap();
         assert!(powered_on);
     }
+
+    #[test]
+    fn failover_partners() {
+        let config_path = halo_lib::test_env::test_path("failover.toml");
+        let config_str = std::fs::read_to_string(std::path::Path::new(&config_path)).unwrap();
+        let config: halo_lib::config::Config = toml::from_str(&config_str).unwrap();
+        let cluster = halo_lib::cluster::Cluster::from_config(config_path).unwrap();
+        let failover_pairs = config
+            .failover_pairs
+            .unwrap();
+        cluster
+            .hosts()
+            .for_each(|h| {
+                let host_str = h.address();
+                let partner = h.failover_partner().unwrap();
+                let partner_str = partner.address();
+                let conf_partner_str = halo_lib::cluster::get_failover_partner(&failover_pairs, &host_str).unwrap();
+                assert_eq!(partner_str, conf_partner_str);
+            });
+    }
 }

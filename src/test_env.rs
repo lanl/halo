@@ -7,7 +7,7 @@ use crate::{cluster::Cluster, manager::MgrContext, resource::Resource};
 
 /// Given a relative `path` in the test directory, prepend the
 /// full path to the test directory.
-fn test_path(path: &str) -> String {
+pub fn test_path(path: &str) -> String {
     std::env::var("CARGO_MANIFEST_DIR").unwrap() + "/tests/" + path
 }
 
