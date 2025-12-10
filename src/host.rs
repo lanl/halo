@@ -7,7 +7,7 @@ use std::{
     fmt,
     io::{Read, Write},
     process::{Command, Stdio},
-    sync::Mutex,
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use clap::ValueEnum;
@@ -31,6 +31,7 @@ pub struct Host {
     address: HostAddress,
     status: Mutex<HostStatus>,
     fence_agent: Option<FenceAgent>,
+    failover_partner: OnceLock<Option<Arc<Host>>>,
 }
 
 impl Host {
@@ -45,6 +46,7 @@ impl Host {
             },
             status: Mutex::new(HostStatus::Unknown),
             fence_agent,
+            failover_partner: OnceLock::new(),
         }
     }
 
@@ -65,6 +67,36 @@ impl Host {
         let host = split.nth(0).unwrap();
         let port = split.nth(0).map(|port| port.parse::<u16>().unwrap());
         (host, port)
+    }
+
+    /// Specify the host that should be this host's failover partner.
+    ///
+    /// Note that this function should be called exactly once to initialize the failover partner.
+    pub fn set_failover_partner(&self, partner: &Arc<Self>) {
+        let curr_partner = self.failover_partner.get();
+        if curr_partner.is_some() {
+            let curr_partner = curr_partner.unwrap().as_ref().unwrap();
+            if ! Arc::ptr_eq(&partner, curr_partner) {
+                panic!("Host '{}' already has failover partner '{}'!", self.name(), curr_partner.name());
+            }
+        } else {
+            self.failover_partner.get_or_init(|| {
+                Some(Arc::clone(partner))
+            });
+        }
+    }
+
+    /// Retrieve a reference to this host's failover partner.
+    pub fn failover_partner(&self) -> Option<Arc<Host>> {
+        match self.failover_partner.get() {
+            Some(val) => {
+                match val {
+                    Some(fp) => Some(fp.clone()),
+                    None => None,
+                }
+            },
+            None => None,
+        }
     }
 
     /// Attempt to power on or off this host.
