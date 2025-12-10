@@ -293,7 +293,7 @@ impl Cluster {
 
 /// Given a list `pairs` of failover pairs, and a hostname `name`, return its partner, if one
 /// exists.
-fn get_failover_partner<'pairs>(pairs: &'pairs [Vec<String>], name: &str) -> Option<&'pairs str> {
+pub fn get_failover_partner<'pairs>(pairs: &'pairs [Vec<String>], name: &str) -> Option<&'pairs str> {
     for pair in pairs.iter() {
         if name == pair[0] {
             return Some(&pair[1]);
