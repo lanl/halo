@@ -98,7 +98,10 @@ impl Host {
     pub fn failover_partner(&self) -> Option<Arc<Host>> {
         self.failover_partner
             .get()
-            .expect(&format!("failover partner for host '{}' has not been initialized!", self.name()))
+            .expect(&format!(
+                "failover partner for host '{}' has not been initialized!",
+                self.name()
+            ))
             .as_ref()
             .map(|fp| Arc::clone(&fp))
     }
