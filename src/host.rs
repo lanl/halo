@@ -72,23 +72,26 @@ impl Host {
     /// Specify the host that should be this host's failover partner.
     ///
     /// Note that this function should be called exactly once to initialize the failover partner.
-    pub fn set_failover_partner(&self, partner: &Arc<Self>) -> crate::commands::HandledResult<()> {
-        let curr_partner = self.failover_partner.get();
-        if curr_partner.is_some() {
-            let curr_partner = curr_partner.unwrap().as_ref().unwrap();
-            if !Arc::ptr_eq(&partner, curr_partner) {
-                eprintln!(
-                    "Host '{}' already has failover partner '{}'!",
-                    self.name(),
-                    curr_partner.name()
-                );
-                return crate::commands::HandledResult::Err(crate::commands::HandledError {});
-            }
-        } else {
-            self.failover_partner
-                .get_or_init(|| Some(Arc::clone(partner)));
-        }
-        Ok(())
+    pub fn set_failover_partner(
+        &self,
+        partner: Option<Arc<Self>>,
+    ) -> crate::commands::HandledResult<()> {
+        let new_partner = match partner {
+            Some(fp) => Some(Arc::clone(&fp)),
+            None => None,
+        };
+        use crate::commands::Handle;
+        self.failover_partner.set(new_partner).handle_err(|_e| {
+            let curr_partner = match self.failover_partner.get().unwrap() {
+                Some(fp) => fp.name(),
+                None => "None",
+            };
+            eprintln!(
+                "failed to set failover partner: host '{}' already has failover partner '{}'!",
+                self.name(),
+                curr_partner
+            );
+        })
     }
 
     /// Retrieve a reference to this host's failover partner.
