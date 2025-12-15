@@ -76,15 +76,12 @@ impl Host {
         &self,
         partner: Option<Arc<Self>>,
     ) -> crate::commands::HandledResult<()> {
-        let new_partner = match partner {
-            Some(fp) => Some(Arc::clone(&fp)),
-            None => None,
-        };
+        let new_partner = partner.map(|fp| Arc::clone(&fp));
         use crate::commands::Handle;
         self.failover_partner.set(new_partner).handle_err(|_e| {
             let curr_partner = match self.failover_partner.get().unwrap() {
                 Some(fp) => fp.name(),
-                None => "None",
+                None => "<none>",
             };
             eprintln!(
                 "failed to set failover partner: host '{}' already has failover partner '{}'!",
