@@ -38,7 +38,7 @@ use crate::{halo_capnp::halo_mgmt, Cluster};
 /// A `HandledError` inentionally has no data about what the specific error was; the process of
 /// handling the error "consumes" that information, and it is no longer needed as the error was
 /// already appropriately handled.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct HandledError {}
 
 pub type HandledResult<T> = std::result::Result<T, HandledError>;
