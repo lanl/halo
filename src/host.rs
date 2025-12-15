@@ -72,28 +72,31 @@ impl Host {
     /// Specify the host that should be this host's failover partner.
     ///
     /// Note that this function should be called exactly once to initialize the failover partner.
-    pub fn set_failover_partner(&self, partner: &Arc<Self>) {
+    pub fn set_failover_partner(&self, partner: &Arc<Self>) -> crate::commands::HandledResult<()> {
         let curr_partner = self.failover_partner.get();
         if curr_partner.is_some() {
             let curr_partner = curr_partner.unwrap().as_ref().unwrap();
-            if ! Arc::ptr_eq(&partner, curr_partner) {
-                panic!("Host '{}' already has failover partner '{}'!", self.name(), curr_partner.name());
+            if !Arc::ptr_eq(&partner, curr_partner) {
+                eprintln!(
+                    "Host '{}' already has failover partner '{}'!",
+                    self.name(),
+                    curr_partner.name()
+                );
+                return crate::commands::HandledResult::Err(crate::commands::HandledError {});
             }
         } else {
-            self.failover_partner.get_or_init(|| {
-                Some(Arc::clone(partner))
-            });
+            self.failover_partner
+                .get_or_init(|| Some(Arc::clone(partner)));
         }
+        Ok(())
     }
 
     /// Retrieve a reference to this host's failover partner.
     pub fn failover_partner(&self) -> Option<Arc<Host>> {
         match self.failover_partner.get() {
-            Some(val) => {
-                match val {
-                    Some(fp) => Some(fp.clone()),
-                    None => None,
-                }
+            Some(val) => match val {
+                Some(fp) => Some(fp.clone()),
+                None => None,
             },
             None => None,
         }
