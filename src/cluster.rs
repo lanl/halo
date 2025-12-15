@@ -127,15 +127,41 @@ impl Cluster {
             .collect();
 
         for config_host in config.hosts.into_iter() {
-            let host = Arc::clone(hosts.get(&config_host.hostname).unwrap());
+            let host = hosts
+                .get(&config_host.hostname)
+                .ok_or(())
+                .handle_err(|_e| {
+                    eprintln!(
+                        "failed to find host '{}' in cluster config",
+                        config_host.hostname
+                    );
+                })?;
+            let host = Arc::clone(host);
 
             let failover_host: Option<Arc<Host>> = match &config.failover_pairs {
                 Some(pairs) => {
-                    let hostname = get_failover_partner(pairs, &config_host.hostname).unwrap();
-                    host.set_failover_partner(hosts.get(hostname).unwrap());
-                    // TODO: rather than unwrap() here, return an error to let the user know the
-                    // config was invalid:
-                    Some(Arc::clone(hosts.get(hostname).unwrap()))
+                    let failover_hostname = get_failover_partner(pairs, &config_host.hostname)
+                        .ok_or(())
+                        .handle_err(|_e| {
+                            eprintln!(
+                                "failed to find failover partner for host '{}' in cluster config",
+                                config_host.hostname
+                            );
+                        })?;
+                    let failover_host =
+                        hosts.get(failover_hostname).ok_or(()).handle_err(|_e| {
+                            eprintln!(
+                                "failed to find failover host '{}' in cluster config",
+                                failover_hostname
+                            );
+                        })?;
+                    host.set_failover_partner(failover_host).handle_err(|_e| {
+                        eprintln!(
+                            "failed to set failover partner '{}' for host '{}'",
+                            failover_hostname, config_host.hostname
+                        )
+                    })?;
+                    Some(Arc::clone(failover_host))
                 }
                 None => None,
             };
@@ -293,7 +319,10 @@ impl Cluster {
 
 /// Given a list `pairs` of failover pairs, and a hostname `name`, return its partner, if one
 /// exists.
-pub fn get_failover_partner<'pairs>(pairs: &'pairs [Vec<String>], name: &str) -> Option<&'pairs str> {
+pub fn get_failover_partner<'pairs>(
+    pairs: &'pairs [Vec<String>],
+    name: &str,
+) -> Option<&'pairs str> {
     for pair in pairs.iter() {
         if name == pair[0] {
             return Some(&pair[1]);
