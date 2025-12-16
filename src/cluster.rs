@@ -127,15 +127,12 @@ impl Cluster {
             .collect();
 
         for config_host in config.hosts.into_iter() {
-            let host = hosts
-                .get(&config_host.hostname)
-                .ok_or(())
-                .handle_err(|_e| {
-                    eprintln!(
-                        "failed to find host '{}' in cluster config",
-                        config_host.hostname
-                    );
-                })?;
+            let host = hosts.get(&config_host.hostname).ok_or(()).handle_err(|_| {
+                eprintln!(
+                    "failed to find host '{}' in cluster config",
+                    config_host.hostname
+                );
+            })?;
             let host = Arc::clone(host);
 
             let (failover_hostname, failover_host): (&str, Option<Arc<Host>>) =
@@ -143,14 +140,14 @@ impl Cluster {
                     Some(pairs) => {
                         let failover_hostname = get_failover_partner(pairs, &config_host.hostname)
                             .ok_or(())
-                            .handle_err(|_e| {
+                            .handle_err(|_| {
                                 eprintln!(
                                 "failed to find failover partner for host '{}' in cluster config",
                                 config_host.hostname
                             );
                             })?;
                         let failover_host =
-                            hosts.get(failover_hostname).ok_or(()).handle_err(|_e| {
+                            hosts.get(failover_hostname).ok_or(()).handle_err(|_| {
                                 eprintln!(
                                     "failed to find failover host '{}' in cluster config",
                                     failover_hostname
@@ -163,7 +160,7 @@ impl Cluster {
             // NOTE: .clone() needed dur to later use by 'rg', which may not need 'failover_host'
             // in the future.
             host.set_failover_partner(failover_host.clone())
-                .handle_err(|_e| {
+                .handle_err(|_| {
                     eprintln!(
                         "failed to set failover partner '{}' for host '{}'",
                         failover_hostname, config_host.hostname
