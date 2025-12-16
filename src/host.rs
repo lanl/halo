@@ -12,6 +12,8 @@ use std::{
 
 use clap::ValueEnum;
 
+use crate::commands::Handle;
+
 #[derive(Debug, Clone)]
 struct HostAddress {
     name: String,
@@ -77,8 +79,7 @@ impl Host {
         partner: Option<Arc<Self>>,
     ) -> crate::commands::HandledResult<()> {
         let new_partner = partner.map(|fp| Arc::clone(&fp));
-        use crate::commands::Handle;
-        self.failover_partner.set(new_partner).handle_err(|_e| {
+        self.failover_partner.set(new_partner).handle_err(|_| {
             let curr_partner = match self.failover_partner.get().unwrap() {
                 Some(fp) => fp.name(),
                 None => "<none>",
