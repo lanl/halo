@@ -93,7 +93,7 @@ impl Host {
     }
 
     /// Retrieve a reference to this host's failover partner.
-    pub fn failover_partner(&self) -> Option<Arc<Host>> {
+    pub fn failover_partner(&self) -> Option<&Arc<Host>> {
         self.failover_partner
             .get()
             .expect(&format!(
@@ -101,7 +101,6 @@ impl Host {
                 self.name()
             ))
             .as_ref()
-            .map(|fp| Arc::clone(&fp))
     }
 
     /// Attempt to power on or off this host.
