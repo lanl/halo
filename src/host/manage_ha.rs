@@ -4,6 +4,7 @@
 //! Management of a failover cluster with HA pairs.
 
 use std::{
+    cell::{Ref, RefCell},
     future::Future,
     hash::{Hash, Hasher},
     pin::Pin,
@@ -114,6 +115,35 @@ impl Hash for ResourceToken {
     }
 }
 
+struct Client {
+    inner: RefCell<Option<ocf_resource_agent::Client>>,
+}
+
+impl Client {
+    fn new() -> Self {
+        Self {
+            inner: RefCell::new(None),
+        }
+    }
+
+    async fn get(&self, host: &Host) -> Ref<'_, ocf_resource_agent::Client> {
+        if self.inner.borrow().is_none() {
+            let client = host
+                .get_client()
+                .await
+                .expect("TODO: handle error creating client.");
+            let _ = self.inner.borrow_mut().insert(client);
+        }
+
+        Ref::map(self.inner.borrow(), |inner| inner.as_ref().unwrap())
+    }
+
+    fn clear(&self) {
+        let _ = self.inner.borrow_mut().take();
+    }
+}
+
+#[allow(clippy::await_holding_refcell_ref)]
 impl Host {
     /// The main management loop for managing a particular host.
     ///
@@ -133,10 +163,7 @@ impl Host {
     /// stopping all management activities on that host, fencing the host, and then notifying the
     /// partner host's task to assume management of those resources.
     pub async fn manage_ha(&self, cluster: &Cluster) {
-        let client = match self.get_client().await {
-            Ok(c) => c,
-            Err(_) => todo!(),
-        };
+        let client = Client::new();
 
         let mut state = HostState::new();
 
@@ -153,14 +180,16 @@ impl Host {
         // Check whether this host's primary resources are running locally, in order to determine if
         // they should be managed locally or if the failover partner needs to check if they are
         // failed over.
-        let manage_these_rgs = self.startup(cluster, &client).await;
+        let manage_these_rgs = self.startup(cluster, client.get(self).await).await;
 
         // Create a task to manage each resource group that is currently running on this host.
         for token in manage_these_rgs {
             let id = token.id.clone();
-            tasks.push(Box::pin(
-                self.manage_resource_group(cluster, token, &client),
-            ));
+            tasks.push(Box::pin(self.manage_resource_group(
+                cluster,
+                token,
+                client.get(self).await,
+            )));
             state.outstanding_resource_tasks.insert(id);
         }
 
@@ -175,14 +204,20 @@ impl Host {
                 // running already, this Host proceeds to manage them; otherwise, the original Host
                 // should manage them.
                 Message::CheckResourceGroup => {
+                    let client_ref = client.get(self).await;
                     if let Some(resource_token) = self
-                        .startup_one_rg(event.resource_group, cluster, &client, false)
+                        .startup_one_rg(
+                            event.resource_group,
+                            cluster,
+                            Ref::clone(&client_ref),
+                            false,
+                        )
                         .await
                     {
                         tasks.push(Box::pin(self.manage_resource_group(
                             cluster,
                             resource_token,
-                            &client,
+                            client_ref,
                         )));
                         state.outstanding_resource_tasks.insert(id);
                     };
@@ -196,7 +231,7 @@ impl Host {
                     tasks.push(Box::pin(self.manage_resource_group(
                         cluster,
                         event.resource_group,
-                        &client,
+                        client.get(self).await,
                     )));
                     state.outstanding_resource_tasks.insert(id);
                     tasks.push(Box::pin(self.receive_message()));
@@ -205,14 +240,14 @@ impl Host {
                 // that this Host should be fenced, and resources currently on it should be failed
                 // over.
                 Message::RequestFailover => {
-                    self.request_failover(&mut state, cluster, event.resource_group)
+                    self.request_failover(&mut state, cluster, event.resource_group, &client)
                         .await;
                 }
                 // Child task for management of this resource exited after being instructed to
                 // cancel management.
                 Message::TaskCanceled => {
                     if state.failover_requested {
-                        self.request_failover(&mut state, cluster, event.resource_group)
+                        self.request_failover(&mut state, cluster, event.resource_group, &client)
                             .await;
                         continue;
                     }
@@ -223,7 +258,13 @@ impl Host {
         }
     }
 
-    async fn request_failover(&self, state: &mut HostState, cluster: &Cluster, rg: ResourceToken) {
+    async fn request_failover(
+        &self,
+        state: &mut HostState,
+        cluster: &Cluster,
+        rg: ResourceToken,
+        client: &Client,
+    ) {
         let removed = state.outstanding_resource_tasks.remove(&rg.id);
         if !removed {
             panic!("Unexpected to receive a failover request for a task not oustanding.");
@@ -233,7 +274,7 @@ impl Host {
 
         if state.outstanding_resource_tasks.is_empty() {
             // If every resource management task has been cancelled, fencing should proceed:
-            self.do_failover(state).await;
+            self.do_failover(state, client).await;
         } else {
             // If there are outstanding resource group tasks, they need to be notified to exit.
             // However, they must only be notified once, so only do this if this is the first task
@@ -249,11 +290,13 @@ impl Host {
         }
     }
 
-    async fn do_failover(&self, state: &mut HostState) {
+    async fn do_failover(&self, state: &mut HostState, client: &Client) {
         self.do_fence(FenceCommand::Off)
             .expect("Fencing failed... TODO: handle this case...");
 
         println!("Host {} did fence off...", self.id());
+
+        client.clear();
 
         for mut rg in state.resources_in_transit.drain() {
             let partner = self.failover_partner().unwrap();
@@ -287,7 +330,7 @@ impl Host {
     async fn startup(
         &self,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: Ref<'_, ocf_resource_agent::Client>,
     ) -> Vec<ResourceToken> {
         // Mint tokens for each resource group:
         let my_resources = cluster
@@ -298,7 +341,7 @@ impl Host {
             });
 
         let statuses: JoinAll<_> = my_resources
-            .map(|token| self.startup_one_rg(token, cluster, client, true))
+            .map(|token| self.startup_one_rg(token, cluster, Ref::clone(&client), true))
             .collect();
 
         statuses.await.into_iter().flatten().collect()
@@ -326,13 +369,13 @@ impl Host {
         &self,
         mut token: ResourceToken,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: Ref<'_, ocf_resource_agent::Client>,
         checking_home: bool,
     ) -> Option<ResourceToken> {
         let rg = cluster.get_resource_group(&token.id);
         let status = remote_ocf_operation_given_client(
             &rg.root,
-            client,
+            &client,
             ocf_resource_agent::Operation::Monitor,
         )
         .await;
@@ -364,6 +407,7 @@ impl Host {
             token.location = Location::Away;
             new_message(token, Message::CheckResourceGroup)
         } else {
+            token.location = Location::Home;
             new_message(token, Message::ManageResourceGroup)
         };
 
@@ -379,7 +423,7 @@ impl Host {
         &self,
         cluster: &Cluster,
         token: ResourceToken,
-        client: &ocf_resource_agent::Client,
+        client: Ref<'_, ocf_resource_agent::Client>,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
 
@@ -395,7 +439,7 @@ impl Host {
 
             // If the resource management loop returns, it must be because it observed an error
             // condition.
-            err = rg.manage_loop(client, token.location) => {
+            err = rg.manage_loop(&client, token.location) => {
                 let err = err.unwrap_err();
                 eprintln!(
                     "{} received error {err} for resource group {}",
