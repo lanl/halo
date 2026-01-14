@@ -82,7 +82,6 @@ impl ResourceGroup {
         let statuses = future::join_all(futures).await;
 
         for (resource, status) in statuses.iter() {
-            println!("got status {status:?} for resource {}", resource.id);
             match status {
                 Ok(AgentReply::Success(ocf::Status::Success)) => {
                     resource.set_status(if loc == Location::Home {
