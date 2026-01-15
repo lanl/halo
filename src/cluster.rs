@@ -32,13 +32,28 @@ pub struct Cluster {
     /// A reference to the shared manager context which contains the verbose output stream and a
     /// copy of the CLI arguments.
     pub context: Arc<MgrContext>,
+
+    /// True if this is a failover cluster (hosts are in high-availability pairs)
+    failover: bool,
 }
 
 impl Cluster {
     pub async fn main_loop(&self) {
-        let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(self)).collect();
+        if self.context.args.manage_resources {
+            if self.failover {
+                let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(self)).collect();
 
-        let _ = future::join_all(futures).await;
+                let _ = future::join_all(futures).await;
+            } else {
+                todo!("Implement management loop for non-HA cluster.");
+            }
+        } else if self.failover {
+            todo!("Implement observer-only loop for HA cluster.")
+        } else {
+            let futures: Vec<_> = self.hosts.values().map(|h| h.observe(self)).collect();
+
+            let _ = future::join_all(futures).await;
+        };
     }
 
     pub fn num_zpools(&self) -> u32 {
@@ -128,6 +143,7 @@ impl Cluster {
             num_zpools: 0,
             num_targets: 0,
             context: Arc::clone(&context),
+            failover: false,
         };
 
         let hosts: HashMap<String, Arc<Host>> = config
@@ -148,6 +164,7 @@ impl Cluster {
             let (failover_hostname, failover_host): (&str, Option<Arc<Host>>) =
                 match &config.failover_pairs {
                     Some(pairs) => {
+                        new.failover = true;
                         let failover_hostname = get_failover_partner(pairs, &config_host.hostname)
                             .ok_or(())
                             .handle_err(|_| {
