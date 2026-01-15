@@ -5,21 +5,17 @@ use std::{
     collections::{HashMap, HashSet},
     error::Error,
     fmt,
-    io::{self, Read, Write},
+    io::{Read, Write},
     process::{Command, Stdio},
     sync::{Arc, Mutex, OnceLock},
 };
 
-use {
-    capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem},
-    clap::ValueEnum,
-    futures::AsyncReadExt,
-    tokio::sync::mpsc,
-};
+use {clap::ValueEnum, tokio::sync::mpsc};
 
 use crate::{commands::Handle, halo_capnp::*};
 
 mod manage_ha;
+mod observe;
 
 use manage_ha::HostMessage;
 
@@ -125,27 +121,6 @@ impl Host {
             "Host channel on {} unexpectedly closed!",
             self.id()
         ))
-    }
-
-    async fn get_client(&self) -> io::Result<ocf_resource_agent::Client> {
-        let stream = tokio::net::TcpStream::connect(self.address()).await?;
-        stream.set_nodelay(true).expect("setting nodelay failed.");
-
-        let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
-
-        let rpc_network = Box::new(twoparty::VatNetwork::new(
-            futures::io::BufReader::new(reader),
-            futures::io::BufWriter::new(writer),
-            rpc_twoparty_capnp::Side::Client,
-            Default::default(),
-        ));
-        let mut rpc_system = RpcSystem::new(rpc_network, None);
-        let client: ocf_resource_agent::Client =
-            rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
-
-        tokio::task::spawn_local(rpc_system);
-
-        Ok(client)
     }
 
     /// Attempt to power on or off this host.

@@ -4,7 +4,7 @@
 //! Management of a failover cluster with HA pairs.
 
 use std::{
-    cell::{Ref, RefCell},
+    cell::Ref,
     future::Future,
     hash::{Hash, Hasher},
     pin::Pin,
@@ -115,34 +115,6 @@ impl Hash for ResourceToken {
     }
 }
 
-struct Client {
-    inner: RefCell<Option<ocf_resource_agent::Client>>,
-}
-
-impl Client {
-    fn new() -> Self {
-        Self {
-            inner: RefCell::new(None),
-        }
-    }
-
-    async fn get(&self, host: &Host) -> Ref<'_, ocf_resource_agent::Client> {
-        if self.inner.borrow().is_none() {
-            let client = host
-                .get_client()
-                .await
-                .expect("TODO: handle error creating client.");
-            let _ = self.inner.borrow_mut().insert(client);
-        }
-
-        Ref::map(self.inner.borrow(), |inner| inner.as_ref().unwrap())
-    }
-
-    fn clear(&self) {
-        let _ = self.inner.borrow_mut().take();
-    }
-}
-
 #[allow(clippy::await_holding_refcell_ref)]
 impl Host {
     /// The main management loop for managing a particular host.
@@ -163,7 +135,7 @@ impl Host {
     /// stopping all management activities on that host, fencing the host, and then notifying the
     /// partner host's task to assume management of those resources.
     pub async fn manage_ha(&self, cluster: &Cluster) {
-        let client = Client::new();
+        let client = ClientWrapper::new(self.address().to_string());
 
         let mut state = HostState::new();
 
@@ -180,7 +152,7 @@ impl Host {
         // Check whether this host's primary resources are running locally, in order to determine if
         // they should be managed locally or if the failover partner needs to check if they are
         // failed over.
-        let manage_these_rgs = self.startup(cluster, client.get(self).await).await;
+        let manage_these_rgs = self.startup(cluster, client.get().await).await;
 
         // Create a task to manage each resource group that is currently running on this host.
         for token in manage_these_rgs {
@@ -188,7 +160,7 @@ impl Host {
             tasks.push(Box::pin(self.manage_resource_group(
                 cluster,
                 token,
-                client.get(self).await,
+                client.get().await,
             )));
             state.outstanding_resource_tasks.insert(id);
         }
@@ -204,7 +176,7 @@ impl Host {
                 // running already, this Host proceeds to manage them; otherwise, the original Host
                 // should manage them.
                 Message::CheckResourceGroup => {
-                    let client_ref = client.get(self).await;
+                    let client_ref = client.get().await;
                     if let Some(resource_token) = self
                         .startup_one_rg(
                             event.resource_group,
@@ -231,7 +203,7 @@ impl Host {
                     tasks.push(Box::pin(self.manage_resource_group(
                         cluster,
                         event.resource_group,
-                        client.get(self).await,
+                        client.get().await,
                     )));
                     state.outstanding_resource_tasks.insert(id);
                     tasks.push(Box::pin(self.receive_message()));
@@ -263,7 +235,7 @@ impl Host {
         state: &mut HostState,
         cluster: &Cluster,
         rg: ResourceToken,
-        client: &Client,
+        client: &ClientWrapper,
     ) {
         let removed = state.outstanding_resource_tasks.remove(&rg.id);
         if !removed {
@@ -290,7 +262,7 @@ impl Host {
         }
     }
 
-    async fn do_failover(&self, state: &mut HostState, client: &Client) {
+    async fn do_failover(&self, state: &mut HostState, client: &ClientWrapper) {
         self.do_fence(FenceCommand::Off)
             .expect("Fencing failed... TODO: handle this case...");
 

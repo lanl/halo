@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{env, fmt, io};
+use std::{
+    cell::{Ref, RefCell},
+    env, fmt, io,
+};
 
 use {futures::AsyncReadExt, rustls::pki_types::ServerName};
 
@@ -207,5 +210,62 @@ fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource
         let mut arg = args.reborrow().get(i as u32);
         arg.set_key(param.0.clone());
         arg.set_value(param.1.clone());
+    }
+}
+
+/// A ClientWrapper manages a connection to a remote agent. It allows a set of tasks to share a
+/// connection, so that multiple resourcs can be managed without needing a separate connection per
+/// resource.
+///
+/// If a connection breaks, the ClientWrapper allows the set of tasks using that connection to
+/// collectively begin using a single new connection.
+pub struct ClientWrapper {
+    address: String,
+    inner: RefCell<Option<ocf_resource_agent::Client>>,
+}
+
+impl ClientWrapper {
+    pub fn new(address: String) -> Self {
+        Self {
+            address,
+            inner: RefCell::new(None),
+        }
+    }
+
+    pub async fn get(&self) -> Ref<'_, ocf_resource_agent::Client> {
+        if self.inner.borrow().is_none() {
+            let client = self
+                .get_client()
+                .await
+                .expect("TODO: handle error creating client.");
+            let _ = self.inner.borrow_mut().insert(client);
+        }
+
+        Ref::map(self.inner.borrow(), |inner| inner.as_ref().unwrap())
+    }
+
+    pub fn clear(&self) {
+        let _ = self.inner.borrow_mut().take();
+    }
+
+    async fn get_client(&self) -> io::Result<ocf_resource_agent::Client> {
+        let stream = tokio::net::TcpStream::connect(&self.address).await?;
+        stream.set_nodelay(true).expect("setting nodelay failed.");
+
+        let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+
+        let rpc_network = Box::new(twoparty::VatNetwork::new(
+            futures::io::BufReader::new(reader),
+            futures::io::BufWriter::new(writer),
+            rpc_twoparty_capnp::Side::Client,
+            Default::default(),
+        ));
+        let mut rpc_system = RpcSystem::new(rpc_network, None);
+        let client: ocf_resource_agent::Client =
+            rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+
+        tokio::task::spawn_local(rpc_system);
+
+        Ok(client)
     }
 }
