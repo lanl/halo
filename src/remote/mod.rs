@@ -180,7 +180,7 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
                 pry!(results.get().get_result()).set_ok(s);
             }
             Err(e) => {
-                pry!(results.get().get_result()).set_err(format!("{e}"));
+                pry!(results.get().get_result()).set_err(e);
             }
         };
 

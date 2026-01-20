@@ -6,7 +6,7 @@
 //! This module implements OCF resource agent operations on nodes which
 //! runs a resource.
 
-use std::{io, process::Command};
+use std::process::Command;
 
 /// OCF Resource Agent operations that can be performed on a resource.
 #[derive(Debug)]
@@ -117,7 +117,7 @@ pub fn do_operation(
     op: Operation,
     ocf_operation_args: &Arguments,
     cli_args: &crate::remote::Cli,
-) -> io::Result<i32> {
+) -> Result<i32, String> {
     let test_id = match &cli_args.test_id {
         Some(id) => id.clone(),
         None => std::process::id().to_string(),
@@ -129,18 +129,20 @@ pub fn do_operation(
         .unwrap_or(std::env::var("OCF_ROOT").unwrap_or(OCF_ROOT.to_string()));
     let script = format!("{ocf_root}/resource.d/{resource}");
 
-    let output = Command::new(script)
+    let output = Command::new(&script)
         .args([op.to_string()])
         .env("OCF_ROOT", ocf_root)
         .env("HALO_TEST_ID", test_id)
         .envs(ocf_operation_args.args.clone())
-        .output()?;
+        .output()
+        .map_err(|e| format!("Could not run command {script}: {e}"))?;
 
     let exit_code = match output.status.code() {
         Some(code) => code,
         None => {
-            eprintln!("Could not get exit status from Resource Agent");
-            return Err(io::Error::from(io::ErrorKind::Interrupted));
+            return Err(String::from(
+                "Could not get exit status from Resource Agent",
+            ));
         }
     };
 
