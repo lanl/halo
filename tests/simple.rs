@@ -8,11 +8,12 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use halo_lib::{
-        halo_capnp::AgentReply,
-        host::FenceCommand,
-        remote::ocf,
-        resource::{Location, Resource, ResourceStatus},
-        test_env::*,
+        halo_capnp::AgentReply, host::FenceCommand, remote::ocf, resource::Location, test_env::*,
+    };
+
+    #[cfg(feature = "slow_tests")]
+    use halo_lib::{
+        resource::{Resource, ResourceStatus},
         Buffer,
     };
 
@@ -115,7 +116,6 @@ mod tests {
 
         // start a manager who shares the management context with this test:
         env.start_manager(Arc::clone(&context));
-
         let resources: Vec<&Resource> = cluster.resources().collect();
 
         // Check that all resources appear stopped
