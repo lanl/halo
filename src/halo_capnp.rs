@@ -3,14 +3,14 @@
 
 use std::{
     cell::{Ref, RefCell},
-    env, fmt, io,
+    env, io,
 };
 
 use {futures::AsyncReadExt, rustls::pki_types::ServerName};
 
 use crate::{
     remote::ocf,
-    resource::{self, Location, Resource},
+    resource::{Location, Resource},
     tls::get_connector,
 };
 
@@ -26,40 +26,6 @@ type OperationRequest = ::capnp::capability::Request<
 
 type OcfOperationResults =
     ::capnp::capability::Response<ocf_resource_agent::operation_results::Owned>;
-
-pub type MonitorResults = ::capnp::capability::Response<halo_mgmt::monitor_results::Owned>;
-
-impl std::convert::From<resource::ResourceStatus> for halo_mgmt::Status {
-    fn from(stat: resource::ResourceStatus) -> Self {
-        match stat {
-            resource::ResourceStatus::Unknown => halo_mgmt::Status::Unknown,
-            resource::ResourceStatus::CheckingHome => halo_mgmt::Status::CheckingHome,
-            resource::ResourceStatus::RunningOnHome => halo_mgmt::Status::RunningOnHome,
-            resource::ResourceStatus::Stopped => halo_mgmt::Status::Stopped,
-            resource::ResourceStatus::CheckingAway => halo_mgmt::Status::CheckingAway,
-            resource::ResourceStatus::RunningOnAway => halo_mgmt::Status::RunningOnAway,
-            resource::ResourceStatus::Unrunnable => halo_mgmt::Status::Unrunnable,
-        }
-    }
-}
-
-impl fmt::Display for halo_mgmt::Status {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                halo_mgmt::Status::Unknown => "Unknown",
-                halo_mgmt::Status::CheckingHome => "Checking on home",
-                halo_mgmt::Status::RunningOnHome => "Home",
-                halo_mgmt::Status::Stopped => "Stopped",
-                halo_mgmt::Status::CheckingAway => "Checking on failover",
-                halo_mgmt::Status::RunningOnAway => "Failed over",
-                halo_mgmt::Status::Unrunnable => "Can't run anywhere",
-            }
-        )
-    }
-}
 
 #[derive(Debug)]
 pub enum AgentReply {

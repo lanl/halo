@@ -3,16 +3,9 @@
 
 use std::{io, sync::Arc};
 
-use {
-    capnp::capability::Promise,
-    capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem},
-    futures::AsyncReadExt,
-};
-
 use crate::{
     cluster,
     commands::{Handle, HandledResult},
-    halo_capnp::halo_mgmt,
     LogStream,
 };
 
@@ -33,78 +26,6 @@ impl MgrContext {
     }
 }
 
-struct HaloMgmtImpl {
-    cluster: Arc<cluster::Cluster>,
-}
-
-/// Implementation of the server side of the Management (CLI to local daemon) RPC interface.
-impl halo_mgmt::Server for HaloMgmtImpl {
-    fn monitor(
-        &mut self,
-        _params: halo_mgmt::MonitorParams,
-        mut results: halo_mgmt::MonitorResults,
-    ) -> Promise<(), ::capnp::Error> {
-        let cluster = &self.cluster;
-        let mut message = ::capnp::message::Builder::new_default();
-        let mut message = message.init_root::<halo_mgmt::cluster::Builder>();
-
-        let mut resource_messages = message
-            .reborrow()
-            // TODO: store the total number of resources in Cluster so that this extra iteration
-            // isn't necessary:
-            .init_resources(cluster.resources().collect::<Vec<_>>().len() as u32);
-
-        for (i, res) in cluster.resources().enumerate() {
-            let mut message = resource_messages.reborrow().get(i as u32);
-            message.set_status(res.get_status().into());
-            message.set_managed(res.get_managed());
-            let mut parameters = message
-                .reborrow()
-                .init_parameters(res.parameters.len() as u32);
-            for (i, (k, v)) in res.parameters.iter().enumerate() {
-                let mut param = parameters.reborrow().get(i as u32);
-                param.set_key(k);
-                param.set_value(v);
-            }
-        }
-
-        match results.get().set_status(message.into_reader()) {
-            Ok(_) => Promise::ok(()),
-            Err(e) => Promise::err(e),
-        }
-    }
-    fn set_managed(
-        &mut self,
-        params: halo_mgmt::SetManagedParams,
-        mut results: halo_mgmt::SetManagedResults,
-    ) -> Promise<(), ::capnp::Error> {
-        let params = pry!(params.get());
-        let resource = pry!(params.get_resource());
-        let managed = params.get_managed();
-
-        let mut error: Option<String> = Some(format!("Resource {:?} not found", resource));
-        for res in self.cluster.resources() {
-            if res.id == resource {
-                error = None;
-                if res.get_managed() == managed {
-                    error = Some(format!(
-                        "Resource {:?} is already {}",
-                        resource,
-                        if managed { "managed" } else { "unmanaged" }
-                    ));
-                } else {
-                    res.set_managed(managed);
-                }
-            }
-        }
-        match error {
-            Some(e) => pry!(results.get().get_res()).set_err(e),
-            None => pry!(results.get().get_res()).set_ok(()),
-        };
-
-        Promise::ok(())
-    }
-}
 
 /// Get a unix socket listener from a given socket path.
 ///
@@ -146,30 +67,8 @@ async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListen
 /// Main entrypoint for the command server.
 ///
 /// This listens for commands on a unix socket and acts on them.
-async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<cluster::Cluster>) {
-    let mgmt_client: halo_mgmt::Client = capnp_rpc::new_client(HaloMgmtImpl { cluster });
-
-    loop {
-        let (stream, _) = match listener.accept().await {
-            Ok(s) => s,
-            Err(e) => {
-                // XXX: why might accept() fail? How to properly handle error here?
-                eprintln!("Could not accept connection: {e}");
-                continue;
-            }
-        };
-        let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
-        let network = twoparty::VatNetwork::new(
-            futures::io::BufReader::new(reader),
-            futures::io::BufWriter::new(writer),
-            rpc_twoparty_capnp::Side::Server,
-            Default::default(),
-        );
-
-        let rpc_system = RpcSystem::new(Box::new(network), Some(mgmt_client.clone().client));
-
-        tokio::task::spawn_local(rpc_system);
-    }
+async fn server_main(_listener: tokio::net::UnixListener, _cluster: Arc<cluster::Cluster>) {
+    todo!()
 }
 
 /// Main entrypoint for the management service, which monitors and controls the state of
