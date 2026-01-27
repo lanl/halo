@@ -3,9 +3,7 @@
 
 use clap::Args;
 
-use crate::{
-    commands::{Cli, HandledResult},
-};
+use crate::commands::{Cli, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct StatusArgs {

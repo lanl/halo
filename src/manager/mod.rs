@@ -9,6 +9,8 @@ use crate::{
     LogStream,
 };
 
+mod http;
+
 /// An object that can be passed to manager functions holding some state that should be shared
 /// between these functions.
 #[derive(Debug)]
@@ -25,7 +27,6 @@ impl MgrContext {
         }
     }
 }
-
 
 /// Get a unix socket listener from a given socket path.
 ///
@@ -62,13 +63,6 @@ async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListen
             Err(e)
         }
     }
-}
-
-/// Main entrypoint for the command server.
-///
-/// This listens for commands on a unix socket and acts on them.
-async fn server_main(_listener: tokio::net::UnixListener, _cluster: Arc<cluster::Cluster>) {
-    todo!()
 }
 
 /// Main entrypoint for the management service, which monitors and controls the state of
@@ -113,7 +107,7 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
         let cluster = Arc::new(cluster);
 
         futures::join!(
-            server_main(listener, Arc::clone(&cluster)),
+            http::server_main(listener, Arc::clone(&cluster)),
             manager_main(cluster)
         );
     }));
