@@ -128,20 +128,14 @@ fn nodesets2hostnames(nodesets: &[String]) -> Result<Vec<String>, nodeset::NodeS
 }
 
 pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
-    if let Commands::Discover(args) = command {
-        return discover::discover(args);
-    };
-
-    if let Commands::Power(args) = command {
-        return power::power(cli, args);
-    }
-
-    if let Commands::Validate(args) = command {
-        return validate::validate(args);
-    }
-
-    if let Commands::Status(args) = command {
-        return status::status(cli, args);
+    match command {
+        Commands::Discover(args) => return discover::discover(args),
+        Commands::Power(args) => return power::power(cli, args),
+        Commands::Validate(args) => return validate::validate(args),
+        Commands::Status(args) => return status::status(cli, args),
+        Commands::Manage(args) => return manage::manage(cli, args),
+        Commands::Unmanage(args) => return manage::unmanage(cli, args),
+        _ => {}
     }
 
     let rt = tokio::runtime::Runtime::new()
@@ -150,8 +144,6 @@ pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
     rt.block_on(async {
         let context_arc = std::sync::Arc::new(crate::manager::MgrContext::new(cli.clone()));
         match command {
-            Commands::Manage(args) => manage::manage(cli, args).await,
-            Commands::Unmanage(args) => manage::unmanage(cli, args).await,
             Commands::Start => {
                 let cluster = Cluster::new(context_arc)?;
                 start::start(cluster).await
