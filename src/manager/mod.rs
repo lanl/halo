@@ -9,7 +9,7 @@ use crate::{
     LogStream,
 };
 
-mod http;
+pub mod http;
 
 /// An object that can be passed to manager functions holding some state that should be shared
 /// between these functions.

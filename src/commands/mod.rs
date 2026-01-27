@@ -140,6 +140,10 @@ pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
         return validate::validate(args);
     }
 
+    if let Commands::Status(args) = command {
+        return status::status(cli, args);
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .handle_err(|e| eprintln!("Error launching tokio runtime: {e}"))?;
 
@@ -148,7 +152,6 @@ pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
         match command {
             Commands::Manage(args) => manage::manage(cli, args).await,
             Commands::Unmanage(args) => manage::unmanage(cli, args).await,
-            Commands::Status(args) => status::status(cli, args).await,
             Commands::Start => {
                 let cluster = Cluster::new(context_arc)?;
                 start::start(cluster).await
