@@ -46,7 +46,7 @@ fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {
     }
 }
 
-// Mutable state related to the ongoing management of the Host.
+/// Mutable state related to the ongoing management of the Host.
 struct HostState {
     /// Tracker for the outstanding child tasks that are managing resources on this
     /// host. This is used for making sure that every outstanding task is cancelled before an
@@ -412,7 +412,6 @@ impl Host {
             // If the resource management loop returns, it must be because it observed an error
             // condition.
             err = rg.manage_loop(&client, token.location) => {
-                let err = err.unwrap_err();
                 eprintln!(
                     "{} received error {err} for resource group {}",
                     self.id(),
