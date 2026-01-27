@@ -19,10 +19,7 @@ use {
 
 use clap::{Parser, Subcommand};
 
-use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
-use futures::AsyncReadExt;
-
-use crate::{halo_capnp::halo_mgmt, Cluster};
+use crate::Cluster;
 
 /// A `HandledError` represents an error that has already been handled. When you call a function
 /// that returns a `HandledError` or `HandledResult`, you don't need to do anything with that error,
@@ -163,29 +160,4 @@ pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
             _ => unreachable!(),
         }
     })
-}
-
-/// Get an RPC client that is used to make RPC calls from the CLI programs to the management
-/// service.
-async fn get_rpc_client(cli: &Cli) -> HandledResult<halo_mgmt::Client> {
-    let addr = match &cli.socket {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-    let stream = tokio::net::UnixStream::connect(addr)
-        .await
-        .handle_err(|e| eprintln!("Could not connect to socket \"{addr}\": {e}"))?;
-    let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
-    let rpc_network = Box::new(twoparty::VatNetwork::new(
-        futures::io::BufReader::new(reader),
-        futures::io::BufWriter::new(writer),
-        rpc_twoparty_capnp::Side::Client,
-        Default::default(),
-    ));
-    let mut rpc_system = RpcSystem::new(rpc_network, None);
-    let client: halo_mgmt::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
-
-    tokio::task::spawn_local(rpc_system);
-
-    Ok(client)
 }
