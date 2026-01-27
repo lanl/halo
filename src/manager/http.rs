@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use {
     axum::{routing::get, Json, Router},
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
 };
 
 use crate::{
@@ -28,17 +28,17 @@ pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluste
     axum::serve(listener, server).await.unwrap();
 }
 
-#[derive(Serialize)]
-struct ClusterJson {
-    resources: Vec<ResourceJson>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ClusterJson {
+    pub resources: Vec<ResourceJson>,
 }
 
-#[derive(Serialize)]
-struct ResourceJson {
-    kind: String,
-    parameters: HashMap<String, String>,
-    status: String,
-    managed: bool,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResourceJson {
+    pub kind: String,
+    pub parameters: HashMap<String, String>,
+    pub status: String,
+    pub managed: bool,
 }
 
 impl ResourceJson {
