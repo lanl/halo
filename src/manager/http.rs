@@ -4,7 +4,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use {
-    axum::{routing::get, Json, Router},
+    axum::{
+        extract::Path,
+        http::StatusCode,
+        routing::{get, patch},
+        Json, Router,
+    },
     serde::{Deserialize, Serialize},
 };
 
@@ -17,13 +22,21 @@ use crate::{
 ///
 /// This listens for commands on a unix socket and acts on them.
 pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluster>) {
-    let server = Router::new().route(
-        "/status",
-        get({
-            let cluster = Arc::clone(&cluster);
-            || get_status(cluster)
-        }),
-    );
+    let server = Router::new()
+        .route(
+            "/status",
+            get({
+                let cluster = Arc::clone(&cluster);
+                || get_status(cluster)
+            }),
+        )
+        .route(
+            "/resources/{id}",
+            patch({
+                let cluster = Arc::clone(&cluster);
+                |path, payload| set_managed(path, payload, cluster)
+            }),
+        );
 
     axum::serve(listener, server).await.unwrap();
 }
@@ -67,4 +80,24 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
     };
 
     Json(status)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetManagedArgs {
+    pub managed: bool,
+}
+
+async fn set_managed(
+    Path(resource_id): Path<String>,
+    Json(payload): Json<SetManagedArgs>,
+    cluster: Arc<Cluster>,
+) -> Result<(), StatusCode> {
+    for res in cluster.resources() {
+        if res.id == resource_id {
+            *res.managed.lock().unwrap() = payload.managed;
+            return Ok(());
+        }
+    }
+
+    Err(StatusCode::NOT_FOUND)
 }
