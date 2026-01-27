@@ -5,38 +5,47 @@
 
 use std::cell::Ref;
 
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::future;
 
 use crate::Cluster;
 
 use super::*;
 
-struct Event {}
-
+#[allow(clippy::await_holding_refcell_ref)]
 impl Host {
     pub async fn observe(&self, cluster: &Cluster) {
         let client = ClientWrapper::new(self.address().to_string());
 
-        let mut tasks: FuturesUnordered<_> = FuturesUnordered::new();
+        loop {
+            {
+                // Inner scope needed to ensure that all `client_ref`s are dropped before
+                // client.clear() below...
+                let client_ref = client.get().await;
 
-        let my_resources = cluster
-            .host_home_resource_groups(self)
-            .map(|rg| rg.id().to_string());
+                let futures: Vec<_> = cluster
+                    .host_home_resource_groups(self)
+                    .map(|rg| {
+                        self.observe_resource_group(cluster, rg.id(), Ref::clone(&client_ref))
+                    })
+                    .collect();
 
-        for rg in my_resources {
-            tasks.push(self.observe_resource_group(rg, client.get().await));
-        }
+                let _ = future::join_all(futures).await;
+            }
 
-        while let Some(_event) = tasks.next().await {
-            todo!()
+            // Once all tasks exited (because an RPC error occurred), just wait a bit and try again:
+            client.clear();
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     }
 
     async fn observe_resource_group(
         &self,
-        _rg: String,
-        _client: Ref<'_, ocf_resource_agent::Client>,
-    ) -> Event {
-        Event {}
+        cluster: &Cluster,
+        rg: &str,
+        client: Ref<'_, ocf_resource_agent::Client>,
+    ) {
+        let rg = cluster.get_resource_group(rg);
+        let err = rg.observe_loop(&client).await;
+        eprintln!("received error: {err:?}");
     }
 }

@@ -70,6 +70,17 @@ impl ResourceGroup {
         body().await.unwrap_err()
     }
 
+    pub async fn observe_loop(&self, client: &ocf_resource_agent::Client) -> capnp::Error {
+        let body = async || -> Result<(), capnp::Error> {
+            loop {
+                self.update_resources(client, Location::Home).await?;
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            }
+        };
+
+        body().await.unwrap_err()
+    }
+
     /// Check the statuses of each of the resources in this resource group.
     ///
     /// This function updates the status of each resource (zpool and target) in the resource
