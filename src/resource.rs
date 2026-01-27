@@ -48,28 +48,42 @@ impl ResourceGroup {
         &self,
         client: &ocf_resource_agent::Client,
         loc: Location,
-    ) -> Result<(), capnp::Error> {
+    ) -> capnp::Error {
         println!("managing rg {}", self.id());
-        loop {
-            self.update_resources(client, loc).await?;
-            match self.get_overall_status() {
-                ResourceStatus::Stopped => self.try_start_resources(client, loc).await,
-                ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
-                    self.update_resources(client, loc).await?
-                }
-                other => {
-                    eprintln!("Handle resource status {other:?}");
-                    todo!()
-                }
-            };
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        }
+        let body = async || -> Result<(), capnp::Error> {
+            loop {
+                self.update_resources(client, loc).await?;
+                match self.get_overall_status() {
+                    ResourceStatus::Stopped => self.try_start_resources(client, loc).await,
+                    ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
+                        self.update_resources(client, loc).await?
+                    }
+                    other => {
+                        eprintln!("Handle resource status {other:?}");
+                        todo!()
+                    }
+                };
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            }
+        };
+
+        body().await.unwrap_err()
     }
 
     /// Check the statuses of each of the resources in this resource group.
     ///
     /// This function updates the status of each resource (zpool and target) in the resource
     /// group, and the host.
+    ///
+    /// When checking a resource's status, errors can occur at multiple levels:
+    ///
+    /// - Errors in communicating with the remote agent--for example, "Connection timed out"--lead
+    ///   to this function returning an Err() variant containing the error. Nothing can be
+    ///   concluded about the status of a remote resource in such a case, so the status is set to
+    ///   Unknown.
+    /// - When communication with the remote agent succesfully occurred, but the remote agent
+    ///   returned an error status, this function returns an Ok() variant and sets the resource
+    ///   status to the appropriate value to indicate the kind of error returned.
     async fn update_resources(
         &self,
         client: &ocf_resource_agent::Client,
@@ -81,7 +95,8 @@ impl ResourceGroup {
 
         let statuses = future::join_all(futures).await;
 
-        for (resource, status) in statuses.iter() {
+        let mut res = Ok(());
+        for (resource, status) in statuses.into_iter() {
             match status {
                 Ok(AgentReply::Success(ocf::Status::Success)) => {
                     resource.set_status(if loc == Location::Home {
@@ -93,18 +108,23 @@ impl ResourceGroup {
                 Ok(AgentReply::Success(ocf::Status::ErrNotRunning)) => {
                     resource.set_status(ResourceStatus::Stopped)
                 }
-                Ok(_) => todo!(),
+                Ok(other) => todo!("Remote agent returned unexpected status {other:?}"),
                 Err(e) => {
                     resource.set_status(ResourceStatus::Unknown);
-                    return Err(e.clone());
+                    res = Err(e);
                 }
             }
         }
         self.update_overall_status();
-        Ok(())
+        res
     }
 
     /// Attempt to start the resources in this resource group on the given location.
+    // TODO: this function should probably return Result<(), capnp::Error> when there is an RPC
+    // error, rather than doing nothing - in order to be consistent with the error model of the
+    // other resource management routines. Currently, if there is an RPC error in this routine, it
+    // won't be noticed until the next iteration of the main loop that next checks the resource
+    // status.
     async fn try_start_resources(&self, client: &ocf_resource_agent::Client, loc: Location) {
         self.root.start_if_needed_recursive(client, loc).await;
     }
