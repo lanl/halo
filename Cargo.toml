@@ -33,6 +33,7 @@ rustls-pemfile = "2.2.0"
 futures-util = "0.3.31"
 nodeset = "0.5.0"
 axum = {version = "0.8.8", features = ["json"] }
+reqwest = {version = "0.13.1", features = ["blocking", "json"] }
 
 [build-dependencies]
 capnpc = "0.21.4"
