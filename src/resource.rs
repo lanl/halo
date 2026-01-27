@@ -427,8 +427,6 @@ pub enum ResourceStatus {
     Unknown,
     Unrunnable,
     Stopped,
-    CheckingAway,
-    CheckingHome,
     RunningOnAway,
     RunningOnHome,
 }
