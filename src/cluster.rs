@@ -133,7 +133,7 @@ impl Cluster {
             eprintln!("Could not open config file \"{path}\": {e}");
         })?;
 
-        let config: crate::config::Config = toml::from_str(&config).handle_err(|e| {
+        let config: crate::config::Config = serde_yaml::from_str(&config).handle_err(|e| {
             eprintln!("Could not parse config file \"{path}\": {e}");
         })?;
 

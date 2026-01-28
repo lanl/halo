@@ -31,7 +31,7 @@ pub fn discover(args: &DiscoverArgs) -> HandledResult<()> {
         let host = discover_one_host(&hostname, args.verbose).unwrap();
         config.hosts.push(host);
     }
-    println!("{}", toml::to_string_pretty(&config).unwrap());
+    println!("{}", serde_yaml::to_string(&config).unwrap());
     Ok(())
 }
 

@@ -40,7 +40,7 @@ mod tests {
         let good_config_path = format!(
             "{}/{}",
             std::env::var("CARGO_MANIFEST_DIR").unwrap(),
-            "tests/simple.toml"
+            "tests/simple.yaml"
         );
         let invalid_socket = "bad_dir/socket";
         let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo"))
