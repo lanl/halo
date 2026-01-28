@@ -176,8 +176,23 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
         }
 
         match ocf::do_operation(resource, op, &ocf_args, &self.cli) {
-            Ok(s) => {
-                pry!(results.get().get_result()).set_ok(s);
+            Ok((exit_code, error_output)) => {
+                let mut ok_result = pry!(results.get().get_result());
+                let mut inner_result = ::capnp::message::Builder::new_default();
+                let mut inner_result =
+                    inner_result.init_root::<ocf_resource_agent::inner_result::Builder>();
+
+                if exit_code == 0 {
+                    inner_result.set_inner_ok(());
+                } else {
+                    let mut ocf_error = ::capnp::message::Builder::new_default();
+                    let mut ocf_error =
+                        ocf_error.init_root::<ocf_resource_agent::ocf_error::Builder>();
+                    ocf_error.set_code(exit_code);
+                    ocf_error.set_message(error_output);
+                    pry!(inner_result.set_inner_err(ocf_error.into_reader()));
+                }
+                pry!(ok_result.set_ok(inner_result.into_reader()));
             }
             Err(e) => {
                 pry!(results.get().get_result()).set_err(e);

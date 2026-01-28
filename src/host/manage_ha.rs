@@ -461,8 +461,12 @@ impl Host {
             ocf::Status::Success => {
                 return Some(token);
             }
-            ocf::Status::ErrNotRunning => {}
-            other => panic!("Remote agent gave unexpected status: {other}. TODO: handle this..."),
+            ocf::Status::Error(error_type, message) => {
+                match error_type {
+                    ocf::OcfError::ErrNotRunning => {}
+                    other => panic!("Remote agent gave unexpected status: {other:?}: {message}. TODO: handle this..."),
+                }
+            }
         };
 
         // Resource was _not_ running on home: need to check partner node:
@@ -514,7 +518,7 @@ impl Host {
             // condition.
             err = rg.manage_loop(&client, token.location) => {
                 eprintln!(
-                    "{} received error {err} for resource group {}",
+                    "{} received error '{err}' for resource group {}",
                     self.id(),
                     rg.id()
                 );

@@ -16,9 +16,21 @@ interface OcfResourceAgent {
         value @1 :Text;
     }
 
+    struct OcfError {
+        code @0 :Int32;
+        message @1 :Text;
+    }
+
+    struct InnerResult {
+        union {
+            innerOk @0 :Void;
+            innerErr @1 :OcfError;
+        }
+    }
+
     struct Result {
         union {
-            ok @0 :Int32;
+            ok @0 :InnerResult;
             err @1 :Text;
         }
     }

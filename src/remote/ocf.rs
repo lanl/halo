@@ -54,6 +54,11 @@ impl std::convert::From<&Vec<(&str, &str)>> for Arguments {
 #[derive(Debug, PartialEq)]
 pub enum Status {
     Success,
+    Error(OcfError, String),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum OcfError {
     ErrGeneric,
     ErrArgs,
     ErrUnimplemented,
@@ -70,32 +75,33 @@ impl std::fmt::Display for Status {
             "{}",
             match self {
                 Status::Success => "OCF_SUCCESS",
-                Status::ErrGeneric => "OCF_ERR_GENERIC",
-                Status::ErrArgs => "OCF_ERR_ARGS",
-                Status::ErrUnimplemented => "OCF_ERR_UNIMPLEMENTED",
-                Status::ErrPerm => "OCF_ERR_PERM",
-                Status::ErrInstalled => "OCF_ERR_INSTALLED",
-                Status::ErrConfigured => "OCF_ERR_CONFIGURED",
-                Status::ErrNotRunning => "OCF_NOT_RUNNING",
+                Status::Error(status, _) => match status {
+                    OcfError::ErrGeneric => "OCF_ERR_GENERIC",
+                    OcfError::ErrArgs => "OCF_ERR_ARGS",
+                    OcfError::ErrUnimplemented => "OCF_ERR_UNIMPLEMENTED",
+                    OcfError::ErrPerm => "OCF_ERR_PERM",
+                    OcfError::ErrInstalled => "OCF_ERR_INSTALLED",
+                    OcfError::ErrConfigured => "OCF_ERR_CONFIGURED",
+                    OcfError::ErrNotRunning => "OCF_NOT_RUNNING",
+                },
             }
         )
     }
 }
 
-impl std::convert::From<i32> for Status {
+impl std::convert::From<i32> for OcfError {
     fn from(st: i32) -> Self {
         match st {
-            0 => Status::Success,
-            1 => Status::ErrGeneric,
-            2 => Status::ErrArgs,
-            3 => Status::ErrUnimplemented,
-            4 => Status::ErrPerm,
-            5 => Status::ErrInstalled,
-            6 => Status::ErrConfigured,
-            7 => Status::ErrNotRunning,
+            1 => OcfError::ErrGeneric,
+            2 => OcfError::ErrArgs,
+            3 => OcfError::ErrUnimplemented,
+            4 => OcfError::ErrPerm,
+            5 => OcfError::ErrInstalled,
+            6 => OcfError::ErrConfigured,
+            7 => OcfError::ErrNotRunning,
             _ => {
                 eprintln!("Warning: unexpected return status for Resource Agent: {st}");
-                Status::ErrUnimplemented
+                OcfError::ErrUnimplemented
             }
         }
     }
@@ -117,7 +123,7 @@ pub fn do_operation(
     op: Operation,
     ocf_operation_args: &Arguments,
     cli_args: &crate::remote::Cli,
-) -> Result<i32, String> {
+) -> Result<(i32, String), String> {
     let test_id = match &cli_args.test_id {
         Some(id) => id.clone(),
         None => std::process::id().to_string(),
@@ -148,7 +154,11 @@ pub fn do_operation(
 
     if exit_code != 0 && cli_args.verbose {
         println!("Output: {:?}", output);
+        Ok((
+            exit_code,
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ))
+    } else {
+        Ok((exit_code, "".to_string()))
     }
-
-    Ok(exit_code)
 }

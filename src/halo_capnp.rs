@@ -100,7 +100,17 @@ fn get_status(reply: OcfOperationResults) -> Result<AgentReply, capnp::Error> {
     let status = reply.get()?.get_result()?;
 
     Ok(match status.which()? {
-        ocf_resource_agent::result::Ok(status) => AgentReply::Success(status.into()),
+        ocf_resource_agent::result::Ok(inner_result) => match inner_result?.which()? {
+            ocf_resource_agent::inner_result::InnerOk(()) => {
+                AgentReply::Success(ocf::Status::Success)
+            }
+            ocf_resource_agent::inner_result::InnerErr(e) => {
+                let e = e?;
+                let code = e.get_code();
+                let message = e.get_message()?.to_str()?;
+                AgentReply::Success(ocf::Status::Error(code.into(), message.into()))
+            }
+        },
         ocf_resource_agent::result::Err(e) => AgentReply::Error(e?.to_str()?.into()),
     })
 }
