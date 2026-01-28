@@ -85,7 +85,7 @@ and monitor resources. Other tests launch the manager as a separate thread in th
 
 ## How to Test Fencing by Hand
 
-To test fencing by hand, use the failover config at `tests/failover.toml`. This config defines two
+To test fencing by hand, use the failover config at `tests/failover.yaml`. This config defines two
 hosts that are in a failover pair, and which use the test fence agent.
 
 1. Launch one or both of the test agents:
@@ -102,17 +102,17 @@ test fence agent at `tests/fence_test` is hardcoded to assume that the remote PI
 2. Run the manager service:
 
 ```bash
-./target/debug/halo --config tests/failover.toml --socket halo.socket  --manage-resources --verbose
+./target/debug/halo --config tests/failover.yaml --socket halo.socket  --manage-resources --verbose
 ```
 
 3. Run `power status` to confirm that the fence agent is able to check the status of each remote:
 
 ```bash
-./target/debug/halo --config tests/failover.toml  power status
+./target/debug/halo --config tests/failover.yaml  power status
 ```
 
 4. Run `power off` to try killing a remote agent, and see how the manager responds:
 
 ```bash
-./target/debug/halo --config tests/failover.toml  power off fence_mds00
+./target/debug/halo --config tests/failover.yaml  power off fence_mds00
 ```
