@@ -21,6 +21,12 @@ pub struct ResourceGroup {
     /// A notification mechanism used to tell a resource group management task to cancel. This
     /// could occur, for example, because the host that the task is using is going to be fenced.
     pub cancel: tokio::sync::Notify,
+
+    /// A notification mechanism to tell a resource group management task to stop so that
+    /// management can be handed over tot he partner host.
+    // TODO: rather than using a separate Notify object, it might be better to switch to using a
+    // single object that can carry data (i.e., an Enum that says the reason for the notification)
+    pub switch_host: tokio::sync::Notify,
 }
 
 impl ResourceGroup {
@@ -30,6 +36,7 @@ impl ResourceGroup {
             root,
             overall_status: Mutex::new(ResourceStatus::Unknown),
             cancel: Notify::new(),
+            switch_host: Notify::new(),
         }
     }
 
@@ -138,6 +145,13 @@ impl ResourceGroup {
     // status.
     async fn try_start_resources(&self, client: &ocf_resource_agent::Client, loc: Location) {
         self.root.start_if_needed_recursive(client, loc).await;
+    }
+
+    pub async fn stop_resources(
+        &self,
+        client: &ocf_resource_agent::Client,
+    ) -> Result<AgentReply, capnp::Error> {
+        self.root.stop_recursive(client).await
     }
 
     fn get_overall_status(&self) -> ResourceStatus {
@@ -269,6 +283,23 @@ impl Resource {
                 .map(|r| r.start_if_needed_recursive(client, loc));
             future::join_all(futures).await;
         }
+    }
+
+    async fn stop_recursive(
+        &self,
+        client: &ocf_resource_agent::Client,
+    ) -> Result<AgentReply, capnp::Error> {
+        let results = self.dependents.iter().map(|r| r.stop_recursive(client));
+
+        if let Some(err) = future::join_all(results)
+            .await
+            .into_iter()
+            .find(|res| res.is_err())
+        {
+            return err;
+        }
+
+        self.stop_client(client).await
     }
 
     /// Perform a monitor RPC for this resource given a client.

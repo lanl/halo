@@ -2,6 +2,7 @@
 // Copyright 2025. Triad National Security, LLC.
 
 pub mod discover;
+pub mod failback;
 pub mod manage;
 pub mod power;
 pub mod start;
@@ -11,6 +12,7 @@ pub mod validate;
 
 use {
     discover::DiscoverArgs,
+    failback::FailbackArgs,
     manage::{ManageArgs, UnManageArgs},
     power::PowerArgs,
     status::StatusArgs,
@@ -104,6 +106,7 @@ pub enum Commands {
     Start,
     Stop,
     Discover(DiscoverArgs),
+    Failback(FailbackArgs),
     Power(PowerArgs),
     Validate(ValidateArgs),
     Manage(ManageArgs),
@@ -130,6 +133,7 @@ fn nodesets2hostnames(nodesets: &[String]) -> Result<Vec<String>, nodeset::NodeS
 pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
     match command {
         Commands::Discover(args) => return discover::discover(args),
+        Commands::Failback(args) => return failback::failback(cli, args),
         Commands::Power(args) => return power::power(cli, args),
         Commands::Validate(args) => return validate::validate(args),
         Commands::Status(args) => return status::status(cli, args),

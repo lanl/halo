@@ -17,7 +17,13 @@ use crate::{halo_capnp::*, remote::ocf, resource::Location, Cluster};
 use super::*;
 
 #[derive(Debug)]
-pub struct HostMessage {
+pub enum HostMessage {
+    Command(HostCommand),
+    Resource(ResourceMessage),
+}
+
+#[derive(Debug)]
+pub struct ResourceMessage {
     resource_group: ResourceToken,
     kind: Message,
 }
@@ -37,13 +43,17 @@ enum Message {
 
     /// A resource management task has received a cancellation request and has exited.
     TaskCanceled,
+
+    /// A resource management task has been told to stop and pass mangement over to the partner
+    /// host.
+    SwitchHost,
 }
 
 fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {
-    HostMessage {
+    HostMessage::Resource(ResourceMessage {
         resource_group: rg,
         kind,
-    }
+    })
 }
 
 /// Mutable state related to the ongoing management of the Host.
@@ -169,64 +179,94 @@ impl Host {
         // and respond to events as they come in.
         while let Some(event) = tasks.next().await {
             println!("Host {} got event: {event:?}", self.id());
-            let id = event.resource_group.id.clone();
-
-            match event.kind {
-                // Failover partner told this Host to check on this resource group. If they are
-                // running already, this Host proceeds to manage them; otherwise, the original Host
-                // should manage them.
-                Message::CheckResourceGroup => {
-                    let client_ref = client.get().await;
-                    if let Some(resource_token) = self
-                        .startup_one_rg(
-                            event.resource_group,
-                            cluster,
-                            Ref::clone(&client_ref),
-                            false,
-                        )
-                        .await
-                    {
-                        tasks.push(Box::pin(self.manage_resource_group(
-                            cluster,
-                            resource_token,
-                            client_ref,
-                        )));
-                        state.outstanding_resource_tasks.insert(id);
+            match event {
+                HostMessage::Command(command) => {
+                    match command {
+                        HostCommand::Failback => self.do_failback(&mut state, cluster).await,
                     };
-                    // TODO: rather than have to duplicate this "re-arming" of the receive message
-                    // task in every branch that needs it, can I come up with a way to distinguish
-                    // in a single place that it needs re-arming? (`Either` might help here...)
-                    tasks.push(Box::pin(self.receive_message()));
-                }
-                // Partner Host told this Host to begin managing this resource group.
-                Message::ManageResourceGroup => {
-                    tasks.push(Box::pin(self.manage_resource_group(
-                        cluster,
-                        event.resource_group,
-                        client.get().await,
-                    )));
-                    state.outstanding_resource_tasks.insert(id);
-                    tasks.push(Box::pin(self.receive_message()));
-                }
-                // Child task for management of this resource group encountered an error indicating
-                // that this Host should be fenced, and resources currently on it should be failed
-                // over.
-                Message::RequestFailover => {
-                    self.request_failover(&mut state, cluster, event.resource_group, &client)
-                        .await;
-                }
-                // Child task for management of this resource exited after being instructed to
-                // cancel management.
-                Message::TaskCanceled => {
-                    if state.failover_requested {
-                        self.request_failover(&mut state, cluster, event.resource_group, &client)
-                            .await;
-                        continue;
-                    }
 
-                    panic!("Unexpected to receive TaskCanceled event when failover was not already requested.");
+                    tasks.push(Box::pin(self.receive_message()));
                 }
-            };
+                HostMessage::Resource(event) => {
+                    let id = event.resource_group.id.clone();
+
+                    match event.kind {
+                        // Failover partner told this Host to check on this resource group. If they are
+                        // running already, this Host proceeds to manage them; otherwise, the original Host
+                        // should manage them.
+                        Message::CheckResourceGroup => {
+                            let client_ref = client.get().await;
+                            if let Some(resource_token) = self
+                                .startup_one_rg(
+                                    event.resource_group,
+                                    cluster,
+                                    Ref::clone(&client_ref),
+                                    false,
+                                )
+                                .await
+                            {
+                                tasks.push(Box::pin(self.manage_resource_group(
+                                    cluster,
+                                    resource_token,
+                                    client_ref,
+                                )));
+                                state.outstanding_resource_tasks.insert(id);
+                            };
+                            // TODO: rather than have to duplicate this "re-arming" of the receive message
+                            // task in every branch that needs it, can I come up with a way to distinguish
+                            // in a single place that it needs re-arming? (`Either` might help here...)
+                            tasks.push(Box::pin(self.receive_message()));
+                        }
+                        // Partner Host told this Host to begin managing this resource group.
+                        Message::ManageResourceGroup => {
+                            tasks.push(Box::pin(self.manage_resource_group(
+                                cluster,
+                                event.resource_group,
+                                client.get().await,
+                            )));
+                            state.outstanding_resource_tasks.insert(id);
+                            tasks.push(Box::pin(self.receive_message()));
+                        }
+                        // Child task for management of this resource group encountered an error indicating
+                        // that this Host should be fenced, and resources currently on it should be failed
+                        // over.
+                        Message::RequestFailover => {
+                            self.request_failover(
+                                &mut state,
+                                cluster,
+                                event.resource_group,
+                                &client,
+                            )
+                            .await
+                        }
+                        // Child task for management of this resource exited after being instructed to
+                        // cancel management.
+                        Message::TaskCanceled => {
+                            if state.failover_requested {
+                                self.request_failover(
+                                    &mut state,
+                                    cluster,
+                                    event.resource_group,
+                                    &client,
+                                )
+                                .await;
+                                continue;
+                            }
+
+                            panic!("Unexpected to receive TaskCanceled event when failover was not already requested.");
+                        }
+                        Message::SwitchHost => {
+                            self.switch_host(
+                                &mut state,
+                                event.resource_group,
+                                client.get().await,
+                                cluster,
+                            )
+                            .await
+                        }
+                    };
+                }
+            }
         }
     }
 
@@ -283,6 +323,63 @@ impl Host {
                 .await
                 .unwrap();
         }
+    }
+
+    async fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
+        println!("Doing failback");
+        for res_id in state.outstanding_resource_tasks.iter() {
+            let rg = cluster.get_resource_group(res_id);
+
+            // If a resource is currently home, there is nothing to do for it.
+            if rg.root.home_node.id() == self.id() {
+                println!("{res_id} is home!");
+                continue;
+            }
+
+            // If a resource is not home, then need to stop it and pass management on...
+            println!("{res_id} is not home.");
+
+            rg.switch_host.notify_one();
+        }
+    }
+
+    async fn switch_host(
+        &self,
+        state: &mut HostState,
+        mut token: ResourceToken,
+        client: Ref<'_, ocf_resource_agent::Client>,
+        cluster: &Cluster,
+    ) {
+        state.outstanding_resource_tasks.remove(&token.id);
+
+        let rg = cluster.get_resource_group(&token.id);
+
+        let result = rg
+            .stop_resources(&client)
+            .await
+            .expect("TODO: handle error in stopping resources.");
+
+        let AgentReply::Success(status) = result else {
+            panic!("TODO: handle error agent reply when stopping resources.");
+        };
+
+        let ocf::Status::Success = status else {
+            panic!("TODO: handle bad agent status when stopping resources.");
+        };
+
+        let partner = self.failover_partner().unwrap();
+
+        match token.location {
+            Location::Home => token.location = Location::Away,
+            Location::Away => token.location = Location::Home,
+        };
+
+        println!("about to send failback message to partner");
+        partner
+            .sender
+            .send(new_message(token, Message::ManageResourceGroup))
+            .await
+            .unwrap();
     }
 
     /// The purpose of this procedure is to perform startup logic to discover the existing state of
@@ -407,6 +504,10 @@ impl Host {
             // Received a cancel notification: exit right away.
             _ = rg.cancel.notified() => {
                 new_message(token, Message::TaskCanceled)
+            }
+
+            _ = rg.switch_host.notified() => {
+                new_message(token, Message::SwitchHost)
             }
 
             // If the resource management loop returns, it must be because it observed an error
