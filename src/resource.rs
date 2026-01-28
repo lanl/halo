@@ -3,7 +3,6 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    error::Error,
     sync::{Arc, Mutex},
 };
 
@@ -123,10 +122,15 @@ impl ResourceGroup {
                         ResourceStatus::RunningOnAway
                     })
                 }
-                Ok(AgentReply::Success(ocf::Status::ErrNotRunning)) => {
+                Ok(AgentReply::Success(ocf::Status::Error(error_type, message))) => {
+                    eprintln!("Remote agent returned error: {error_type:?}: {message}");
+                    // TODO: create an ResourceStatus::Error for this case?
                     resource.set_status(ResourceStatus::Stopped)
                 }
-                Ok(other) => todo!("Remote agent returned unexpected status {other:?}"),
+                Ok(AgentReply::Error(message)) => {
+                    eprintln!("Remote agent could not run resource program: {message}");
+                    resource.set_status(ResourceStatus::Stopped)
+                }
                 Err(e) => {
                     resource.set_status(ResourceStatus::Unknown);
                     res = Err(e);
@@ -353,27 +357,6 @@ impl Resource {
                     .await
             })
             .await
-    }
-
-    /// Given the result of a monitor operation--which could have either succesfully returned an
-    /// OCF status (like running, not running, etc.) or failed due to a network error, etc.--
-    /// update the status of this resource based on that result.
-    pub fn update_status(&self, status: Result<ocf::Status, Box<dyn Error>>) {
-        match status {
-            Ok(monitor_res) => {
-                match monitor_res {
-                    ocf::Status::Success => self.set_status(ResourceStatus::RunningOnHome),
-                    ocf::Status::ErrNotRunning => self.set_status(ResourceStatus::Stopped),
-                    // XXX: connection timed out is probably caught in this branch?
-                    // needs to set error_seen to true?
-                    // need better error model...
-                    _ => self.set_status(ResourceStatus::Unknown),
-                };
-            }
-            Err(_) => {
-                self.set_status(ResourceStatus::Unknown);
-            }
-        };
     }
 
     pub fn get_status(&self) -> ResourceStatus {
