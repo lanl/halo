@@ -108,9 +108,9 @@ impl TestEnvironment {
     }
 
     /// Build a MgrContext for the given test environment. This assumes that the config file for
-    /// the test is in a toml file named {test_id}.toml.
+    /// the test is in a yaml file named {test_id}.yaml.
     pub fn manager_context(&self) -> MgrContext {
-        let config_path = test_path(&format!("{}.toml", self.test_id));
+        let config_path = test_path(&format!("{}.yaml", self.test_id));
         let socket_path = format!("{}/{}", self.private_dir_path, "test.socket");
         MgrContext::new(crate::commands::Cli {
             config: Some(config_path),

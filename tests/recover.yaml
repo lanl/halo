@@ -1,0 +1,18 @@
+hosts:
+- hostname: 127.0.0.1:8003
+  resources:
+    test_zpool:
+      kind: heartbeat/ZFS
+      parameters:
+        pool: test_zpool
+      requires: null
+    test_mgt:
+      kind: lustre/Lustre
+      parameters:
+        mountpoint: /mnt/test_mgt
+        target: test_mgt
+      requires: test_zpool
+  fence_agent: null
+  fence_parameters: null
+failover_pairs: null
+

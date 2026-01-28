@@ -1,0 +1,41 @@
+hosts:
+- hostname: 127.0.0.1:8005
+  resources:
+    test_mgt:
+      kind: lustre/Lustre
+      parameters:
+        mountpoint: /mnt/test_mgt
+        target: test_mgt
+        type: mgt
+      requires: test_zpool_00
+    test_zpool_00:
+      kind: heartbeat/ZFS
+      parameters:
+        pool: test_zpool_00
+      requires: null
+  fence_agent: fence_test
+  fence_parameters:
+    target: fence_mds00
+    test_id: failover
+- hostname: 127.0.0.1:8006
+  resources:
+    test_mdt:
+      kind: lustre/Lustre
+      parameters:
+        mountpoint: /mnt/test_mdt
+        target: test_mdt
+        type: mdt
+      requires: test_zpool_01
+    test_zpool_01:
+      kind: heartbeat/ZFS
+      parameters:
+        pool: test_zpool_01
+      requires: null
+  fence_agent: fence_test
+  fence_parameters:
+    target: fence_mds01
+    test_id: failover
+failover_pairs:
+- - 127.0.0.1:8005
+  - 127.0.0.1:8006
+
