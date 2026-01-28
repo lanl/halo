@@ -32,6 +32,14 @@ pub enum HostStatus {
     Unknown,
 }
 
+/// Commands which can be issued to a Host by the sysadmin using the CLI utility.
+#[derive(Debug)]
+pub enum HostCommand {
+    /// Failback resources. If any of this host's resources are not currently home, then reclaim
+    /// them from the partner and start managing them (if possible).
+    Failback,
+}
+
 /// A server on which services can run.
 #[derive(Debug)]
 pub struct Host {
@@ -121,6 +129,14 @@ impl Host {
             "Host channel on {} unexpectedly closed!",
             self.id()
         ))
+    }
+
+    /// Handle a request from the CLI utility to do an action on this Host.
+    pub async fn command(&self, command: HostCommand) {
+        self.sender
+            .send(HostMessage::Command(command))
+            .await
+            .expect("Sending host message {command} failed");
     }
 
     /// Attempt to power on or off this host.
