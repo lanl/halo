@@ -21,7 +21,7 @@ See the `docs/` directory for in-depth documentation, including developer-focuse
 2. Start the manager service, using `--manage-resources` to tell it to actively manage resources:
 
 ```bash
-./target/debug/halo --config tests/simple.toml --socket halo.socket  --manage-resources --verbose
+./target/debug/halo --config tests/simple.yaml --socket halo.socket  --manage-resources --verbose
 ```
 
 You should see it output information about updating the state of resources.
