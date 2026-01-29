@@ -12,7 +12,12 @@ use std::{
 
 use futures::{future::JoinAll, stream::FuturesUnordered, StreamExt};
 
-use crate::{halo_capnp::*, remote::ocf, resource::Location, Cluster};
+use crate::{
+    halo_capnp::*,
+    remote::ocf,
+    resource::{Location, ManagementError},
+    Cluster,
+};
 
 use super::*;
 
@@ -354,18 +359,9 @@ impl Host {
 
         let rg = cluster.get_resource_group(&token.id);
 
-        let result = rg
-            .stop_resources(&client)
+        rg.stop_resources(&client)
             .await
             .expect("TODO: handle error in stopping resources.");
-
-        let AgentReply::Success(status) = result else {
-            panic!("TODO: handle error agent reply when stopping resources.");
-        };
-
-        let ocf::Status::Success = status else {
-            panic!("TODO: handle bad agent status when stopping resources.");
-        };
 
         let partner = self.failover_partner().unwrap();
 
@@ -518,12 +514,18 @@ impl Host {
             // condition.
             err = rg.manage_loop(&client, token.location) => {
                 eprintln!(
-                    "{} received error '{err}' for resource group {}",
+                    "{} received error '{err:?}' for resource group {}",
                     self.id(),
                     rg.id()
                 );
 
-                new_message(token, Message::RequestFailover)
+                match err {
+                    ManagementError::Connection => new_message(token, Message::RequestFailover),
+                    ManagementError::Configuration => {
+                        eprintln!("host {} got a configuration error when managing resource group {}", self.id(), token.id);
+                        todo!()
+                    }
+                }
             }
         }
     }

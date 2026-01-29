@@ -10,6 +10,49 @@ use {futures::future, tokio::sync::Notify};
 
 use crate::{halo_capnp::*, host::*, manager::MgrContext, remote::ocf};
 
+#[derive(Debug)]
+pub enum ManagementError {
+    /// An error that occured due an action failing unexpectedly, typically indicating a
+    /// configuration issue or other problem requiring admin intervention.
+    Configuration,
+
+    /// An error that occurred due to network connection failing.
+    Connection,
+}
+
+impl From<capnp::Error> for ManagementError {
+    fn from(e: capnp::Error) -> Self {
+        match e.kind {
+            capnp::ErrorKind::Disconnected => ManagementError::Connection,
+            _ => ManagementError::Configuration,
+        }
+    }
+}
+
+// Given multiple tasks that each could have produced an error, it is helpful to extract the
+// "worst" error, if any error ocurred.
+//
+// ManagementError::Configuration typically indicates an issue that requires admin intervention, so if
+// such an error is present it is immediately returned.
+//
+// A ManagementError::Connection is "less severe" in the sense that the management system can automically
+// handle it by fencing the Host involved. It is returned only if no Configuration errors are present.
+fn get_worst_error(
+    results: impl Iterator<Item = Result<(), ManagementError>>,
+) -> Result<(), ManagementError> {
+    let mut res = Ok(());
+
+    for result in results {
+        match result {
+            Ok(()) => {}
+            Err(ManagementError::Configuration) => return result,
+            Err(ManagementError::Connection) => res = result,
+        }
+    }
+
+    res
+}
+
 /// Resource Group contains a zpool resource together with all of the Lustre resources that depend
 /// on it.
 #[derive(Debug)]
@@ -54,19 +97,21 @@ impl ResourceGroup {
         &self,
         client: &ocf_resource_agent::Client,
         loc: Location,
-    ) -> capnp::Error {
+    ) -> ManagementError {
         println!("managing rg {}", self.id());
-        let body = async || -> Result<(), capnp::Error> {
+        let body = async || -> Result<(), ManagementError> {
             loop {
                 self.update_resources(client, loc).await?;
                 match self.get_overall_status() {
-                    ResourceStatus::Stopped => self.try_start_resources(client, loc).await,
+                    ResourceStatus::Stopped => {
+                        self.start_resources(client, loc).await?;
+                    }
                     ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
-                        self.update_resources(client, loc).await?
+                        self.update_resources(client, loc).await?;
                     }
                     other => {
-                        eprintln!("Handle resource status {other:?}");
-                        todo!()
+                        eprintln!("resource status was unexpected: {other:?}");
+                        return Err(ManagementError::Configuration);
                     }
                 };
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -123,13 +168,19 @@ impl ResourceGroup {
                     })
                 }
                 Ok(AgentReply::Success(ocf::Status::Error(error_type, message))) => {
-                    eprintln!("Remote agent returned error: {error_type:?}: {message}");
-                    // TODO: create an ResourceStatus::Error for this case?
-                    resource.set_status(ResourceStatus::Stopped)
+                    match error_type {
+                        ocf::OcfError::ErrNotRunning => {
+                            resource.set_status(ResourceStatus::Stopped)
+                        }
+                        other => {
+                            eprintln!("Remote agent returned error: {other:?}: {message}");
+                            resource.set_status(ResourceStatus::Error(message));
+                        }
+                    }
                 }
                 Ok(AgentReply::Error(message)) => {
                     eprintln!("Remote agent could not run resource program: {message}");
-                    resource.set_status(ResourceStatus::Stopped)
+                    resource.set_status(ResourceStatus::Error(message))
                 }
                 Err(e) => {
                     resource.set_status(ResourceStatus::Unknown);
@@ -142,19 +193,19 @@ impl ResourceGroup {
     }
 
     /// Attempt to start the resources in this resource group on the given location.
-    // TODO: this function should probably return Result<(), capnp::Error> when there is an RPC
-    // error, rather than doing nothing - in order to be consistent with the error model of the
-    // other resource management routines. Currently, if there is an RPC error in this routine, it
-    // won't be noticed until the next iteration of the main loop that next checks the resource
-    // status.
-    async fn try_start_resources(&self, client: &ocf_resource_agent::Client, loc: Location) {
-        self.root.start_if_needed_recursive(client, loc).await;
+    async fn start_resources(
+        &self,
+        client: &ocf_resource_agent::Client,
+        loc: Location,
+    ) -> Result<(), ManagementError> {
+        self.root.start_if_needed_recursive(client, loc).await
     }
 
+    /// Attempt to stop the resources in this resource group.
     pub async fn stop_resources(
         &self,
         client: &ocf_resource_agent::Client,
-    ) -> Result<AgentReply, capnp::Error> {
+    ) -> Result<(), ManagementError> {
         self.root.stop_recursive(client).await
     }
 
@@ -258,52 +309,94 @@ impl Resource {
 
     /// Recursively start a resource as well as all of its dependents.
     /// Updates the status of each resource based on the outcome of the start attempt.
-    async fn start_if_needed_recursive(&self, client: &ocf_resource_agent::Client, loc: Location) {
+    async fn start_if_needed_recursive(
+        &self,
+        client: &ocf_resource_agent::Client,
+        loc: Location,
+    ) -> Result<(), ManagementError> {
         // If this resource is already running, don't bother doing anything:
         if !self.is_running() {
             match self.start_client(client).await {
+                // Agent replies that the resource was started succesfully.
                 Ok(AgentReply::Success(ocf::Status::Success)) => self.set_running_on_loc(loc),
-                Ok(AgentReply::Success(_)) => self.set_status(ResourceStatus::Stopped),
-                Ok(AgentReply::Error(e)) => {
-                    eprintln!("Warning: Remote agent returned error {e} when attempting to start resource {}.",
-                        self.id);
-                    self.set_status(ResourceStatus::Unknown);
+                // Agent replies that it could not start the resource. This is likely due to a
+                // misconfiguration or other issue that requires admin intervention, so return an
+                // error.
+                Ok(AgentReply::Success(ocf::Status::Error(_, reason))) => {
+                    self.set_status(ResourceStatus::Error(reason));
+                    return Err(ManagementError::Configuration);
                 }
-                e => {
+                // Agent replies that it could not run the resource management script. This is
+                // likely due to a misconfiguration like the script not being installed, so return
+                // an error.
+                Ok(AgentReply::Error(reason)) => {
+                    eprintln!("Warning: Remote agent returned error {reason} when attempting to start resource {}.",
+                        self.id);
+                    self.set_status(ResourceStatus::Error(reason));
+                    return Err(ManagementError::Configuration);
+                }
+                // An RPC error occurred, for example, because the connection timed out or was
+                // reset. Management cannot proceed in a such a case, so return an error.
+                Err(e) => {
                     eprintln!(
                         "Error: '{e:?}' when attempting to start resource '{}'.",
                         self.id
                     );
                     self.set_status(ResourceStatus::Unknown);
+                    return Err(e.into());
                 }
             };
         }
 
         // Only start the dependents of this resource if it actually started succesfully:
-        if self.is_running() {
-            let futures = self
-                .dependents
-                .iter()
-                .map(|r| r.start_if_needed_recursive(client, loc));
-            future::join_all(futures).await;
-        }
+        let futures = self
+            .dependents
+            .iter()
+            .map(|r| r.start_if_needed_recursive(client, loc));
+
+        get_worst_error(future::join_all(futures).await.into_iter())
     }
 
     async fn stop_recursive(
         &self,
         client: &ocf_resource_agent::Client,
-    ) -> Result<AgentReply, capnp::Error> {
+    ) -> Result<(), ManagementError> {
         let results = self.dependents.iter().map(|r| r.stop_recursive(client));
 
-        if let Some(err) = future::join_all(results)
-            .await
-            .into_iter()
-            .find(|res| res.is_err())
-        {
-            return err;
-        }
+        get_worst_error(future::join_all(results).await.into_iter())?;
 
-        self.stop_client(client).await
+        match self.stop_client(client).await {
+            Ok(AgentReply::Success(ocf::Status::Success)) => {
+                self.set_status(ResourceStatus::Stopped);
+                Ok(())
+            }
+            // Agent replies that it could not stop the resource. This is likely due to a
+            // misconfiguration or other issue that requires admin intervention, so return an
+            // error.
+            Ok(AgentReply::Success(ocf::Status::Error(_, reason))) => {
+                self.set_status(ResourceStatus::Error(reason));
+                Err(ManagementError::Configuration)
+            }
+            // Agent replies that it could not run the resource management script. This is
+            // likely due to a misconfiguration like the script not being installed, so return
+            // an error.
+            Ok(AgentReply::Error(reason)) => {
+                eprintln!("Warning: Remote agent returned error {reason} when attempting to stop resource {}.",
+                    self.id);
+                self.set_status(ResourceStatus::Error(reason));
+                Err(ManagementError::Configuration)
+            }
+            // An RPC error occurred, for example, because the connection timed out or was
+            // reset. Management cannot proceed in a such a case, so return an error.
+            Err(e) => {
+                eprintln!(
+                    "Error: '{e:?}' when attempting to start resource '{}'.",
+                    self.id
+                );
+                self.set_status(ResourceStatus::Unknown);
+                Err(e.into())
+            }
+        }
     }
 
     /// Perform a monitor RPC for this resource given a client.
@@ -486,7 +579,11 @@ mod tests {
         assert_eq!(
             ResourceStatus::Unknown,
             ResourceStatus::get_worst(
-                vec![ResourceStatus::Unknown, ResourceStatus::Error("".to_string())].into_iter()
+                vec![
+                    ResourceStatus::Unknown,
+                    ResourceStatus::Error("".to_string())
+                ]
+                .into_iter()
             )
         );
 
