@@ -52,6 +52,10 @@ enum Message {
     /// A resource management task has been told to stop and pass mangement over to the partner
     /// host.
     SwitchHost,
+
+    /// A resource management task reported that this resource has an error which prevents the
+    /// service from managing it.
+    ResourceError,
 }
 
 fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {
@@ -77,7 +81,13 @@ struct HostState {
     /// When a failover action has been requested, this set is filled up with the IDs of all the
     /// resource groups that were running on the Host. This needs to be tracked so that the correct
     /// resource groups are sent over to the failover partner for management.
-    resources_in_transit: HashSet<ResourceToken>,
+    resources_in_transit: Vec<ResourceToken>,
+
+    /// This holds resources that have errors which prevent the management service from managing
+    /// them. This includes errors that generally require admin intervention to resolve, for
+    /// example a typo in the config file meaning that resource operations fail with "File not
+    /// found".
+    resources_with_errors: Vec<ResourceToken>,
 }
 
 impl HostState {
@@ -85,7 +95,8 @@ impl HostState {
         Self {
             outstanding_resource_tasks: HashSet::new(),
             failover_requested: false,
-            resources_in_transit: HashSet::new(),
+            resources_in_transit: Vec::new(),
+            resources_with_errors: Vec::new(),
         }
     }
 }
@@ -269,6 +280,9 @@ impl Host {
                             )
                             .await
                         }
+                        Message::ResourceError => {
+                            state.resources_with_errors.push(event.resource_group);
+                        }
                     };
                 }
             }
@@ -287,7 +301,7 @@ impl Host {
             panic!("Unexpected to receive a failover request for a task not oustanding.");
         }
 
-        state.resources_in_transit.insert(rg);
+        state.resources_in_transit.push(rg);
 
         if state.outstanding_resource_tasks.is_empty() {
             // If every resource management task has been cancelled, fencing should proceed:
@@ -315,7 +329,7 @@ impl Host {
 
         client.clear();
 
-        for mut rg in state.resources_in_transit.drain() {
+        for mut rg in state.resources_in_transit.drain(..) {
             let partner = self.failover_partner().unwrap();
             match rg.location {
                 Location::Home => rg.location = Location::Away,
@@ -523,7 +537,7 @@ impl Host {
                     ManagementError::Connection => new_message(token, Message::RequestFailover),
                     ManagementError::Configuration => {
                         eprintln!("host {} got a configuration error when managing resource group {}", self.id(), token.id);
-                        todo!()
+                        new_message(token, Message::ResourceError)
                     }
                 }
             }
