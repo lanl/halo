@@ -159,7 +159,7 @@ impl ResourceGroup {
     }
 
     fn get_overall_status(&self) -> ResourceStatus {
-        *self.overall_status.lock().unwrap()
+        self.overall_status.lock().unwrap().clone()
     }
 
     fn set_overall_status(&self, new_status: ResourceStatus) {
@@ -360,13 +360,13 @@ impl Resource {
     }
 
     pub fn get_status(&self) -> ResourceStatus {
-        *self.status.lock().unwrap()
+        self.status.lock().unwrap().clone()
     }
 
     pub fn set_status(&self, status: ResourceStatus) {
         let mut old_status = self.status.lock().unwrap();
-        let old_status_copy = *old_status;
-        *old_status = status;
+        let old_status_copy = old_status.clone();
+        *old_status = status.clone();
         std::mem::drop(old_status);
         if self.context.args.verbose && old_status_copy != status {
             let _ = self.context.out_stream.writeln(
@@ -436,12 +436,25 @@ impl Resource {
 /// This ordering is used to determine the "overall" status to assign to a ResourceGroup, when the
 /// members of that ResourceGroup may each have their own separate status. If all but one member
 /// are RunningOnHome, but one member is Stopped, the group should be considered stopped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ResourceStatus {
+    /// The resource's status cannot be determined because communication failed between the manager
+    /// service and the remote agent.
     Unknown,
-    Unrunnable,
+
+    /// An operation failed in a way that the manager cannot address, and so the resource is
+    /// impossible to manage. For example, if a "start" operation is performed, and fails, there
+    /// is nothing the manager can do because there is most likely a configuration error or similar
+    /// state that requires admin intervention.
+    Error(String),
+
+    /// The resource is not running anywhere.
     Stopped,
+
+    /// The resource is running on its failover node.
     RunningOnAway,
+
+    /// The resource is running on its home node.
     RunningOnHome,
 }
 
@@ -473,7 +486,7 @@ mod tests {
         assert_eq!(
             ResourceStatus::Unknown,
             ResourceStatus::get_worst(
-                vec![ResourceStatus::Unknown, ResourceStatus::Unrunnable].into_iter()
+                vec![ResourceStatus::Unknown, ResourceStatus::Error("".to_string())].into_iter()
             )
         );
 

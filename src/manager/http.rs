@@ -65,13 +65,12 @@ pub struct ResourceJson {
 impl ResourceJson {
     fn build(res: &Resource) -> Self {
         let status = match *res.status.lock().unwrap() {
-            ResourceStatus::Unknown => "Unknown",
-            ResourceStatus::Unrunnable => "Unrunnable",
-            ResourceStatus::Stopped => "Stopped",
-            ResourceStatus::RunningOnAway => "Running (Failed Over)",
-            ResourceStatus::RunningOnHome => "Running",
-        }
-        .to_string();
+            ResourceStatus::Unknown => "Unknown".to_string(),
+            ResourceStatus::Error(ref reason) => format!("Error: ({reason})"),
+            ResourceStatus::Stopped => "Stopped".to_string(),
+            ResourceStatus::RunningOnAway => "Running (Failed Over)".to_string(),
+            ResourceStatus::RunningOnHome => "Running".to_string(),
+        };
 
         Self {
             kind: res.kind.clone(),
