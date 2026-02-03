@@ -521,6 +521,14 @@ impl Resource {
             d.set_managed(managed);
         }
     }
+
+    pub fn set_error_recursive(&self, reason: String) {
+        for child in self.dependents.iter() {
+            child.set_error_recursive(reason.clone());
+        }
+
+        self.set_status(ResourceStatus::Error(reason));
+    }
 }
 
 /// The ordering on ResourceStatus is used to rank statuses from "worst" to "best". Statuses that
