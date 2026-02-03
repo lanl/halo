@@ -4,13 +4,13 @@
 //! Management of a failover cluster with HA pairs.
 
 use std::{
-    cell::Ref,
     future::Future,
     hash::{Hash, Hasher},
     pin::Pin,
+    rc::Rc,
 };
 
-use futures::{future::JoinAll, stream::FuturesUnordered, StreamExt};
+use futures::{future, stream::FuturesUnordered, StreamExt};
 
 use crate::{
     halo_capnp::*,
@@ -67,6 +67,11 @@ fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {
 
 /// Mutable state related to the ongoing management of the Host.
 struct HostState {
+    /// The set of resources that should be managed on this Host, but are not yet. When Host
+    /// management begins, this will be drained and the ResourceToken passed to the management
+    /// routine of that ResourceGroup.
+    manage_these_resources: Vec<ResourceToken>,
+
     /// Tracker for the outstanding child tasks that are managing resources on this
     /// host. This is used for making sure that every outstanding task is cancelled before an
     /// action occurs that results in new management tasks being launched. This includes both
@@ -93,6 +98,7 @@ struct HostState {
 impl HostState {
     pub fn new() -> Self {
         Self {
+            manage_these_resources: Vec::new(),
             outstanding_resource_tasks: HashSet::new(),
             failover_requested: false,
             resources_in_transit: Vec::new(),
@@ -141,7 +147,6 @@ impl Hash for ResourceToken {
     }
 }
 
-#[allow(clippy::await_holding_refcell_ref)]
 impl Host {
     /// The main management loop for managing a particular host.
     ///
@@ -161,10 +166,81 @@ impl Host {
     /// stopping all management activities on that host, fencing the host, and then notifying the
     /// partner host's task to assume management of those resources.
     pub async fn manage_ha(&self, cluster: &Cluster) {
-        let client = ClientWrapper::new(self.address().to_string());
-
         let mut state = HostState::new();
 
+        // Check whether this host's primary resources are running locally, in order to determine if
+        // they should be managed locally or if the failover partner needs to check if they are
+        // failed over.
+        state.manage_these_resources = self.startup(cluster).await;
+
+        loop {
+            match get_client(&self.address()).await {
+                Ok(client) => {
+                    let client = Rc::new(client);
+
+                    self.remote_connected_loop(client, cluster, &mut state)
+                        .await;
+                }
+                Err(_e) => {
+                    self.remote_disconnected_loop(cluster, &mut state).await;
+                }
+            };
+        }
+    }
+
+    /// When a connection to the remote agent is not possible, the Host task will periodically
+    /// attempt to reconnect. If a reconnection attempt succeeds, then this routine exits.
+    ///
+    /// In the meantime, also listen for messages from the partner host task as well as the admin
+    /// CLI utility, and handle them.
+    async fn remote_disconnected_loop(&self, cluster: &Cluster, state: &mut HostState) {
+        tokio::select! {
+            _ = self.remote_liveness_check() => {}
+            _ = self.handle_messages_remote_disconnected(cluster, state) => {}
+        }
+    }
+
+    async fn remote_liveness_check(&self) {
+        loop {
+            if get_client(&self.address()).await.is_ok() {
+                return;
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+        }
+    }
+
+    async fn handle_messages_remote_disconnected(&self, cluster: &Cluster, state: &mut HostState) {
+        loop {
+            match self.receive_message().await {
+                HostMessage::Resource(message) => match message.kind {
+                    Message::ManageResourceGroup => {
+                        let rg = cluster.get_resource_group(&message.resource_group.id);
+                        rg.root.set_error_recursive("Cannot determine resource status because connection failed to its home host.".to_string());
+                        state.resources_with_errors.push(message.resource_group);
+                    }
+                    Message::CheckResourceGroup => {
+                        let rg = cluster.get_resource_group(&message.resource_group.id);
+                        rg.root.set_error_recursive("Cannot determine resource status because connection failed to its failover host.".to_string());
+                        state.resources_with_errors.push(message.resource_group);
+                    }
+                    other => {
+                        panic!("Unexpected message type {other:?} in client disconnected routine.");
+                    }
+                },
+                HostMessage::Command(command) => match command {
+                    HostCommand::Failback => eprintln!("Warning: Failback command received by host {} but the remote agent is unavailable so the operation cannot proceed.", self.id()),
+                }
+            }
+        }
+    }
+
+    async fn remote_connected_loop(
+        &self,
+        client: Rc<ocf_resource_agent::Client>,
+        cluster: &Cluster,
+        state: &mut HostState,
+    ) {
         // Create a queue of tasks related to this host's management duties.
         // TODO: This Pin<Box<_>> stuff is gross... Can I use `Either` instead and make this nicer?
         let mut tasks: FuturesUnordered<Pin<Box<dyn Future<Output = HostMessage>>>> =
@@ -175,30 +251,25 @@ impl Host {
         // as messages from child tasks (like "connection timed out; failover needed").
         tasks.push(Box::pin(self.receive_message()));
 
-        // Check whether this host's primary resources are running locally, in order to determine if
-        // they should be managed locally or if the failover partner needs to check if they are
-        // failed over.
-        let manage_these_rgs = self.startup(cluster, client.get().await).await;
+        let manage_these_rgs = std::mem::take(&mut state.manage_these_resources);
 
-        // Create a task to manage each resource group that is currently running on this host.
+        // Create a task to manage each resource group that should run on this host.
         for token in manage_these_rgs {
             let id = token.id.clone();
             tasks.push(Box::pin(self.manage_resource_group(
                 cluster,
                 token,
-                client.get().await,
+                Rc::clone(&client),
             )));
             state.outstanding_resource_tasks.insert(id);
         }
 
-        // Here's where the real work begins: drive forward all of the tasks added to the queue,
-        // and respond to events as they come in.
         while let Some(event) = tasks.next().await {
             println!("Host {} got event: {event:?}", self.id());
             match event {
                 HostMessage::Command(command) => {
                     match command {
-                        HostCommand::Failback => self.do_failback(&mut state, cluster).await,
+                        HostCommand::Failback => self.do_failback(state, cluster).await,
                     };
 
                     tasks.push(Box::pin(self.receive_message()));
@@ -211,20 +282,14 @@ impl Host {
                         // running already, this Host proceeds to manage them; otherwise, the original Host
                         // should manage them.
                         Message::CheckResourceGroup => {
-                            let client_ref = client.get().await;
                             if let Some(resource_token) = self
-                                .startup_one_rg(
-                                    event.resource_group,
-                                    cluster,
-                                    Ref::clone(&client_ref),
-                                    false,
-                                )
+                                .away_startup_check(event.resource_group, cluster, &client)
                                 .await
                             {
                                 tasks.push(Box::pin(self.manage_resource_group(
                                     cluster,
                                     resource_token,
-                                    client_ref,
+                                    Rc::clone(&client),
                                 )));
                                 state.outstanding_resource_tasks.insert(id);
                             };
@@ -238,7 +303,7 @@ impl Host {
                             tasks.push(Box::pin(self.manage_resource_group(
                                 cluster,
                                 event.resource_group,
-                                client.get().await,
+                                Rc::clone(&client),
                             )));
                             state.outstanding_resource_tasks.insert(id);
                             tasks.push(Box::pin(self.receive_message()));
@@ -247,35 +312,31 @@ impl Host {
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
                         Message::RequestFailover => {
-                            self.request_failover(
-                                &mut state,
-                                cluster,
-                                event.resource_group,
-                                &client,
-                            )
-                            .await
+                            if self
+                                .request_failover(state, cluster, event.resource_group)
+                                .await
+                            {
+                                return;
+                            }
                         }
                         // Child task for management of this resource exited after being instructed to
                         // cancel management.
                         Message::TaskCanceled => {
-                            if state.failover_requested {
-                                self.request_failover(
-                                    &mut state,
-                                    cluster,
-                                    event.resource_group,
-                                    &client,
-                                )
-                                .await;
-                                continue;
+                            if state.failover_requested
+                                && self
+                                    .request_failover(state, cluster, event.resource_group)
+                                    .await
+                            {
+                                return;
                             }
 
                             panic!("Unexpected to receive TaskCanceled event when failover was not already requested.");
                         }
                         Message::SwitchHost => {
                             self.switch_host(
-                                &mut state,
+                                state,
                                 event.resource_group,
-                                client.get().await,
+                                Rc::clone(&client),
                                 cluster,
                             )
                             .await
@@ -289,13 +350,17 @@ impl Host {
         }
     }
 
+    /// Returns whether the failover is done or not.
+    ///
+    /// This is needed so that the loop in got_client_loop() knows whether to break out to the
+    /// "top level" loop in manage_ha().
+    // TODO: can I come up with a cleaner way to do that?
     async fn request_failover(
         &self,
         state: &mut HostState,
         cluster: &Cluster,
         rg: ResourceToken,
-        client: &ClientWrapper,
-    ) {
+    ) -> bool {
         let removed = state.outstanding_resource_tasks.remove(&rg.id);
         if !removed {
             panic!("Unexpected to receive a failover request for a task not oustanding.");
@@ -305,7 +370,8 @@ impl Host {
 
         if state.outstanding_resource_tasks.is_empty() {
             // If every resource management task has been cancelled, fencing should proceed:
-            self.do_failover(state, client).await;
+            self.do_failover(state).await;
+            true
         } else {
             // If there are outstanding resource group tasks, they need to be notified to exit.
             // However, they must only be notified once, so only do this if this is the first task
@@ -318,16 +384,15 @@ impl Host {
             }
 
             state.failover_requested = true;
+            false
         }
     }
 
-    async fn do_failover(&self, state: &mut HostState, client: &ClientWrapper) {
+    async fn do_failover(&self, state: &mut HostState) {
         self.do_fence(FenceCommand::Off)
             .expect("Fencing failed... TODO: handle this case...");
 
         println!("Host {} did fence off...", self.id());
-
-        client.clear();
 
         for mut rg in state.resources_in_transit.drain(..) {
             let partner = self.failover_partner().unwrap();
@@ -366,7 +431,7 @@ impl Host {
         &self,
         state: &mut HostState,
         mut token: ResourceToken,
-        client: Ref<'_, ocf_resource_agent::Client>,
+        client: Rc<ocf_resource_agent::Client>,
         cluster: &Cluster,
     ) {
         state.outstanding_resource_tasks.remove(&token.id);
@@ -401,16 +466,16 @@ impl Host {
     ///
     /// - for each ResourceGroup:
     ///     - Query the status of the resoource group on this host
-    ///     - if it is discovered to be running, proceed to management loop
+    ///     - if it is discovered to be running, return the token to the caller, who will arrange
+    ///       for the ResourceGroup management routine to run
     ///     - if it is not running, send a message to the failover partner to check its status
     ///       there.
     ///     - the failover partner will either discover it to be running there and start managing
     ///       it, or will send a message back to this host to start managing it.
-    async fn startup(
-        &self,
-        cluster: &Cluster,
-        client: Ref<'_, ocf_resource_agent::Client>,
-    ) -> Vec<ResourceToken> {
+    ///
+    /// If a connection to the remote agent for this Host cannot be established, then just send
+    /// a message to the failover partner to see if the ResourceGroup is running there.
+    async fn startup(&self, cluster: &Cluster) -> Vec<ResourceToken> {
         // Mint tokens for each resource group:
         let my_resources = cluster
             .host_home_resource_groups(self)
@@ -419,42 +484,97 @@ impl Host {
                 location: Location::Home,
             });
 
-        let statuses: JoinAll<_> = my_resources
-            .map(|token| self.startup_one_rg(token, cluster, Ref::clone(&client), true))
-            .collect();
+        let (manage_these, send_these): (Vec<ResourceToken>, Vec<ResourceToken>) =
+            match get_client(&self.address()).await {
+                Ok(client) => {
+                    let mut manage_these = Vec::new();
+                    let mut send_these = Vec::new();
 
-        statuses.await.into_iter().flatten().collect()
+                    let statuses =
+                        my_resources.map(|token| self.home_startup_check(token, cluster, &client));
+
+                    for (token, is_home) in future::join_all(statuses).await {
+                        if is_home {
+                            manage_these.push(token)
+                        } else {
+                            send_these.push(token)
+                        }
+                    }
+
+                    (manage_these, send_these)
+                }
+                Err(_) => (Vec::new(), my_resources.collect()),
+            };
+
+        let partner = self
+            .failover_partner()
+            .expect("Host without failover partner in HA routine.");
+
+        for mut token in send_these {
+            token.location = Location::Away;
+            let message = new_message(token, Message::CheckResourceGroup);
+            partner.sender.send(message).await.unwrap();
+        }
+
+        manage_these
     }
 
-    /// Perform startup logic for a single resource group.
+    /// Perform startup check for a resource on its home node.
+    /// Returns (_, true) if the resource is running on the home node.
+    async fn home_startup_check(
+        &self,
+        token: ResourceToken,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+    ) -> (ResourceToken, bool) {
+        let rg = cluster.get_resource_group(&token.id);
+        let status = remote_ocf_operation_given_client(
+            &rg.root,
+            client,
+            ocf_resource_agent::Operation::Monitor,
+        )
+        .await;
+        let status = status.expect("FIXME: handle error here...");
+
+        let status = match status {
+            AgentReply::Success(status) => status,
+            AgentReply::Error(message) => {
+                panic!("Remote agent gave unexpected error: {message}. TODO: handle this...")
+            }
+        };
+
+        match status {
+            ocf::Status::Success => {
+                (token, true)
+            }
+            ocf::Status::Error(error_type, message) => {
+                match error_type {
+                    ocf::OcfError::ErrNotRunning => (token, false),
+                    other => panic!("Remote agent gave unexpected status: {other:?}: {message}. TODO: handle this..."),
+                }
+            }
+        }
+    }
+
+    /// Perform startup logic for a single resource group on its failover node.
     ///
-    /// Checks if the resource group appears to be running here.
+    /// Checks if the resource group appears to be running on the failover node.
     ///
     /// If yes, returns the token and the host management task knows to launch a resource management
     /// task for this RG.
     ///
-    /// If not, the behavior depends on whether we are checking the home node or the away node.
-    ///
-    /// Checking on home:
-    ///     - sends a CheckResourceGroup message to the failover partner telling the partner to check the RG.
-    ///     Then the partner will either find that the RG is running there, and begin managing
-    ///     it, or will find that the resource is not running, and send a message back to this Host
-    ///     so this host knows to start managing it.
-    ///
-    /// Checking on away:
-    ///     - sends a ManageResourceGroup message to the failover partner to tell the partner to
-    ///     begin managing the RG.
-    async fn startup_one_rg(
+    /// If not, sends a ManageResourceGroup message back to the home node to tell that node to
+    /// assume management of the resource.
+    async fn away_startup_check(
         &self,
         mut token: ResourceToken,
         cluster: &Cluster,
-        client: Ref<'_, ocf_resource_agent::Client>,
-        checking_home: bool,
+        client: &ocf_resource_agent::Client,
     ) -> Option<ResourceToken> {
         let rg = cluster.get_resource_group(&token.id);
         let status = remote_ocf_operation_given_client(
             &rg.root,
-            &client,
+            client,
             ocf_resource_agent::Operation::Monitor,
         )
         .await;
@@ -479,21 +599,12 @@ impl Host {
             }
         };
 
-        // Resource was _not_ running on home: need to check partner node:
+        let partner = self
+            .failover_partner()
+            .expect("Host without failover partner in HA management routine.");
 
-        let Some(partner) = self.failover_partner() else {
-            println!("no failover partner");
-            return Some(token);
-        };
-
-        let message = if checking_home {
-            token.location = Location::Away;
-            new_message(token, Message::CheckResourceGroup)
-        } else {
-            token.location = Location::Home;
-            new_message(token, Message::ManageResourceGroup)
-        };
-
+        token.location = Location::Home;
+        let message = new_message(token, Message::ManageResourceGroup);
         partner.sender.send(message).await.unwrap();
 
         None
@@ -506,7 +617,7 @@ impl Host {
         &self,
         cluster: &Cluster,
         token: ResourceToken,
-        client: Ref<'_, ocf_resource_agent::Client>,
+        client: Rc<ocf_resource_agent::Client>,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
 
