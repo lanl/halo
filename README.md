@@ -8,7 +8,20 @@ LANL software release number: O4905.
 ## Documentation
 
 This README has a high-level overview.
-See the `docs/` directory for in-depth documentation, including developer-focused documentation.
+
+Detailed documentation is available in the `docs/` directory, in the [typst](https://typst.app/) markup format.
+To compile the documentation into PDFs, run:
+```bash
+typst compile docs/admin_guide.typ
+typst compile docs/developer_guide.typ
+```
+and then you can open the PDFs in your preferred viewer.
+See the [typst installation documentation](https://github.com/typst/typst?tab=readme-ov-file#installation) for
+details on how to install typst.
+
+### Man Pages
+
+The source for the halo man pages are in `docs/man`.
 
 ## Quick Start using an example config:
 

@@ -352,7 +352,7 @@ impl Host {
 
     /// Returns whether the failover is done or not.
     ///
-    /// This is needed so that the loop in got_client_loop() knows whether to break out to the
+    /// This is needed so that the loop in remote_connected_loop() knows whether to break out to the
     /// "top level" loop in manage_ha().
     // TODO: can I come up with a cleaner way to do that?
     async fn request_failover(
