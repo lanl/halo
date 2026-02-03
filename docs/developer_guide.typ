@@ -1,11 +1,46 @@
-# HALO Test Environment
+#set document(
+  title: [HALO Developer Guide],
+  author: "Thomas Bertschinger",
+)
+
+#title()
+
+#set heading(numbering: "1.")
+#outline()
+
+#show link: underline
+
+= RPC Protocol
+
+HALO uses a #link("https://capnproto.org/")[Cap'n Proto] RPC protocol to communicate between the manager daemon
+and remote agent daemons.
+The protocol schema is defined in the file `halo.capnp`.
+The protocol is extremely simple, only supporting a single RPC called `operation()`.
+
+The arguments to `operation()` are passed along to an OCF Resource Agent script which actually performs
+the requested op.
+`operation()` then returns the result:
+- when running the OCF Resource Agent script fails, a string containing the error message
+  (like "File not found...") is returned.
+- when running the script succeeds, the integer exit status of the script is returned
+  - a status of `0` indicates success.
+  - a nonzero status indicates some kind of failure; in that case a string containing the
+    standard error output from the script is included in the RPC reply.
+
+= Key Data Structures
+
+The fundamental runtime data structures in HALO are `Cluster`, `ResourceGroup`, `Resource`, and `Host`.
+
+`struct Cluster` is the overall container that holds the runtime state of a cluster under management.
+
+= Test Environment
 
 The HALO test environment uses processes and threads running on one system to emulate a distributed
 cluster. While a collection of multiple processes running on one host is not a perfect analogy for a
 distributed cluster, the behavior can be similar enough to suitably test the HALO functionality. And
 it has the benefit of making automated tests much simpler to implement and run.
 
-## Resource State Files
+== Resource State Files
 
 In order to emulate the starting and stopping of resources, test agents create and remove a file
 that represents a given resource. A file is used to represent the state of a resource because it
@@ -14,9 +49,9 @@ by either removing or creating the file. This means that initiating a change of 
 can be done either by the resource agent, by the user, or by the test suite itself (to simulate a
 resource crashing / failing).
 
-## Remote Agents
+== Remote Agents
 
-### Environment Variables
+=== Environment Variables
 
 The remote agent needs to share state with the test runner program, and it does so via files whose
 locations are denoted by environment variables.
@@ -36,7 +71,7 @@ Because all the tests run concurrently in the same address space, the environmen
 be used by the tests themselves: the information must be stored in the test-specific `TestEnvironment`
 structure, or another private location.
 
-### Launching Remote Agents
+=== Launching Remote Agents
 
 Remote agents are run as separate processes on the test host. Each remote agent listens on the
 localhost IP address. Because all tests run concurrently--and within one test, multiple agents
@@ -51,7 +86,7 @@ specify the location of the resource state files used by the given agent.
 For example, for the `simple` test, the remote agent has a test ID of `simple` and the state files
 live in `tests/test_output/simple/`.
 
-### Uniquely Identifying Remote Agents
+=== Uniquely Identifying Remote Agents
 
 When a test runs multiple agents (because the test is simulating a cluster with multiple nodes), the
 test ID is not suitable to uniquely identify the agents. A new unique identifier for the agents is
@@ -60,7 +95,7 @@ unique ID per-agent. This agent ID is encoded in the path to the resource state 
 by that agent, so that the test environment can tell which agent "owns" a given resource at a
 particular moment.
 
-### Fencing Test Agents
+=== Fencing Test Agents
 
 In a production environment, fencing involves running a command which will launch IPMI or Redfish
 commands over the network. In the test environment, however, fencing must work differently since
@@ -77,13 +112,13 @@ unique agent ID.
 Being able to "power on" a test agent requires storing the new PID somewhere so that it can be known
 when it next needs to be fenced.
 
-## Manager
+== Manager
 
 Some tests don't use the manager at all and directly call the methods on `Resource` to start, stop,
 and monitor resources. Other tests launch the manager as a separate thread in the test process.
 
 
-## How to Test Fencing by Hand
+== How to Test Fencing by Hand
 
 To test fencing by hand, use the failover config at `tests/failover.yaml`. This config defines two
 hosts that are in a failover pair, and which use the test fence agent.

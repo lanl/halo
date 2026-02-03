@@ -9,3 +9,4 @@ patches
 patches.tar
 tests/test_output
 test_agent*
+*.pdf
