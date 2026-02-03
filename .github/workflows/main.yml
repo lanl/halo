@@ -24,3 +24,9 @@ jobs:
       run: cargo fmt --check
     - name: Clippy
       run: cargo clippy -- -D warnings
+    - name: Install Documentation Dependencies
+      run: sudo snap install typst
+    - name: Documentation Admin Guide
+      run: typst compile docs/admin_guide.typ
+    - name: Documentation Dev Guide
+      run: typst compile docs/developer_guide.typ
