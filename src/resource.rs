@@ -6,7 +6,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use {futures::future, tokio::sync::Notify};
+use {
+    futures::future,
+    log::{debug, error, warn},
+    tokio::sync::Notify,
+};
 
 use crate::{halo_capnp::*, host::*, manager::MgrContext, remote::ocf};
 
@@ -98,7 +102,7 @@ impl ResourceGroup {
         client: &ocf_resource_agent::Client,
         loc: Location,
     ) -> ManagementError {
-        println!("managing rg {}", self.id());
+        debug!("managing rg {}", self.id());
         let body = async || -> Result<(), ManagementError> {
             loop {
                 self.update_resources(client, loc).await?;
@@ -110,7 +114,7 @@ impl ResourceGroup {
                         self.update_resources(client, loc).await?;
                     }
                     other => {
-                        eprintln!("resource status was unexpected: {other:?}");
+                        warn!("resource status was unexpected: {other:?}");
                         return Err(ManagementError::Configuration);
                     }
                 };
@@ -173,13 +177,13 @@ impl ResourceGroup {
                             resource.set_status(ResourceStatus::Stopped)
                         }
                         other => {
-                            eprintln!("Remote agent returned error: {other:?}: {message}");
+                            error!("Remote agent returned error: {other:?}: {message}");
                             resource.set_status(ResourceStatus::Error(message));
                         }
                     }
                 }
                 Ok(AgentReply::Error(message)) => {
-                    eprintln!("Remote agent could not run resource program: {message}");
+                    error!("Remote agent could not run resource program: {message}");
                     resource.set_status(ResourceStatus::Error(message))
                 }
                 Err(e) => {
@@ -330,7 +334,7 @@ impl Resource {
                 // likely due to a misconfiguration like the script not being installed, so return
                 // an error.
                 Ok(AgentReply::Error(reason)) => {
-                    eprintln!("Warning: Remote agent returned error {reason} when attempting to start resource {}.",
+                    error!("Warning: Remote agent returned error {reason} when attempting to start resource {}.",
                         self.id);
                     self.set_status(ResourceStatus::Error(reason));
                     return Err(ManagementError::Configuration);
@@ -338,7 +342,7 @@ impl Resource {
                 // An RPC error occurred, for example, because the connection timed out or was
                 // reset. Management cannot proceed in a such a case, so return an error.
                 Err(e) => {
-                    eprintln!(
+                    warn!(
                         "Error: '{e:?}' when attempting to start resource '{}'.",
                         self.id
                     );
@@ -381,7 +385,7 @@ impl Resource {
             // likely due to a misconfiguration like the script not being installed, so return
             // an error.
             Ok(AgentReply::Error(reason)) => {
-                eprintln!("Warning: Remote agent returned error {reason} when attempting to stop resource {}.",
+                error!("Warning: Remote agent returned error {reason} when attempting to stop resource {}.",
                     self.id);
                 self.set_status(ResourceStatus::Error(reason));
                 Err(ManagementError::Configuration)
@@ -389,7 +393,7 @@ impl Resource {
             // An RPC error occurred, for example, because the connection timed out or was
             // reset. Management cannot proceed in a such a case, so return an error.
             Err(e) => {
-                eprintln!(
+                error!(
                     "Error: '{e:?}' when attempting to start resource '{}'.",
                     self.id
                 );
@@ -461,11 +465,11 @@ impl Resource {
         let old_status_copy = old_status.clone();
         *old_status = status.clone();
         std::mem::drop(old_status);
-        if self.context.args.verbose && old_status_copy != status {
-            let _ = self.context.out_stream.writeln(
-                self.status_update_string(old_status_copy, status)
-                    .as_bytes(),
-            );
+        if old_status_copy != status {
+            warn!(
+                "Updating status of resource {} from {:?} to {:?}",
+                self.id, old_status_copy, status
+            )
         }
     }
 

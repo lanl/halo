@@ -10,7 +10,10 @@ use std::{
     rc::Rc,
 };
 
-use futures::{future, stream::FuturesUnordered, StreamExt};
+use {
+    futures::{future, stream::FuturesUnordered, StreamExt},
+    log::{debug, warn},
+};
 
 use crate::{
     halo_capnp::*,
@@ -229,7 +232,7 @@ impl Host {
                     }
                 },
                 HostMessage::Command(command) => match command {
-                    HostCommand::Failback => eprintln!("Warning: Failback command received by host {} but the remote agent is unavailable so the operation cannot proceed.", self.id()),
+                    HostCommand::Failback => warn!("Warning: Failback command received by host {} but the remote agent is unavailable so the operation cannot proceed.", self.id()),
                 }
             }
         }
@@ -265,7 +268,7 @@ impl Host {
         }
 
         while let Some(event) = tasks.next().await {
-            println!("Host {} got event: {event:?}", self.id());
+            debug!("Host {} got event: {event:?}", self.id());
             match event {
                 HostMessage::Command(command) => {
                     match command {
@@ -392,7 +395,7 @@ impl Host {
         self.do_fence(FenceCommand::Off)
             .expect("Fencing failed... TODO: handle this case...");
 
-        println!("Host {} did fence off...", self.id());
+        warn!("Host {} did fence off...", self.id());
 
         for mut rg in state.resources_in_transit.drain(..) {
             let partner = self.failover_partner().unwrap();
@@ -410,18 +413,18 @@ impl Host {
     }
 
     async fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
-        println!("Doing failback");
+        warn!("Doing failback");
         for res_id in state.outstanding_resource_tasks.iter() {
             let rg = cluster.get_resource_group(res_id);
 
             // If a resource is currently home, there is nothing to do for it.
             if rg.root.home_node.id() == self.id() {
-                println!("{res_id} is home!");
+                debug!("{res_id} is home!");
                 continue;
             }
 
             // If a resource is not home, then need to stop it and pass management on...
-            println!("{res_id} is not home.");
+            debug!("{res_id} is not home.");
 
             rg.switch_host.notify_one();
         }
@@ -449,7 +452,7 @@ impl Host {
             Location::Away => token.location = Location::Home,
         };
 
-        println!("about to send failback message to partner");
+        debug!("about to send failback message to partner");
         partner
             .sender
             .send(new_message(token, Message::ManageResourceGroup))
@@ -638,7 +641,7 @@ impl Host {
             // If the resource management loop returns, it must be because it observed an error
             // condition.
             err = rg.manage_loop(&client, token.location) => {
-                eprintln!(
+                debug!(
                     "{} received error '{err:?}' for resource group {}",
                     self.id(),
                     rg.id()
@@ -647,7 +650,7 @@ impl Host {
                 match err {
                     ManagementError::Connection => new_message(token, Message::RequestFailover),
                     ManagementError::Configuration => {
-                        eprintln!("host {} got a configuration error when managing resource group {}", self.id(), token.id);
+                        debug!("host {} got a configuration error when managing resource group {}", self.id(), token.id);
                         new_message(token, Message::ResourceError)
                     }
                 }

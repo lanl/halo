@@ -16,6 +16,8 @@ use halo_lib::{
 ///
 /// Otherwise, the indicated sub-command will run.
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().filter_or("HALO_LOG", "warn")).init();
+
     let args = Cli::parse();
 
     let res = match &args.command {
