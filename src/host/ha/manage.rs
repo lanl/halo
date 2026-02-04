@@ -10,7 +10,7 @@ use {
     log::{debug, warn},
 };
 
-use crate::{halo_capnp::*, resource::ManagementError, Cluster};
+use crate::{cluster::Cluster, halo_capnp::*, resource::ManagementError};
 
 use super::*;
 
@@ -368,7 +368,7 @@ impl Host {
                     // test environment, where such errors are intended to result in fencing the
                     // test agent.
                     other => {
-                        if !cluster.context.args.fence_on_connection_close {
+                        if !cluster.args.fence_on_connection_close {
                             debug!(
                                 "Unexpected error '{other}' while trying to reconnect to remote agent at {}.",
                                 self.address()

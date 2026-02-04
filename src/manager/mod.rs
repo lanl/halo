@@ -8,12 +8,11 @@ use {clap::Parser, log::info};
 use crate::{
     cluster,
     commands::{Handle, HandledResult},
-    LogStream,
 };
 
 pub mod http;
 
-#[derive(Parser, Debug, Default)]
+#[derive(Parser, Debug, Default, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
     #[arg(long)]
@@ -38,23 +37,6 @@ pub struct Cli {
     /// errors indicate a configuration issue that needs to be resolved.
     #[arg(long, hide = true)]
     pub fence_on_connection_close: bool,
-}
-
-/// An object that can be passed to manager functions holding some state that should be shared
-/// between these functions.
-#[derive(Debug)]
-pub struct MgrContext {
-    pub out_stream: LogStream,
-    pub args: Cli,
-}
-
-impl MgrContext {
-    pub fn new(args: Cli) -> Self {
-        MgrContext {
-            out_stream: crate::LogStream::new_stdout(),
-            args,
-        }
-    }
 }
 
 /// Get a unix socket listener from a given socket path.
@@ -117,7 +99,7 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
         .handle_err(|e| eprintln!("Could not launch manager runtime: {e}"))?;
 
     rt.block_on(tokio::task::LocalSet::new().run_until(async {
-        let addr = match &cluster.context.args.socket {
+        let addr = match &cluster.args.socket {
             Some(s) => s,
             None => &crate::default_socket(),
         };

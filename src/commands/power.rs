@@ -4,9 +4,9 @@
 use clap::Args;
 
 use crate::{
+    cluster::Cluster,
     commands::{self, Cli, HandledResult},
     host::*,
-    Cluster,
 };
 
 #[derive(Args, Debug, Clone)]

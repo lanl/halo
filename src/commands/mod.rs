@@ -20,7 +20,7 @@ use {
 
 use clap::{Parser, Subcommand};
 
-use crate::Cluster;
+use crate::cluster::Cluster;
 
 /// A `HandledError` represents an error that has already been handled. When you call a function
 /// that returns a `HandledError` or `HandledResult`, you don't need to do anything with that error,
