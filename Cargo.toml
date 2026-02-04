@@ -34,6 +34,8 @@ nodeset = "0.5.0"
 axum = {version = "0.8.8", features = ["json"] }
 reqwest = {version = "0.13.1", features = ["blocking", "json"] }
 serde_yaml = "0.9.34"
+env_logger = "0.11.8"
+log = "0.4.29"
 
 [build-dependencies]
 capnpc = "0.21.4"
