@@ -112,13 +112,11 @@ impl TestEnvironment {
     pub fn manager_context(&self) -> MgrContext {
         let config_path = test_path(&format!("{}.yaml", self.test_id));
         let socket_path = format!("{}/{}", self.private_dir_path, "test.socket");
-        MgrContext::new(crate::commands::Cli {
+        MgrContext::new(crate::manager::Cli {
             config: Some(config_path),
             socket: Some(socket_path),
-            verbose: true,
             mtls: false,
             manage_resources: true,
-            command: None,
         })
     }
 

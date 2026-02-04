@@ -113,9 +113,9 @@ impl Cluster {
     }
 
     /// Create a Cluster given a path to a config file.
-    pub fn from_config(config: String) -> HandledResult<Self> {
-        let args = crate::commands::Cli {
-            config: Some(config),
+    pub fn from_config(config: Option<String>) -> HandledResult<Self> {
+        let args = crate::manager::Cli {
+            config,
             ..Default::default()
         };
         let context = Arc::new(MgrContext::new(args));

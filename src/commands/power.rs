@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::sync::Arc;
-
 use clap::Args;
 
 use crate::{
     commands::{self, Cli, HandledResult},
     host::*,
-    manager::MgrContext,
     Cluster,
 };
 
@@ -46,8 +43,7 @@ pub fn power(main_args: &Cli, args: &PowerArgs) -> HandledResult<()> {
     // If the user has not specified a fence agent, then assume that the fence parameters for the
     // requested host(s) are found in the config file.
 
-    let context = Arc::new(MgrContext::new(main_args.clone()));
-    let cluster = Cluster::new(context)?;
+    let cluster = Cluster::from_config(main_args.config.clone())?;
 
     for hostname in args.hostnames.iter() {
         let host = cluster.get_host(hostname).unwrap();
@@ -119,8 +115,7 @@ fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> HandledResul
         }
     };
 
-    let context = Arc::new(MgrContext::new(main_args.clone()));
-    let cluster = Cluster::new(context)?;
+    let cluster = Cluster::from_config(main_args.config.clone())?;
 
     for host in cluster.hosts() {
         match host.is_powered_on() {
