@@ -3,7 +3,7 @@
 
 use std::{io, sync::Arc};
 
-use log::info;
+use {clap::Parser, log::info};
 
 use crate::{
     cluster,
@@ -13,16 +13,34 @@ use crate::{
 
 pub mod http;
 
+#[derive(Parser, Debug, Default)]
+#[command(version, about, long_about = None)]
+pub struct Cli {
+    #[arg(long)]
+    pub config: Option<String>,
+
+    #[arg(long)]
+    pub socket: Option<String>,
+
+    #[arg(long)]
+    pub mtls: bool,
+
+    /// Whether to run in Observe mode (Default, only check on resource status, don't actively
+    /// start/stop resources), or Manage mode (actively manage resource state)
+    #[arg(long)]
+    pub manage_resources: bool,
+}
+
 /// An object that can be passed to manager functions holding some state that should be shared
 /// between these functions.
 #[derive(Debug)]
 pub struct MgrContext {
     pub out_stream: LogStream,
-    pub args: crate::commands::Cli,
+    pub args: Cli,
 }
 
 impl MgrContext {
-    pub fn new(args: crate::commands::Cli) -> Self {
+    pub fn new(args: Cli) -> Self {
         MgrContext {
             out_stream: crate::LogStream::new_stdout(),
             args,

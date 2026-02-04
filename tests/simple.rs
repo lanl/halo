@@ -182,7 +182,7 @@ mod tests {
         let config_path = halo_lib::test_env::test_path("failover.yaml");
         let config_str = std::fs::read_to_string(std::path::Path::new(&config_path)).unwrap();
         let config: halo_lib::config::Config = serde_yaml::from_str(&config_str).unwrap();
-        let cluster = halo_lib::cluster::Cluster::from_config(config_path).unwrap();
+        let cluster = halo_lib::cluster::Cluster::from_config(Some(config_path)).unwrap();
         let failover_pairs = config.failover_pairs.unwrap();
         cluster.hosts().for_each(|h| {
             let host_str = h.address();
@@ -193,7 +193,7 @@ mod tests {
             assert_eq!(partner_str, conf_partner_str);
         });
 
-        let first_host = cluster.hosts().nth(0).unwrap();
+        let first_host = cluster.hosts().next().unwrap();
         let first_host_partner = Arc::clone(first_host);
         let partner_set_res = first_host.set_failover_partner(Some(first_host_partner));
         assert_eq!(

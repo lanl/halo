@@ -13,7 +13,7 @@ pub struct ValidateArgs {
 }
 
 pub fn validate(args: &ValidateArgs) -> HandledResult<()> {
-    let cluster = Cluster::from_config(args.config.to_string())?;
+    let cluster = Cluster::from_config(Some(args.config.to_string()))?;
 
     cluster.print_summary();
 

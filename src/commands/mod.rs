@@ -63,7 +63,7 @@ impl<T, E, F: FnOnce(E)> Handle<T, F> for std::result::Result<T, E> {
     }
 }
 
-#[derive(Parser, Debug, Clone)]
+#[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
     #[arg(long, global = true)]
@@ -78,29 +78,11 @@ pub struct Cli {
     #[arg(long)]
     pub mtls: bool,
 
-    /// Whether to run in Observe mode (Default, only check on resource status, don't actively
-    /// start/stop resources), or Manage mode (actively manage resource state)
-    #[arg(long)]
-    pub manage_resources: bool,
-
     #[command(subcommand)]
-    pub command: Option<Commands>,
+    pub command: Commands,
 }
 
-impl Default for Cli {
-    fn default() -> Self {
-        Cli {
-            config: Some(crate::default_config_path()),
-            socket: Some(crate::default_socket()),
-            verbose: false,
-            mtls: false,
-            manage_resources: false,
-            command: None,
-        }
-    }
-}
-
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     Status(StatusArgs),
     Start,
@@ -130,8 +112,8 @@ fn nodesets2hostnames(nodesets: &[String]) -> Result<Vec<String>, nodeset::NodeS
     Ok(merge_nodesets(nodesets)?.iter().collect())
 }
 
-pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
-    match command {
+pub fn main(cli: &Cli) -> HandledResult<()> {
+    match &cli.command {
         Commands::Discover(args) => return discover::discover(args),
         Commands::Failback(args) => return failback::failback(cli, args),
         Commands::Power(args) => return power::power(cli, args),
@@ -146,16 +128,10 @@ pub fn main(cli: &Cli, command: &Commands) -> HandledResult<()> {
         .handle_err(|e| eprintln!("Error launching tokio runtime: {e}"))?;
 
     rt.block_on(async {
-        let context_arc = std::sync::Arc::new(crate::manager::MgrContext::new(cli.clone()));
-        match command {
-            Commands::Start => {
-                let cluster = Cluster::new(context_arc)?;
-                start::start(cluster).await
-            }
-            Commands::Stop => {
-                let cluster = Cluster::new(context_arc)?;
-                stop::stop(cluster).await
-            }
+        let cluster = Cluster::from_config(cli.config.clone())?;
+        match &cli.command {
+            Commands::Start => start::start(cluster).await,
+            Commands::Stop => stop::stop(cluster).await,
             _ => unreachable!(),
         }
     })

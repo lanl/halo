@@ -25,7 +25,7 @@ mod tests {
     #[test]
     fn manager_config() {
         let invalid_config = "this_file_does_not_exist";
-        let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo"))
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo_manager"))
             .args(vec!["--config", invalid_config])
             .output()
             .unwrap();
@@ -43,7 +43,7 @@ mod tests {
             "tests/simple.yaml"
         );
         let invalid_socket = "bad_dir/socket";
-        let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo"))
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo_manager"))
             .args(vec![
                 "--config",
                 &good_config_path,

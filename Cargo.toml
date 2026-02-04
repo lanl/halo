@@ -5,6 +5,10 @@ edition = "2021"
 
 [[bin]]
 name = "halo"
+path = "src/bin/halo.rs"
+
+[[bin]]
+name = "halo_manager"
 path = "src/bin/manager.rs"
 
 [[bin]]
