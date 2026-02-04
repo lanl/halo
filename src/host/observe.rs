@@ -3,7 +3,7 @@
 
 //! Observe-only management of a cluster without high-availability.
 
-use futures::future;
+use {futures::future, log::error};
 
 use crate::Cluster;
 
@@ -37,6 +37,6 @@ impl Host {
     ) {
         let rg = cluster.get_resource_group(rg);
         let err = rg.observe_loop(client).await;
-        eprintln!("received error: {err:?}");
+        error!("{err:?}");
     }
 }

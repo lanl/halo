@@ -3,6 +3,8 @@
 
 use std::{io, sync::Arc};
 
+use log::info;
+
 use crate::{
     cluster,
     commands::{Handle, HandledResult},
@@ -100,9 +102,7 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
             }
         };
 
-        if cluster.context.args.verbose {
-            eprintln!("listening on socket '{addr}'");
-        }
+        info!("listening on socket '{addr}'");
 
         let cluster = Arc::new(cluster);
 

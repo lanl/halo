@@ -8,6 +8,7 @@ use {
     capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem},
     clap::Parser,
     futures::AsyncReadExt,
+    log::info,
     nix::ifaddrs,
 };
 
@@ -81,6 +82,7 @@ fn get_listening_address(network: cidr::Ipv4Cidr) -> Option<Ipv4Addr> {
             if let Some(addr) = addr.as_sockaddr_in() {
                 let addr = addr.ip();
                 if network.contains(&addr) {
+                    info!("Remote agent will listen on IP address {addr}");
                     return Some(addr);
                 }
             }

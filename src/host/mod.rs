@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use {clap::ValueEnum, tokio::sync::mpsc};
+use {clap::ValueEnum, log::debug, tokio::sync::mpsc};
 
 use crate::{commands::Handle, halo_capnp::*};
 
@@ -165,7 +165,7 @@ impl Host {
 
         let mut out = String::new();
         child.stdout.unwrap().read_to_string(&mut out)?;
-        eprintln!("out: {out}");
+        debug!("out: {out}");
 
         if status.success() {
             Ok(())
