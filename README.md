@@ -28,13 +28,13 @@ The source for the halo man pages are in `docs/man`.
 1. Start the remote service, giving it an ID of `test_agent` (the test ID is used to control its resources in the test environment):
 
 ```bash
-./target/debug/halo_remote --network 127.0.0.0/24 --port 8000  --test-id test_agent --ocf-root tests/ocf_resources/
+cargo run --bin halo_remote -- --network 127.0.0.0/24 --port 8000  --test-id test_agent --ocf-root tests/ocf_resources/
 ```
 
 2. Start the manager service, using `--manage-resources` to tell it to actively manage resources:
 
 ```bash
-./target/debug/halo --config tests/simple.yaml --socket halo.socket  --manage-resources --verbose
+cargo run --bin halo_manager -- --config tests/simple.yaml --socket halo.socket  --manage-resources
 ```
 
 You should see it output information about updating the state of resources.
@@ -45,7 +45,7 @@ Look in the halo directory for files named `test_agent.*` -- these are created w
 3. Run the `status` command:
 
 ```bash
-./target/debug/halo status --socket halo.socket
+cargo run --bin halo -- status --socket halo.socket
 ```
 
 This outputs information on the state of the resources at the current moment.
@@ -80,7 +80,7 @@ The operator uses the CLI to interact with the management service on the master 
 
 ### Management Service
 
-The management service uses the `halo` binary. The entry point is in `src/bin/manager.rs`, and the functionality is in `src/manager.rs`.
+The management service uses the `halo_manager` binary. The entry point is in `src/bin/manager.rs`, and the functionality is in `src/manager.rs`.
 
 The manager launches two threads of control.
 
@@ -101,6 +101,7 @@ The arguments determine the location of the OCF Resource Agent script that is us
 To install and start the management server:
 ```bash
 # cp systemd/halo.service /lib/systemd/system/
+# cp target/debug/halo_manager /usr/local/sbin/
 # cp target/debug/halo /usr/local/sbin/
 # systemctl start halo.service
 ```
