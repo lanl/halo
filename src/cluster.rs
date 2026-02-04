@@ -8,7 +8,7 @@ use futures::future;
 use crate::{
     commands::{Handle, HandledResult},
     host::*,
-    manager::MgrContext,
+    manager,
     resource::*,
 };
 
@@ -29,9 +29,7 @@ pub struct Cluster {
     /// hostname would not be a useful unique ID in the test environment.
     hosts: HashMap<String, Arc<Host>>,
 
-    /// A reference to the shared manager context which contains the verbose output stream and a
-    /// copy of the CLI arguments.
-    pub context: Arc<MgrContext>,
+    pub args: manager::Cli,
 
     /// True if this is a failover cluster (hosts are in high-availability pairs)
     failover: bool,
@@ -39,7 +37,7 @@ pub struct Cluster {
 
 impl Cluster {
     pub async fn main_loop(&self) {
-        if self.context.args.manage_resources {
+        if self.args.manage_resources {
             if self.failover {
                 let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(self)).collect();
 
@@ -124,14 +122,13 @@ impl Cluster {
             config,
             ..Default::default()
         };
-        let context = Arc::new(MgrContext::new(args));
-        Self::new(context)
+        Self::new(args)
     }
 
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
-    pub fn new(context: Arc<MgrContext>) -> HandledResult<Self> {
-        let path = match &context.args.config {
+    pub fn new(args: manager::Cli) -> HandledResult<Self> {
+        let path = match &args.config {
             Some(path) => path,
             None => &crate::default_config_path(),
         };
@@ -148,7 +145,7 @@ impl Cluster {
             hosts: HashMap::new(),
             num_zpools: 0,
             num_targets: 0,
-            context: Arc::clone(&context),
+            args: args.clone(),
             failover: false,
         };
 
@@ -200,12 +197,8 @@ impl Cluster {
                     )
                 })?;
 
-            let mut rg = Self::one_host_resource_groups(
-                config_host,
-                host,
-                failover_host,
-                Arc::clone(&context),
-            );
+            let mut rg =
+                Self::one_host_resource_groups(config_host, host, failover_host, args.clone());
             new.resource_groups.append(&mut rg);
         }
 
@@ -225,7 +218,7 @@ impl Cluster {
         config_host: crate::config::Host,
         host: Arc<Host>,
         failover_host: Option<Arc<Host>>,
-        context: Arc<MgrContext>,
+        args: manager::Cli,
     ) -> Vec<ResourceGroup> {
         use std::cell::RefCell;
         use std::rc::Rc;
@@ -250,7 +243,7 @@ impl Cluster {
                 self,
                 host: Arc<Host>,
                 failover_host: Option<Arc<Host>>,
-                context: Arc<MgrContext>,
+                args: manager::Cli,
             ) -> Resource {
                 let dependents = RefCell::into_inner(self.children)
                     .into_iter()
@@ -258,11 +251,11 @@ impl Cluster {
                         Rc::into_inner(child).unwrap().into_resource(
                             Arc::clone(&host),
                             failover_host.clone(),
-                            Arc::clone(&context),
+                            args.clone(),
                         )
                     })
                     .collect();
-                Resource::from_config(self.me, dependents, host, failover_host, context, self.id)
+                Resource::from_config(self.me, dependents, host, failover_host, self.id, args)
             }
         }
 
@@ -320,7 +313,7 @@ impl Cluster {
                 let root = Rc::into_inner(root).unwrap().into_resource(
                     Arc::clone(&host),
                     failover_host.clone(),
-                    Arc::clone(&context),
+                    args.clone(),
                 );
                 ResourceGroup::new(root)
             })

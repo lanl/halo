@@ -11,7 +11,7 @@ use {
     log::{error, warn},
 };
 
-use crate::{halo_capnp::*, host::*, manager::MgrContext, remote::ocf};
+use crate::{halo_capnp::*, host::*, manager, remote::ocf};
 
 #[derive(Debug)]
 pub enum ManagementError {
@@ -266,7 +266,7 @@ pub struct Resource {
 
     /// The parameters of the resource as key-value pairs. For example, for Lustre, this would
     /// be something like:
-    ///     [("mountpoint", "/mnt/ost1"), ("target", "ost1")]
+    ///     [("mountpoint": "/mnt/ost1"), ("target": "ost1")]
     pub parameters: HashMap<String, String>,
 
     /// The resources which depend on this resource.
@@ -282,7 +282,7 @@ pub struct Resource {
     pub home_node: Arc<Host>,
     pub failover_node: Option<Arc<Host>>,
 
-    pub context: Arc<MgrContext>,
+    pub args: manager::Cli,
 }
 
 impl Resource {
@@ -291,8 +291,8 @@ impl Resource {
         dependents: Vec<Resource>,
         home_node: Arc<Host>,
         failover_node: Option<Arc<Host>>,
-        context: Arc<MgrContext>,
         id: String,
+        args: manager::Cli,
     ) -> Self {
         Resource {
             kind: res.kind,
@@ -301,8 +301,8 @@ impl Resource {
             status: Mutex::new(ResourceStatus::Unknown),
             home_node,
             failover_node,
-            context,
             id,
+            args,
         }
     }
 

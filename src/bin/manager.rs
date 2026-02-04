@@ -14,9 +14,7 @@ fn main() {
         env_logger::Env::default().filter_or("HALO_LOG", default_log_level),
     )
     .init();
-
-    let context = manager::MgrContext::new(args);
-    let Ok(cluster) = cluster::Cluster::new(std::sync::Arc::new(context)) else {
+    let Ok(cluster) = cluster::Cluster::new(args) else {
         std::process::exit(1);
     };
 

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{fs, io, io::Write, net, sync::Arc};
+use std::{fs, io, io::Write, net};
 
-use crate::{cluster::Cluster, manager::MgrContext, resource::Resource};
+use crate::{cluster::Cluster, manager, resource::Resource};
 
 /// Given a relative `path` in the test directory, prepend the
 /// full path to the test directory.
@@ -61,11 +61,6 @@ pub struct TestEnvironment {
     /// The agent binary path has to be passed in as an argument from the tests because the
     /// CARGO_BIN_EXE_* environment variables aren't defined during non-test compilation.
     agent_binary_path: String,
-
-    /// For tests that use the manager,  this will store a file used for log output from the
-    /// manager. The output in this file is for reference only; it is not used by the test
-    /// itself.
-    manager_log_file: Option<fs::File>,
 }
 
 impl TestEnvironment {
@@ -103,23 +98,22 @@ impl TestEnvironment {
             log_file_path,
             log_file,
             agent_binary_path: agent_binary_path.to_string(),
-            manager_log_file: None,
         }
     }
 
     /// Build a MgrContext for the given test environment. This assumes that the config file for
     /// the test is in a yaml file named {test_id}.yaml.
-    pub fn manager_context(&self) -> MgrContext {
+    pub fn manager_args(&self) -> manager::Cli {
         let config_path = test_path(&format!("{}.yaml", self.test_id));
         let socket_path = format!("{}/{}", self.private_dir_path, "test.socket");
-        MgrContext::new(crate::manager::Cli {
+        manager::Cli {
             config: Some(config_path),
             socket: Some(socket_path),
             mtls: false,
             verbose: false,
             manage_resources: true,
             fence_on_connection_close: true,
-        })
+        }
     }
 
     /// Build a Cluster for the given test environment.
@@ -128,52 +122,9 @@ impl TestEnvironment {
     /// to receive information from the running Manager thread via reading from the buffer in the
     /// shared MgrContext. If the caller does not provide a MgrContext, then a default context is
     /// used.
-    pub fn cluster(&self, context: Option<Arc<MgrContext>>) -> Cluster {
-        let context = context.unwrap_or(Arc::new(self.manager_context()));
-        Cluster::new(context).unwrap()
-    }
-
-    /// Spawn a manager in a new thread. The manager will use a shared MgrContext so that the test
-    /// that spawns it can receive communications from it.
-    pub fn start_manager(&mut self, mgr_context: Arc<MgrContext>) {
-        let manager_log_path = format!("{}/{}", self.private_dir_path, "manager.log");
-        let mgr_log = std::fs::File::create(&manager_log_path)
-            .expect(&format!("failed to open file: '{manager_log_path}'"));
-        self.manager_log_file = Some(mgr_log);
-
-        let cluster = Cluster::new(Arc::clone(&mgr_context))
-            .expect("Could not create cluster from config file");
-
-        std::thread::spawn(move || {
-            if crate::manager::main(cluster).is_err() {
-                std::process::exit(1);
-            }
-        });
-    }
-
-    /// Given a handle to the manager process's stdout/stderr, an output file to write to, and a
-    /// comparison string slice, assert the given output is equivalent to the string slice's content.
-    ///
-    /// Panics if self.start_manager() has not previously been called.
-    pub fn assert_manager_next_line(
-        &self,
-        context: &Arc<crate::manager::MgrContext>,
-        expected_str: &str,
-    ) {
-        let mut logfile = self.manager_log_file.as_ref().unwrap();
-        let mut buffer: Vec<u8> = vec![0u8; 4096];
-        let n = context
-            .out_stream
-            .readln(&mut buffer)
-            .expect("failed to read from reader");
-        let _ = logfile
-            .write(&buffer[0..n])
-            .expect("failed to write to logfile");
-        // `n-1` to strip the newline from `readln()`
-        assert_eq!(
-            &std::str::from_utf8(&buffer[0..n - 1]).unwrap(),
-            &expected_str
-        );
+    pub fn cluster(&self, args: Option<manager::Cli>) -> Cluster {
+        let args = args.unwrap_or(self.manager_args());
+        Cluster::new(args).unwrap()
     }
 
     /// Starts a remote agent in a new process for each port in the given list of `ports`.

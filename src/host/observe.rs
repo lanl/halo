@@ -5,7 +5,7 @@
 
 use {futures::future, log::error};
 
-use crate::{resource::Location, Cluster};
+use crate::{cluster::Cluster, resource::Location};
 
 use super::*;
 

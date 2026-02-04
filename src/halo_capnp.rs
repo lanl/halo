@@ -129,7 +129,7 @@ async fn get_ocf_request(
     let stream = tokio::net::TcpStream::connect(hostname).await?;
     stream.set_nodelay(true).expect("Setting nodelay failed.");
 
-    if res.context.args.mtls {
+    if res.args.mtls {
         // Create mtls connector
         let mtls_connector = get_connector();
 
