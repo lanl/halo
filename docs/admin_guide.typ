@@ -24,18 +24,18 @@ It is designed to integrate with existing OCF resource agents and fence agents.
 HALO consists of three main components:
 
 - `halo_remote`: a daemon that runs on the cluster nodes;
-- `halo`: a daemon that runs on the management node and performs management tasks;
-- a CLI utility, which also uses the `halo` binary, that allows the admin to issue commands.
+- `halo_manager`: a daemon that runs on the management node and performs management tasks;
+- `halo`: a CLI utility that allows the admin to issue commands to show status and perform actions.
 
 The `halo_remote` daemon performs actions on cluster nodes on behalf of the management service.
 It never acts on its own--it only takes action when directed to do so by the management service.
 The remote daemon uses existing OCF resource agent programs to perform management actions.
 
-The `halo` management daemon communicates with the `halo_remote` daemons over TCP using a capnproto RPC protocol.
+The `halo_manager` management daemon communicates with the `halo_remote` daemons over TCP using a capnproto RPC protocol.
 The daemon commands the remote agents to start, stop, and monitor resources as needed.
 The management service also has the ability to fence cluster nodes by powering them off.
 
-The CLI utility uses the `halo` binary and allows the admin to query status and perform actions on the cluster.
+The `halo` CLI utility allows the admin to query status and perform actions on the cluster.
 It communicates with the management service using an HTTP API.
 Communication occurs over a unix domain socket.
 The utility supports commands like `status` to display the cluster state,
@@ -87,7 +87,7 @@ and never interferes with the availability of the managed filesystem.
 The HALO management daemon expects a configuration file in YAML format.
 The config file can be specified as a CLI argument:
 ```bash
-halo --config cluster.yaml
+halo_manager --config cluster.yaml
 ```
 or, if it is not specified on the command line, a default location
 of `/etc/halo/halo.conf` is used.
@@ -218,7 +218,7 @@ If the OCF scripts are installed in a different location, the `--ocf-root` optio
 
 = Management Daemon
 
-The HALO management daemon runs the `halo` program.
+The HALO management daemon runs the `halo_manager` program.
 It is typically managed as a systemd service called `halo.service` on the cluster's management node.
 
 == Manage versus Observe Mode
@@ -233,7 +233,8 @@ A future version of HALO will make manage mode the default.
 == Unix Domain Socket
 
 The management daemon listens for commands from the CLI utility on a unix domain socket.
-The default path to the socket is `/var/run/halo.socket`, but a custom path can be specified with the `--path` option.
+The default path to the socket is `/var/run/halo.socket`,
+but a custom path can be specified with the `--socket` option.
 
 = CLI Utility
 
