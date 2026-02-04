@@ -364,13 +364,21 @@ impl Host {
                             panic!("Unexpected to receive TaskCanceled event when failover was not already requested.");
                         }
                         Message::SwitchHost => {
-                            self.switch_host(
-                                state,
-                                event.resource_group,
-                                Rc::clone(&client),
-                                cluster,
-                            )
-                            .await
+                            match state
+                                .outstanding_resource_tasks
+                                .remove(&event.resource_group.id)
+                            {
+                                true => {
+                                    tasks.push(Box::pin(self.switch_host(
+                                        event.resource_group,
+                                        Rc::clone(&client),
+                                        cluster,
+                                    )));
+                                }
+                                false => {
+                                    debug!("Rceived SwitchHost message for resource {} on host {}, but it is not currently being managed.", &event.resource_group.id, self.id());
+                                }
+                            };
                         }
                         Message::ResourceError => {
                             state.resources_with_errors.push(event.resource_group);
@@ -459,20 +467,23 @@ impl Host {
 
     async fn switch_host(
         &self,
-        state: &mut HostState,
         mut token: ResourceToken,
         client: Rc<ocf_resource_agent::Client>,
         cluster: &Cluster,
-    ) {
-        let true = state.outstanding_resource_tasks.remove(&token.id) else {
-            panic!("Switch host called for a resource that was not being managed.");
-        };
-
+    ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
 
-        rg.stop_resources(&client)
-            .await
-            .expect("TODO: handle error in stopping resources.");
+        match rg.stop_resources(&client).await {
+            Ok(()) => {}
+            Err(ManagementError::Configuration) => {
+                debug!("Switch host operation recieved unexpected configuration error from remote agent.");
+                return new_message(token, Message::ResourceError);
+            }
+            Err(ManagementError::Connection) => {
+                debug!("Connection to remote agent failed during switch host operation.");
+                return new_message(token, Message::RequestFailover);
+            }
+        };
 
         let partner = self.failover_partner().unwrap();
 
@@ -486,6 +497,8 @@ impl Host {
             .send(new_message(token, Message::ManageResourceGroup))
             .await
             .unwrap();
+
+        HostMessage::None
     }
 
     /// The purpose of this procedure is to perform startup logic to discover the existing state of
