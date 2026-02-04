@@ -3,7 +3,7 @@
 
 use std::{
     fmt,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, OnceLock},
 };
 
 use tokio::sync::mpsc;
@@ -43,7 +43,6 @@ pub enum HostCommand {
 #[derive(Debug)]
 pub struct Host {
     address: HostAddress,
-    status: Mutex<HostStatus>,
     fence_agent: Option<FenceAgent>,
     failover_partner: OnceLock<Option<Arc<Host>>>,
 
@@ -63,7 +62,6 @@ impl Host {
                     None => crate::remote_port(),
                 },
             },
-            status: Mutex::new(HostStatus::Unknown),
             fence_agent,
             failover_partner: OnceLock::new(),
             sender,
@@ -136,17 +134,6 @@ impl Host {
             .send(HostMessage::Command(command))
             .await
             .expect("Sending host message {command} failed");
-    }
-
-    pub fn get_status(&self) -> HostStatus {
-        *self.status.lock().unwrap()
-    }
-
-    pub fn set_status(&self, status: HostStatus) {
-        if status == HostStatus::Down {
-            panic!("Down status for host is not possible yet. (Requires fencing.)");
-        };
-        *self.status.lock().unwrap() = status;
     }
 
     pub fn fence_agent(&self) -> &Option<FenceAgent> {
