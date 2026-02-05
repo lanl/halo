@@ -25,6 +25,9 @@ pub struct Cli {
     #[arg(long)]
     pub mtls: bool,
 
+    #[arg(long)]
+    pub verbose: bool,
+
     /// Whether to run in Observe mode (Default, only check on resource status, don't actively
     /// start/stop resources), or Manage mode (actively manage resource state)
     #[arg(long)]
