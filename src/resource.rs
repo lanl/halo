@@ -9,7 +9,6 @@ use std::{
 use {
     futures::future,
     log::{error, warn},
-    tokio::sync::Notify,
 };
 
 use crate::{halo_capnp::*, host::*, manager::MgrContext, remote::ocf};
@@ -63,16 +62,6 @@ fn get_worst_error(
 pub struct ResourceGroup {
     pub root: Resource,
     overall_status: Mutex<ResourceStatus>,
-
-    /// A notification mechanism used to tell a resource group management task to cancel. This
-    /// could occur, for example, because the host that the task is using is going to be fenced.
-    pub cancel: tokio::sync::Notify,
-
-    /// A notification mechanism to tell a resource group management task to stop so that
-    /// management can be handed over tot he partner host.
-    // TODO: rather than using a separate Notify object, it might be better to switch to using a
-    // single object that can carry data (i.e., an Enum that says the reason for the notification)
-    pub switch_host: tokio::sync::Notify,
 }
 
 impl ResourceGroup {
@@ -81,8 +70,6 @@ impl ResourceGroup {
         Self {
             root,
             overall_status: Mutex::new(ResourceStatus::Unknown),
-            cancel: Notify::new(),
-            switch_host: Notify::new(),
         }
     }
 

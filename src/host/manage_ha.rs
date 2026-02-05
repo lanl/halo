@@ -3,17 +3,12 @@
 
 //! Management of a failover cluster with HA pairs.
 
-use std::{
-    future::Future,
-    hash::{Hash, Hasher},
-    io,
-    pin::Pin,
-    rc::Rc,
-};
+use std::{future::Future, io, mem::take, pin::Pin, rc::Rc};
 
 use {
     futures::{future, stream::FuturesUnordered, StreamExt},
     log::{debug, warn},
+    tokio::sync::Notify,
 };
 
 use crate::{
@@ -72,6 +67,9 @@ enum Message {
     /// A resource management task reported that this resource has an error which prevents the
     /// service from managing it.
     ResourceError,
+    // TODO: probably need a message for "Unmanage"--when a resource is unmanaged, its management
+    // task should be cancelled and a new task launched that will monitor it on both hosts, for
+    // cases where the admin manually moves it over to the failover partner.
 }
 
 fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {
@@ -79,6 +77,33 @@ fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {
         resource_group: rg,
         kind,
     })
+}
+
+/// This object is shared between a parent Host task, and a ResourceGroup task that the Host task
+/// has launched. The inner Notify objects are triggered by the Host task when it wants to cancel
+/// the Resource task that holds it.
+#[derive(Clone)]
+struct ResourceTaskCancel {
+    /// The ID of the ResourceGroup that this Cancel object is for.
+    id: String,
+
+    /// A notification mechanism used to tell a resource group management task to stop because
+    /// connection was lost to the remote agent, and a fence action might be initiated.
+    lost_connection: Rc<Notify>,
+
+    /// A notification mechanism to tell a resource group management task to stop so that
+    /// management can be handed over to the partner host.
+    switch_host: Rc<Notify>,
+}
+
+impl ResourceTaskCancel {
+    fn new(id: String) -> Self {
+        Self {
+            id,
+            lost_connection: Rc::new(Notify::new()),
+            switch_host: Rc::new(Notify::new()),
+        }
+    }
 }
 
 /// Mutable state related to the ongoing management of the Host.
@@ -97,7 +122,7 @@ struct HostState {
     /// host. This is used for making sure that every outstanding task is cancelled before an
     /// action occurs that results in new management tasks being launched. This includes both
     /// fencing, and a TCP connection breaking resulting in a new client being needed.
-    outstanding_resource_tasks: HashSet<String>,
+    outstanding_resource_tasks: Vec<ResourceTaskCancel>,
 
     /// If a resource management task returns with an error indicating failover should occur, we
     /// need to wait on the remaining tasks to be canceled. Once every outstanding task has
@@ -117,15 +142,26 @@ struct HostState {
 }
 
 impl HostState {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             manage_these_resources: Vec::new(),
             check_these_resources: Vec::new(),
-            outstanding_resource_tasks: HashSet::new(),
+            outstanding_resource_tasks: Vec::new(),
             failover_requested: false,
             resources_in_transit: Vec::new(),
             resources_with_errors: Vec::new(),
         }
+    }
+
+    /// When a ResourceGroup task exits, it needs to remove its ResourceTaskCancel object from
+    /// outsanding_resource_tasks.
+    fn resource_task_exited(&mut self, id: &str) {
+        let still_running = take(&mut self.outstanding_resource_tasks)
+            .into_iter()
+            .filter(|task| task.id != id)
+            .collect();
+
+        self.outstanding_resource_tasks = still_running;
     }
 }
 
@@ -152,20 +188,6 @@ struct ResourceToken {
 impl Drop for ResourceToken {
     fn drop(&mut self) {
         panic!("Resource token {self:?} was illegally dropped!");
-    }
-}
-
-impl PartialEq for ResourceToken {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for ResourceToken {}
-
-impl Hash for ResourceToken {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
     }
 }
 
@@ -304,18 +326,20 @@ impl Host {
         tasks.push(Box::pin(self.receive_message()));
 
         // Create a task to manage each resource group that should run on this host.
-        for token in std::mem::take(&mut state.manage_these_resources) {
+        for token in take(&mut state.manage_these_resources) {
             let id = token.id.clone();
+            let revoke = ResourceTaskCancel::new(id);
             tasks.push(Box::pin(self.manage_resource_group(
                 cluster,
                 token,
                 Rc::clone(&client),
+                revoke.clone(),
             )));
-            state.outstanding_resource_tasks.insert(id);
+            state.outstanding_resource_tasks.push(revoke);
         }
 
         // Create a task to check on each resource group that wasn't running on the partner host.
-        for token in std::mem::take(&mut state.check_these_resources) {
+        for token in take(&mut state.check_these_resources) {
             tasks.push(Box::pin(self.away_startup_check(
                 token,
                 cluster,
@@ -334,8 +358,7 @@ impl Host {
                     tasks.push(Box::pin(self.receive_message()));
                 }
                 HostMessage::Resource(event) => {
-                    let id = event.resource_group.id.clone();
-
+                    let id = &event.resource_group.id;
                     match event.kind {
                         // Failover partner told this Host to check on this resource group. If they are
                         // running already, this Host proceeds to manage them; otherwise, the original Host
@@ -353,54 +376,44 @@ impl Host {
                         }
                         // Partner Host told this Host to begin managing this resource group.
                         Message::ManageResourceGroup => {
+                            let revoke = ResourceTaskCancel::new(id.clone());
                             tasks.push(Box::pin(self.manage_resource_group(
                                 cluster,
                                 event.resource_group,
                                 Rc::clone(&client),
+                                revoke.clone(),
                             )));
-                            state.outstanding_resource_tasks.insert(id);
+                            state.outstanding_resource_tasks.push(revoke);
                             tasks.push(Box::pin(self.receive_message()));
                         }
                         // Child task for management of this resource group encountered an error indicating
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
                         Message::RequestFailover => {
-                            if self
-                                .request_failover(state, cluster, event.resource_group)
-                                .await
-                            {
+                            state.resource_task_exited(id);
+                            if self.request_failover(state, event.resource_group) {
                                 return;
                             }
                         }
                         // Child task for management of this resource exited after being instructed to
                         // cancel management.
                         Message::TaskCanceled => {
-                            if state.failover_requested
-                                && self
-                                    .request_failover(state, cluster, event.resource_group)
-                                    .await
-                            {
-                                return;
+                            state.resource_task_exited(id);
+                            if state.failover_requested {
+                                if self.request_failover(state, event.resource_group) {
+                                    return;
+                                }
+                            } else {
+                                panic!("Unexpected to receive TaskCanceled event when failover was not already requested.");
                             }
-
-                            panic!("Unexpected to receive TaskCanceled event when failover was not already requested.");
                         }
                         Message::SwitchHost => {
-                            match state
-                                .outstanding_resource_tasks
-                                .remove(&event.resource_group.id)
-                            {
-                                true => {
-                                    tasks.push(Box::pin(self.switch_host(
-                                        event.resource_group,
-                                        Rc::clone(&client),
-                                        cluster,
-                                    )));
-                                }
-                                false => {
-                                    debug!("Rceived SwitchHost message for resource {} on host {}, but it is not currently being managed.", &event.resource_group.id, self.id());
-                                }
-                            };
+                            state.resource_task_exited(id);
+                            tasks.push(Box::pin(self.switch_host(
+                                event.resource_group,
+                                Rc::clone(&client),
+                                cluster,
+                            )));
                         }
                         Message::ResourceError => {
                             state.resources_with_errors.push(event.resource_group);
@@ -417,17 +430,7 @@ impl Host {
     /// This is needed so that the loop in remote_connected_loop() knows whether to break out to the
     /// "top level" loop in manage_ha().
     // TODO: can I come up with a cleaner way to do that?
-    async fn request_failover(
-        &self,
-        state: &mut HostState,
-        cluster: &Cluster,
-        rg: ResourceToken,
-    ) -> bool {
-        let removed = state.outstanding_resource_tasks.remove(&rg.id);
-        if !removed {
-            panic!("Unexpected to receive a failover request for a task not oustanding.");
-        }
-
+    fn request_failover(&self, state: &mut HostState, rg: ResourceToken) -> bool {
         state.resources_in_transit.push(rg);
 
         if state.outstanding_resource_tasks.is_empty() {
@@ -438,10 +441,12 @@ impl Host {
             // However, they must only be notified once, so only do this if this is the first task
             // to request failover.
             if !state.failover_requested {
-                for rg in state.outstanding_resource_tasks.iter() {
-                    let rg = cluster.get_resource_group(rg);
-                    rg.cancel.notify_one();
-                    debug!("request failover notified {}", rg.id());
+                for revoke in take(&mut state.outstanding_resource_tasks) {
+                    debug!(
+                        "request failover: notifiying task for resource '{}'",
+                        revoke.id
+                    );
+                    revoke.lost_connection.notify_one();
                 }
             }
 
@@ -478,7 +483,7 @@ impl Host {
                 // If we were able to re-establish connection to the client, then return and let
                 // the manager try again to manage the resources that were running on this Host.
                 Ok(client) => {
-                    state.manage_these_resources = std::mem::take(&mut state.resources_in_transit);
+                    state.manage_these_resources = take(&mut state.resources_in_transit);
                     return Some(client);
                 }
                 // If an error occurred, then the type of error informs the course of action...
@@ -497,13 +502,17 @@ impl Host {
                         if !cluster.context.args.fence_on_connection_close {
                             debug!(
                                 "Unexpected error '{other}' while trying to reconnect to remote agent at {}.",
-                                self.id()
+                                self.address()
                             );
 
                             // Once the remote node is healthy again, we want the manager to
                             // proceed with managing the resources again.
-                            state.manage_these_resources =
-                                std::mem::take(&mut state.resources_in_transit);
+                            //
+                            // TODO: Is this safe? Maybe instead of putting these in
+                            // manage_these_resources, this should re-do the startup logic, in case
+                            // the admin manually moved the resources while the connection to the
+                            // remote was lost?
+                            state.manage_these_resources = take(&mut state.resources_in_transit);
                             return None;
                         }
                     }
@@ -540,19 +549,26 @@ impl Host {
     }
 
     async fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
-        for res_id in state.outstanding_resource_tasks.iter() {
-            let rg = cluster.get_resource_group(res_id);
+        let still_running = take(&mut state.outstanding_resource_tasks)
+            .into_iter()
+            .filter(|task| {
+                let rg = cluster.get_resource_group(&task.id);
 
-            // If a resource is currently home, there is nothing to do for it.
-            if rg.root.home_node.id() == self.id() {
-                continue;
-            }
+                // If a resource is currently home, there is nothing to do for it.
+                if rg.root.home_node.id() == self.id() {
+                    return true;
+                }
 
-            // If a resource is not home, then need to stop it and pass management on...
-            warn!("{res_id} is not home and will be moved back.");
+                // If a resource is not home, then need to stop it and pass management on...
+                warn!("{} is not home and will be moved back.", &task.id);
 
-            rg.switch_host.notify_one();
-        }
+                task.switch_host.notify_one();
+
+                false
+            })
+            .collect();
+
+        state.outstanding_resource_tasks = still_running;
     }
 
     async fn switch_host(
@@ -757,6 +773,7 @@ impl Host {
         cluster: &Cluster,
         token: ResourceToken,
         client: Rc<ocf_resource_agent::Client>,
+        revoke: ResourceTaskCancel,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
 
@@ -768,11 +785,11 @@ impl Host {
             biased;
 
             // Received a cancel notification: exit right away.
-            _ = rg.cancel.notified() => {
+            _ = revoke.lost_connection.notified() => {
                 new_message(token, Message::TaskCanceled)
             }
 
-            _ = rg.switch_host.notified() => {
+            _ = revoke.switch_host.notified() => {
                 new_message(token, Message::SwitchHost)
             }
 
