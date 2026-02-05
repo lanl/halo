@@ -32,6 +32,12 @@ pub struct Cli {
     /// start/stop resources), or Manage mode (actively manage resource state)
     #[arg(long)]
     pub manage_resources: bool,
+
+    /// Whether to treat network errors like "Connection Reset" or "Connection Refused" as
+    /// fencable. This is ONLY for use in the test environment; in production environments, such
+    /// errors indicate a configuration issue that needs to be resolved.
+    #[arg(long, hide = true)]
+    pub fence_on_connection_close: bool,
 }
 
 /// An object that can be passed to manager functions holding some state that should be shared

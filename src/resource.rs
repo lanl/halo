@@ -8,7 +8,7 @@ use std::{
 
 use {
     futures::future,
-    log::{debug, error, warn},
+    log::{error, warn},
     tokio::sync::Notify,
 };
 
@@ -102,7 +102,6 @@ impl ResourceGroup {
         client: &ocf_resource_agent::Client,
         loc: Location,
     ) -> ManagementError {
-        debug!("managing rg {}", self.id());
         let body = async || -> Result<(), ManagementError> {
             loop {
                 self.update_resources(client, loc).await?;

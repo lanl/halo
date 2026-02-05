@@ -118,6 +118,7 @@ impl TestEnvironment {
             mtls: false,
             verbose: false,
             manage_resources: true,
+            fence_on_connection_close: true,
         })
     }
 
