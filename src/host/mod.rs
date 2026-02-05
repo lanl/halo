@@ -2,7 +2,7 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     error::Error,
     fmt,
     io::{Read, Write},
