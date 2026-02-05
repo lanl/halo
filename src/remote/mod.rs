@@ -8,7 +8,7 @@ use {
     capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem},
     clap::Parser,
     futures::AsyncReadExt,
-    log::info,
+    log::{info, trace},
     nix::ifaddrs,
 };
 
@@ -82,7 +82,6 @@ fn get_listening_address(network: cidr::Ipv4Cidr) -> Option<Ipv4Addr> {
             if let Some(addr) = addr.as_sockaddr_in() {
                 let addr = addr.ip();
                 if network.contains(&addr) {
-                    info!("Remote agent will listen on IP address {addr}");
                     return Some(addr);
                 }
             }
@@ -99,9 +98,8 @@ async fn __agent_main(args: Cli, addr: &str) -> Result<(), Box<dyn Error>> {
             let listener = tokio::net::TcpListener::bind(addr)
                 .await
                 .inspect_err(|e| eprintln!("Could not listen on address \"{addr}\": {e}"))?;
-            if args.verbose {
-                eprintln!("Listening on {addr}");
-            }
+
+            info!("Listening on {addr}");
 
             let agent_client: ocf_resource_agent::Client =
                 capnp_rpc::new_client(OcfResourceAgentImpl { cli: args });
@@ -173,9 +171,7 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
         }
         let ocf_args = ocf::Arguments::from(&ocf_args);
 
-        if self.cli.verbose {
-            log_operation(&op, &ocf_args);
-        }
+        log_operation(&op, &ocf_args);
 
         match ocf::do_operation(resource, op, &ocf_args, &self.cli) {
             Ok((exit_code, error_output)) => {
@@ -211,5 +207,5 @@ fn log_operation(op: &ocf::Operation, ocf_args: &ocf::Arguments) {
     for (k, v) in ocf_args.args.iter() {
         msg.push_str(&format!("    {}: {}\n", k, v));
     }
-    eprintln!("{msg}");
+    trace!("{msg}");
 }
