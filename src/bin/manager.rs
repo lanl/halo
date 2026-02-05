@@ -7,9 +7,13 @@ use halo_lib::{self, cluster, manager};
 
 /// The halo_manager binary runs the management daemon.
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().filter_or("HALO_LOG", "warn")).init();
-
     let args = manager::Cli::parse();
+
+    let default_log_level = if args.verbose { "debug" } else { "warn" };
+    env_logger::Builder::from_env(
+        env_logger::Env::default().filter_or("HALO_LOG", default_log_level),
+    )
+    .init();
 
     let context = manager::MgrContext::new(args);
     let Ok(cluster) = cluster::Cluster::new(std::sync::Arc::new(context)) else {

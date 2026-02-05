@@ -116,6 +116,7 @@ impl TestEnvironment {
             config: Some(config_path),
             socket: Some(socket_path),
             mtls: false,
+            verbose: false,
             manage_resources: true,
         })
     }
