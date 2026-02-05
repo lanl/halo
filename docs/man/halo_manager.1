@@ -1,0 +1,58 @@
+.TH HALO 1
+.SH NAME
+halo_manager \- manage a distributed filesystem cluster
+.SH SYNOPSIS
+.B halo_manager
+[\fB\-\-config\fR \fICONFIG\fR]
+[\fB\-\-socket\fR \fISOCKET\fR]
+[\fB\-\-manage\-resources]
+[\fB\-\-verbose\fR]
+.SH DESCRIPTION
+.B halo_manager
+manages a distributed filesystem cluster.
+It communicates with remote agents (see
+.BR halo_remote (1))
+to determine the status of resources running on cluster nodes.
+.B halo_manager
+will start and stop resources on cluster nodes, as well as perform
+power management on cluster nodes, as needed to try to ensure that
+resources remain available.
+System administrators can interact with the manager using the
+.BR halo (1)
+command line utility.
+System administrators can interact with the manager using the
+.BR halo (1)
+command line utility.
+.SH OPTIONS
+.TP
+.BR \-\-config =\fICONFIG\fR
+The config file to use.
+The default path is
+.I /etc/halo/halo.conf\fR.
+.TP
+.BR \-\-socket =\fISOCKET\fR
+The path to the unix domain socket used for communication between
+the manager service and the admin CLI utility.
+The default path is
+.I /var/run/halo.socket\fR.
+.TP
+.BR \-\-manage\-resources
+If specified,
+.Bhalo
+will actively manage resources.
+The default is to only passively observe their state.
+.TP
+.BR \-\-verbose
+Enable verbose log output.
+This is only recommended while debugging, not for routine operation.
+.SH EXAMPLES
+To run the manager service in active mode,
+specifying a custom config file path and socket:
+.PP
+.nf
+.RS
+halo_manager --config halo.yaml --socket halo.socket --manage-resources
+.RE
+.fi
+.SH SEE ALSO
+halo(1), halo_remote(1), halo.conf(5)
