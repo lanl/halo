@@ -6,6 +6,7 @@
 use std::{
     future::Future,
     hash::{Hash, Hasher},
+    io,
     pin::Pin,
     rc::Rc,
 };
@@ -201,10 +202,20 @@ impl Host {
                         "Host {} established connection to its remote agent.",
                         self.id()
                     );
-                    let client = Rc::new(client);
-
-                    self.remote_connected_loop(client, cluster, &mut state)
-                        .await;
+                    let mut client = Rc::new(client);
+                    loop {
+                        self.remote_connected_loop(client, cluster, &mut state)
+                            .await;
+                        // remote_connected_loop() only returns once a failover has been requested, and
+                        // all host tasks are cancelled.
+                        match self.maybe_do_failover(&mut state, cluster).await {
+                            // If maybe_do_failover() returned a Client (because it was able to
+                            // re-establish connection), we can use that client to re-enter the
+                            // remote_connected_loop().
+                            Some(new_client) => client = Rc::new(new_client),
+                            None => break,
+                        };
+                    }
                 }
                 Err(_e) => {
                     debug!(
@@ -421,7 +432,6 @@ impl Host {
 
         if state.outstanding_resource_tasks.is_empty() {
             // If every resource management task has been cancelled, fencing should proceed:
-            self.do_failover(state).await;
             true
         } else {
             // If there are outstanding resource group tasks, they need to be notified to exit.
@@ -431,6 +441,7 @@ impl Host {
                 for rg in state.outstanding_resource_tasks.iter() {
                     let rg = cluster.get_resource_group(rg);
                     rg.cancel.notify_one();
+                    debug!("request failover notified {}", rg.id());
                 }
             }
 
@@ -439,11 +450,79 @@ impl Host {
         }
     }
 
+    /// When a connection has been lost to the remote agent, the Host task evaluates whether
+    /// failover is required.
+    ///
+    ///   - is the already_fenced flag set on this Host -- or its partner?
+    ///     (TODO: implement this flag... ;)
+    ///
+    ///   - is the issue temporary? can a connection be re-established?
+    ///
+    /// In the above cases, do not proceed with fencing.
+    ///
+    /// If a connection is re-established to the client, return it here so that it can be used to
+    /// re-enter the management loop.
+    async fn maybe_do_failover(
+        &self,
+        state: &mut HostState,
+        cluster: &Cluster,
+    ) -> Option<ocf_resource_agent::Client> {
+        let mut tries = 2;
+
+        while tries > 0 {
+            debug!(
+                "Trying to reconnect to remote agent at {}, attempt {tries}",
+                self.id()
+            );
+            match get_client(&self.address()).await {
+                // If we were able to re-establish connection to the client, then return and let
+                // the manager try again to manage the resources that were running on this Host.
+                Ok(client) => {
+                    state.manage_these_resources = std::mem::take(&mut state.resources_in_transit);
+                    return Some(client);
+                }
+                // If an error occurred, then the type of error informs the course of action...
+                Err(e) => match e.kind() {
+                    // Timed out suggests the Host is down. Proceed with fencing.
+                    io::ErrorKind::TimedOut => {}
+                    // Any other kind of error suggests the Host is reachable, but there is
+                    // likely a configuration issue, like a firewall rule was added that blocks
+                    // communication, or the remote daemon was killed.
+                    //
+                    // It does not make sense to proceed with fencing in this case; instead, the
+                    // admin must intervene to correct the issue. Unless this is running in the
+                    // test environment, where such errors are intended to result in fencing the
+                    // test agent.
+                    other => {
+                        if !cluster.context.args.fence_on_connection_close {
+                            debug!(
+                                "Unexpected error '{other}' while trying to reconnect to remote agent at {}.",
+                                self.id()
+                            );
+
+                            // Once the remote node is healthy again, we want the manager to
+                            // proceed with managing the resources again.
+                            state.manage_these_resources =
+                                std::mem::take(&mut state.resources_in_transit);
+                            return None;
+                        }
+                    }
+                },
+            }
+
+            tries -= 1;
+        }
+
+        self.do_failover(state).await;
+
+        None
+    }
+
     async fn do_failover(&self, state: &mut HostState) {
         self.do_fence(FenceCommand::Off)
             .expect("Fencing failed... TODO: handle this case...");
 
-        warn!("Host {} did fence off...", self.id());
+        warn!("Host {} has been powered off.", self.id());
 
         for mut rg in state.resources_in_transit.drain(..) {
             let partner = self.failover_partner().unwrap();
@@ -680,6 +759,8 @@ impl Host {
         client: Rc<ocf_resource_agent::Client>,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
+
+        debug!("Host {} is managing resource group {}", self.id(), rg.id());
 
         tokio::select! {
             // Biased because if a task has been cancelled, it should exit ASAP and not bother
