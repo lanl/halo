@@ -1,0 +1,54 @@
+.TH HALO 1
+.SH NAME
+halo_remote \- manage a distributed filesystem cluster
+.SH SYNOPSIS
+.B halo_remote
+[\fB\-\-network\fR \fINETWORK\fR]
+[\fB\-\-port\fR \fIPORT\fR]
+[\fB\-\-ocf\-root\fR \fIOCF_ROOT\fR]
+[\fB\-\-mtls]
+[\fB\-\-verbose]
+.SH DESCRIPTION
+.B halo_remote
+is a daemon that runs on a server hosting resources to be managed by HALO.
+It listens for commands from the
+.BR halo_manager (1)
+service that runs on the management server, acts on those commands,
+and sends replies back to the management service.
+.SH OPTIONS
+.TP
+.BR \-\-network =\fINETWORK\fR
+Only bind to an IP address in the specified network.
+The default is
+.I 192.168.1.0/24\fR.
+If an IP address in that network is not available,
+the program will refuse to start.
+.TP
+.BR \-\-port =\fIPORT\fR
+Listen on the given port.
+The default is 8000.
+.TP
+.BR \-\-ocf\-root =\fIOCF_ROOT\fR
+Look in the specified directory for OCF resource agent scripts.
+The default is
+.I /usr/lib/ocf/\fR.
+.TP
+.BR \-\-mtls
+Use mutual TLS to authenticate the manager service.
+Must also be enabled in
+.BR halo_manager (1)
+to function.
+.TP
+.BR \-\-verbose
+Enable verbose log output.
+This is only recommended while debugging, not for routine operation.
+.SH EXAMPLES
+To run the remote service using a specific IP address and port:
+.PP
+.nf
+.RS
+halo_remote --network 10.0.0.0/24 --port 9000
+.RE
+.fi
+.SH SEE ALSO
+halo(1), halo_manager(1), halo.conf(5)

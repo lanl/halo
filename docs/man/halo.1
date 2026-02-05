@@ -5,25 +5,21 @@ halo \- manage a distributed filesystem cluster
 .B halo
 [\fB\-\-config\fR \fICONFIG\fR]
 [\fB\-\-socket\fR \fISOCKET\fR]
-[\fB\-\-manage\-resources]
+[\fB\-\-verbose\fR]
+[\fB\-\-mtls\fR]
+\fB<subcommand>
+\fR[\fB<subcommand-args>\fR]
 .SH DESCRIPTION
 .B halo
-manages a distributed filesystem cluster.
-It communicates with remote agents (see
-.BR halo_remote (1))
-to determine the status of resources running on cluster nodes.
-Resources include storage devices such as zpools and mdraid devices,
-as well as filesystems such as Lustre and NFS.
+is the command line utility for interacting with the
+.BR halo_manager (1))
+management daemon.
 .B halo
-will start and stop resources on cluster nodes, as well as perform
-power management on cluster nodes, as needed to try to ensure that
-resources remain available.
+allows the system administrator to perform actions like
+querying the status of resources,
+moving resources between cluster nodes,
+and initiating fence and failover operations.
 .SH OPTIONS
-.TP
-.BR \-\-config =\fICONFIG\fR
-The config file to use.
-The default path is
-.I /etc/halo/halo.conf\fR.
 .TP
 .BR \-\-socket =\fISOCKET\fR
 The path to the unix domain socket used for communication between
@@ -36,14 +32,66 @@ If specified,
 .Bhalo
 will actively manage resources.
 The default is to only passively observe their state.
+.SH SUBCOMMANDS
+.SS status [\-x]
+Print information on the status of every resource in the cluster.
+.TP
+.BR \-x
+Only display resources that are in an abnormal status, that is,
+not running on their home node.
+.SS manage \fIresource_id\fR
+Direct HALO to manage the resource identified by \fIresource_id\fR.
+This is the default behavior.
+When a resource is "managed", HALO will start it if it is not running anywhere.
+HALO will also fence its host if the host is discovered to be unhealthy
+and a failover is required.
+.SS unmanage \fIresource_id\fR
+Direct HALO to cease management of the resource identified by \fIresource_id\fR.
+When a resource is "unmanaged", HALO will continue to monitor its status,
+and report that status in the status command.
+However, HALO will not start the resource if it is discovered to be stopped.
+.SS failback \-\-onto \fIHOSTNAME
+Return resources that are failed over back to their home node.
+.TP
+.BR \-\-onto =\fIHOSTNAME\fR
+Return resources whose home node is \fIHOSTNAME\fR.
+.SS discover \fIhostnames ...\fR
+Attempt to create a configuration file (see
+.BR halo.conf (5))
+based on the current state of the servers specified in \fIhostnames\fR.
+\fIhostnames\fR can be in nodeset syntax.
+A YAML file is written to stdout that contains the state of
+ZFS and Lustre resources on the specified servers.
+.SS power \fBaction\fR [\fBhostnames ...\fR]
+Perform power management on cluster nodes.
+.TP
+.BR action
+One of "on", "off", or "status".
+.TP
+.BR hostnames
+A hostname must be specified to use the "on" or "off" action.
+If no hostnames are specified for the "status" action,
+then every host in the cluster is queried.
+.SH FILES
+.TP
+\fI/etc/halo/halo.conf\fR
+The configuration file in YAML format.
 .SH EXAMPLES
-To run the manager service in active mode,
-specifying a custom config file path and socket:
+To display cluster status, only showing resources
+that are not running on their home node:
 .PP
 .nf
 .RS
-halo --config halo.yaml --socket halo.socket --manage-resources
+halo status -x
+.RE
+.fi
+.PP
+To create a configuration file for a cluster:
+.PP
+.nf
+.RS
+halo discover lu-mds[00-04],lu-oss[00-16] > cluster.yaml
 .RE
 .fi
 .SH SEE ALSO
-halo_remote(1), halo.status(1), halo.manage(1), halo.conf(5)
+halo_manager(1), halo_remote(1), halo.conf(5)
