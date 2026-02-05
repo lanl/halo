@@ -124,11 +124,6 @@ struct HostState {
     /// fencing, and a TCP connection breaking resulting in a new client being needed.
     outstanding_resource_tasks: Vec<ResourceTaskCancel>,
 
-    /// If a resource management task returns with an error indicating failover should occur, we
-    /// need to wait on the remaining tasks to be canceled. Once every outstanding task has
-    /// returned, failover can begin.
-    failover_requested: bool,
-
     /// When a failover action has been requested, this set is filled up with the IDs of all the
     /// resource groups that were running on the Host. This needs to be tracked so that the correct
     /// resource groups are sent over to the failover partner for management.
@@ -147,7 +142,6 @@ impl HostState {
             manage_these_resources: Vec::new(),
             check_these_resources: Vec::new(),
             outstanding_resource_tasks: Vec::new(),
-            failover_requested: false,
             resources_in_transit: Vec::new(),
             resources_with_errors: Vec::new(),
         }
@@ -399,12 +393,8 @@ impl Host {
                         // cancel management.
                         Message::TaskCanceled => {
                             state.resource_task_exited(id);
-                            if state.failover_requested {
-                                if self.request_failover(state, event.resource_group) {
-                                    return;
-                                }
-                            } else {
-                                panic!("Unexpected to receive TaskCanceled event when failover was not already requested.");
+                            if self.request_failover(state, event.resource_group) {
+                                return;
                             }
                         }
                         Message::SwitchHost => {
@@ -440,17 +430,14 @@ impl Host {
             // If there are outstanding resource group tasks, they need to be notified to exit.
             // However, they must only be notified once, so only do this if this is the first task
             // to request failover.
-            if !state.failover_requested {
-                for revoke in take(&mut state.outstanding_resource_tasks) {
-                    debug!(
-                        "request failover: notifiying task for resource '{}'",
-                        revoke.id
-                    );
-                    revoke.lost_connection.notify_one();
-                }
+            for revoke in take(&mut state.outstanding_resource_tasks) {
+                debug!(
+                    "request failover: notifiying task for resource '{}'",
+                    revoke.id
+                );
+                revoke.lost_connection.notify_one();
             }
 
-            state.failover_requested = true;
             false
         }
     }
