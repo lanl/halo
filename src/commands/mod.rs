@@ -16,7 +16,6 @@ use {
     manage::{ManageArgs, UnManageArgs},
     power::PowerArgs,
     status::StatusArgs,
-    validate::ValidateArgs,
 };
 
 use clap::{Parser, Subcommand};
@@ -90,7 +89,7 @@ pub enum Commands {
     Discover(DiscoverArgs),
     Failback(FailbackArgs),
     Power(PowerArgs),
-    Validate(ValidateArgs),
+    Validate,
     Manage(ManageArgs),
     Unmanage(UnManageArgs),
 }
@@ -117,7 +116,7 @@ pub fn main(cli: &Cli) -> HandledResult<()> {
         Commands::Discover(args) => return discover::discover(args),
         Commands::Failback(args) => return failback::failback(cli, args),
         Commands::Power(args) => return power::power(cli, args),
-        Commands::Validate(args) => return validate::validate(args),
+        Commands::Validate => return validate::validate(cli),
         Commands::Status(args) => return status::status(cli, args),
         Commands::Manage(args) => return manage::manage(cli, args),
         Commands::Unmanage(args) => return manage::unmanage(cli, args),
