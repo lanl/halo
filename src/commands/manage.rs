@@ -49,7 +49,8 @@ fn send_command(cli: &Cli, resource: &str, managed: bool) -> HandledResult<()> {
     match response.status() {
         StatusCode::OK => Ok(()),
         StatusCode::NOT_FOUND => {
-            eprintln!("Could not update '{resource}': resource not found.");
+            eprintln!("Could not update '{resource}': resource group not found.");
+            eprintln!("Specify root resource ID.");
             handled_error()
         }
         other => {

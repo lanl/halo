@@ -62,6 +62,7 @@ fn get_worst_error(
 pub struct ResourceGroup {
     pub root: Resource,
     overall_status: Mutex<ResourceStatus>,
+    pub managed: Mutex<bool>,
 }
 
 impl ResourceGroup {
@@ -70,6 +71,7 @@ impl ResourceGroup {
         Self {
             root,
             overall_status: Mutex::new(ResourceStatus::Unknown),
+            managed: Mutex::new(true),
         }
     }
 
@@ -94,7 +96,9 @@ impl ResourceGroup {
                 self.update_resources(client, loc).await?;
                 match self.get_overall_status() {
                     ResourceStatus::Stopped => {
-                        self.start_resources(client, loc).await?;
+                        if self.get_managed() {
+                            self.start_resources(client, loc).await?;
+                        }
                     }
                     ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
                         self.update_resources(client, loc).await?;
@@ -224,6 +228,18 @@ impl ResourceGroup {
             queue: VecDeque::from([&self.root]),
         }
     }
+
+    /// Get management status of resource group, to be used in status
+    pub fn get_managed(&self) -> bool {
+        let managed_status = self.managed.lock().unwrap();
+        *managed_status
+    }
+
+    /// Sets resources group's managed status
+    pub fn set_managed(&self, managed: bool) {
+        let mut managed_status = self.managed.lock().unwrap();
+        *managed_status = managed;
+    }
 }
 
 /// This iterator visits all of the Resources in a dependency tree in breadth-first order.
@@ -265,8 +281,6 @@ pub struct Resource {
     /// Unique identifier for the resource.
     pub id: String,
 
-    pub managed: Mutex<bool>,
-
     // TODO: better privacy here
     pub status: Mutex<ResourceStatus>,
     pub home_node: Arc<Host>,
@@ -293,7 +307,6 @@ impl Resource {
             failover_node,
             context,
             id,
-            managed: Mutex::new(true),
         }
     }
 
@@ -495,21 +508,6 @@ impl Resource {
             }
         });
         output
-    }
-
-    /// Get management status of resource, to be used in status
-    pub fn get_managed(&self) -> bool {
-        let managed_status = self.managed.lock().unwrap();
-        *managed_status
-    }
-
-    /// Sets resources's managed status to true, used recursively for dependents.
-    pub fn set_managed(&self, managed: bool) {
-        let mut managed_status = self.managed.lock().unwrap();
-        *managed_status = managed;
-        for d in &self.dependents {
-            d.set_managed(managed);
-        }
     }
 
     pub fn set_error_recursive(&self, reason: String) {
