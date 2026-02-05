@@ -240,17 +240,26 @@ impl Host {
     }
 
     async fn handle_messages_remote_disconnected(&self, cluster: &Cluster, state: &mut HostState) {
+        let home_message =
+            "Cannot determine resource status because connection failed to its home host.";
+        let away_message =
+            "Cannot determine resource status because connection failed to its failover host.";
+        let failback_message = format!(
+            "Warning: Failback command received by host {} but remote is disconnected.",
+            self.id()
+        );
+
         loop {
             match self.receive_message().await {
                 HostMessage::Resource(message) => match message.kind {
                     Message::ManageResourceGroup => {
                         let rg = cluster.get_resource_group(&message.resource_group.id);
-                        rg.root.set_error_recursive("Cannot determine resource status because connection failed to its home host.".to_string());
+                        rg.root.set_error_recursive(home_message.to_string());
                         state.manage_these_resources.push(message.resource_group);
                     }
                     Message::CheckResourceGroup => {
                         let rg = cluster.get_resource_group(&message.resource_group.id);
-                        rg.root.set_error_recursive("Cannot determine resource status because connection failed to its failover host.".to_string());
+                        rg.root.set_error_recursive(away_message.to_string());
                         state.check_these_resources.push(message.resource_group);
                     }
                     other => {
@@ -258,9 +267,11 @@ impl Host {
                     }
                 },
                 HostMessage::Command(command) => match command {
-                    HostCommand::Failback => warn!("Warning: Failback command received by host {} but the remote agent is unavailable so the operation cannot proceed.", self.id()),
+                    HostCommand::Failback => warn!("{}", failback_message),
+                },
+                HostMessage::None => {
+                    panic!("Unexpected message type 'None' in client disconnected routine.")
                 }
-                HostMessage::None => panic!("Unexpected message type 'None' in client disconnected routine."),
             }
         }
     }
