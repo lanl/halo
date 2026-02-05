@@ -64,6 +64,10 @@ impl Cluster {
         self.num_targets
     }
 
+    pub fn resource_groups(&self) -> impl Iterator<Item = &ResourceGroup> {
+        self.resource_groups.iter()
+    }
+
     pub fn resources(&self) -> impl Iterator<Item = &Resource> {
         self.resource_groups
             .iter()

@@ -63,7 +63,7 @@ pub struct ResourceJson {
 }
 
 impl ResourceJson {
-    fn build(res: &Resource) -> Self {
+    fn build(res: &Resource, managed: bool) -> Self {
         let status = match *res.status.lock().unwrap() {
             ResourceStatus::Unknown => "Unknown".to_string(),
             ResourceStatus::Error(ref reason) => format!("Error: ({reason})"),
@@ -76,14 +76,21 @@ impl ResourceJson {
             kind: res.kind.clone(),
             parameters: res.parameters.clone(),
             status,
-            managed: *res.managed.lock().unwrap(),
+            managed,
         }
     }
 }
 
 async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
     let status = ClusterJson {
-        resources: cluster.resources().map(ResourceJson::build).collect(),
+        resources: cluster
+            .resource_groups()
+            .flat_map(|rg| {
+                let managed = rg.get_managed();
+                rg.resources()
+                    .map(move |res| ResourceJson::build(res, managed))
+            })
+            .collect(),
     };
 
     Json(status)
@@ -99,9 +106,9 @@ async fn set_managed(
     Json(payload): Json<SetManagedArgs>,
     cluster: Arc<Cluster>,
 ) -> Result<(), StatusCode> {
-    for res in cluster.resources() {
-        if res.id == resource_id {
-            *res.managed.lock().unwrap() = payload.managed;
+    for rg in cluster.resource_groups() {
+        if rg.root.id == resource_id {
+            *rg.managed.lock().unwrap() = payload.managed;
             return Ok(());
         }
     }
