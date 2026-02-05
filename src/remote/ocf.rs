@@ -8,6 +8,8 @@
 
 use std::process::Command;
 
+use log::debug;
+
 /// OCF Resource Agent operations that can be performed on a resource.
 #[derive(Debug)]
 pub enum Operation {
@@ -153,7 +155,10 @@ pub fn do_operation(
     };
 
     if exit_code != 0 && cli_args.verbose {
-        println!("Output: {:?}", output);
+        debug!(
+            "OCF resource agent script returned code: {exit_code}; output: {:?}",
+            output
+        );
         Ok((
             exit_code,
             String::from_utf8_lossy(&output.stderr).into_owned(),
