@@ -74,7 +74,7 @@ pub struct ResourceGroup {
     // single object that can carry data (i.e., an Enum that says the reason for the notification)
     pub switch_host: tokio::sync::Notify,
 
-    pub managed: Mutex<bool>,
+    managed: Mutex<bool>,
 }
 
 impl ResourceGroup {
