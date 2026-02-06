@@ -213,14 +213,13 @@ impl Host {
 
         loop {
             match get_client(&self.address()).await {
-                Ok(client) => {
+                Ok(mut client) => {
                     debug!(
                         "Host {} established connection to its remote agent.",
                         self.id()
                     );
-                    let mut client = Rc::new(client);
                     loop {
-                        self.remote_connected_loop(client, cluster, &mut state)
+                        self.remote_connected_loop(&client, cluster, &mut state)
                             .await;
                         // remote_connected_loop() only returns once a failover has been requested, and
                         // all host tasks are cancelled.
@@ -228,7 +227,7 @@ impl Host {
                             // If maybe_do_failover() returned a Client (because it was able to
                             // re-establish connection), we can use that client to re-enter the
                             // remote_connected_loop().
-                            Some(new_client) => client = Rc::new(new_client),
+                            Some(new_client) => client = new_client,
                             None => break,
                         };
                     }
@@ -305,7 +304,7 @@ impl Host {
 
     async fn remote_connected_loop(
         &self,
-        client: Rc<ocf_resource_agent::Client>,
+        client: &ocf_resource_agent::Client,
         cluster: &Cluster,
         state: &mut HostState,
     ) {
@@ -326,7 +325,7 @@ impl Host {
             tasks.push(Box::pin(self.manage_resource_group(
                 cluster,
                 token,
-                Rc::clone(&client),
+                client,
                 revoke.clone(),
             )));
             state.outstanding_resource_tasks.push(revoke);
@@ -334,11 +333,7 @@ impl Host {
 
         // Create a task to check on each resource group that wasn't running on the partner host.
         for token in take(&mut state.check_these_resources) {
-            tasks.push(Box::pin(self.away_startup_check(
-                token,
-                cluster,
-                Rc::clone(&client),
-            )));
+            tasks.push(Box::pin(self.away_startup_check(token, cluster, client)));
         }
 
         while let Some(event) = tasks.next().await {
@@ -361,7 +356,7 @@ impl Host {
                             tasks.push(Box::pin(self.away_startup_check(
                                 event.resource_group,
                                 cluster,
-                                Rc::clone(&client),
+                                client,
                             )));
                             // TODO: rather than have to duplicate this "re-arming" of the receive message
                             // task in every branch that needs it, can I come up with a way to distinguish
@@ -374,7 +369,7 @@ impl Host {
                             tasks.push(Box::pin(self.manage_resource_group(
                                 cluster,
                                 event.resource_group,
-                                Rc::clone(&client),
+                                client,
                                 revoke.clone(),
                             )));
                             state.outstanding_resource_tasks.push(revoke);
@@ -401,7 +396,7 @@ impl Host {
                             state.resource_task_exited(id);
                             tasks.push(Box::pin(self.switch_host(
                                 event.resource_group,
-                                Rc::clone(&client),
+                                client,
                                 cluster,
                             )));
                         }
@@ -562,12 +557,12 @@ impl Host {
     async fn switch_host(
         &self,
         mut token: ResourceToken,
-        client: Rc<ocf_resource_agent::Client>,
+        client: &ocf_resource_agent::Client,
         cluster: &Cluster,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
 
-        match rg.stop_resources(&client).await {
+        match rg.stop_resources(client).await {
             Ok(()) => {}
             Err(ManagementError::Configuration) => {
                 debug!("Switch host operation recieved unexpected configuration error from remote agent.");
@@ -710,12 +705,12 @@ impl Host {
         &self,
         mut token: ResourceToken,
         cluster: &Cluster,
-        client: Rc<ocf_resource_agent::Client>,
+        client: &ocf_resource_agent::Client,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
         let status = remote_ocf_operation_given_client(
             &rg.root,
-            &client,
+            client,
             ocf_resource_agent::Operation::Monitor,
         )
         .await;
@@ -760,7 +755,7 @@ impl Host {
         &self,
         cluster: &Cluster,
         token: ResourceToken,
-        client: Rc<ocf_resource_agent::Client>,
+        client: &ocf_resource_agent::Client,
         revoke: ResourceTaskCancel,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
@@ -783,7 +778,7 @@ impl Host {
 
             // If the resource management loop returns, it must be because it observed an error
             // condition.
-            err = rg.manage_loop(&client, token.location) => {
+            err = rg.manage_loop(client, token.location) => {
                 debug!(
                     "{} received error '{err:?}' for resource group {}",
                     self.id(),
