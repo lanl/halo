@@ -5,7 +5,7 @@
 
 use {futures::future, log::error};
 
-use crate::Cluster;
+use crate::{resource::Location, Cluster};
 
 use super::*;
 
@@ -36,7 +36,10 @@ impl Host {
         client: &ocf_resource_agent::Client,
     ) {
         let rg = cluster.get_resource_group(rg);
-        let err = rg.observe_loop(client).await;
+        let err = rg
+            .observe_loop(client, false, Location::Home)
+            .await
+            .unwrap_err();
         error!("{err:?}");
     }
 }

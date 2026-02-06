@@ -255,8 +255,13 @@ impl Host {
                                 revoke.clone(),
                             )));
                             state.outstanding_resource_tasks.push(revoke);
+                            // TODO: ManageResourceGroup is sent sometimes not as a message but as a
+                            // return value (e.g., in away_startup_check()) -- it is thus not
+                            // appropriate to always push a new receive_message() task. Need to
+                            // figure out the right way to handle this....
                             tasks.push(Box::pin(self.receive_message()));
                         }
+                        Message::ObserveResourceGroup => todo!(),
                         // Child task for management of this resource group encountered an error indicating
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.

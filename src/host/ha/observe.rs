@@ -3,7 +3,12 @@
 
 //! Observation of a failover cluster with HA pairs.
 
-use log::debug;
+use std::mem::take;
+
+use {
+    futures::StreamExt,
+    log::{debug, trace},
+};
 
 use crate::cluster::Cluster;
 
@@ -11,22 +16,122 @@ use super::*;
 
 impl Host {
     pub async fn observe_ha(&self, cluster: &Cluster) {
-        let _my_resources = self.mint_resource_tokens(cluster);
+        let mut my_resources = self.mint_resource_tokens(cluster);
 
         loop {
             match get_client(&self.address()).await {
-                Ok(client) => self.remote_connected_loop_observe(&client),
+                Ok(client) => {
+                    self.remote_connected_loop_observe(take(&mut my_resources), cluster, &client)
+                        .await
+                }
                 Err(_) => {
                     debug!(
                         "Host {} failed to establish connection to its remote agent.",
                         self.id()
                     );
+
+                    todo!()
                 }
             }
         }
     }
 
-    fn remote_connected_loop_observe(&self, _client: &ocf_resource_agent::Client) {
-        todo!()
+    async fn remote_connected_loop_observe(
+        &self,
+        resources_to_check: Vec<ResourceToken>,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+    ) {
+        // Create a queue of tasks related to this host's management duties.
+        let mut tasks: ManagementTasks = FuturesUnordered::new();
+
+        tasks.push(Box::pin(self.receive_message()));
+
+        for token in resources_to_check {
+            tasks.push(Box::pin(self.check_resource_group(token, cluster, client)));
+        }
+
+        while let Some(event) = tasks.next().await {
+            trace!("Host {} got event: {event:?}", self.id());
+            match event {
+                HostMessage::Command(_) => todo!(),
+                HostMessage::Resource(event) => match event.kind {
+                    Message::CheckResourceGroup => {
+                        tasks.push(Box::pin(self.check_resource_group(
+                            event.resource_group,
+                            cluster,
+                            client,
+                        )));
+                        tasks.push(Box::pin(self.receive_message()));
+                    }
+                    Message::ObserveResourceGroup => {
+                        tasks.push(Box::pin(self.observe_resource_group_ha(
+                            event.resource_group,
+                            cluster,
+                            client,
+                        )));
+                        tasks.push(Box::pin(self.receive_message()));
+                    }
+                    Message::ManageResourceGroup | Message::RequestFailover => {
+                        panic!(
+                            "Unexpected to receive a {:?} event in observe mode.",
+                            event.kind
+                        )
+                    }
+                    Message::TaskCanceled => todo!(),
+                    Message::SwitchHost => todo!(),
+                    Message::ResourceError => todo!(),
+                },
+                HostMessage::None => {}
+            }
+        }
+    }
+
+    async fn check_resource_group(
+        &self,
+        token: ResourceToken,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+    ) -> HostMessage {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        match is_resource_group_running_here(&token, cluster, client).await {
+            Ok(is_running_here) => {
+                if is_running_here {
+                    self.sender
+                        .send(new_message(token, Message::ObserveResourceGroup))
+                        .await
+                        .unwrap();
+
+                    HostMessage::None
+                } else {
+                    self.send_message_to_partner(token, Message::CheckResourceGroup)
+                        .await;
+
+                    HostMessage::None
+                }
+            }
+            Err(ManagementError::Configuration) => todo!(),
+            Err(ManagementError::Connection) => todo!(),
+        }
+    }
+
+    async fn observe_resource_group_ha(
+        &self,
+        token: ResourceToken,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+    ) -> HostMessage {
+        let rg = cluster.get_resource_group(&token.id);
+        match rg.observe_loop(client, true, token.location).await {
+            // Resource stopped: need to see if it started running on partner.
+            Ok(()) => {
+                self.send_message_to_partner(token, Message::CheckResourceGroup)
+                    .await;
+
+                HostMessage::None
+            }
+            Err(ManagementError::Configuration) => todo!(),
+            Err(ManagementError::Connection) => todo!(),
+        }
     }
 }
