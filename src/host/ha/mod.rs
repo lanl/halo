@@ -53,6 +53,10 @@ enum Message {
     /// Begin management of the resource group.
     ManageResourceGroup,
 
+    /// Begin observation of the resource group -- check on its status, but don't start it if
+    /// stopped.
+    ObserveResourceGroup,
+
     /// A resource management task has observed a condition like "connection timed out" and
     /// failover should be triggered.
     RequestFailover,

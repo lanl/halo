@@ -115,15 +115,31 @@ impl ResourceGroup {
         body().await.unwrap_err()
     }
 
-    pub async fn observe_loop(&self, client: &ocf_resource_agent::Client) -> ManagementError {
-        let body = async || -> Result<(), ManagementError> {
-            loop {
-                self.update_resources(client, Location::Home).await?;
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    /// Observe some resources.
+    ///
+    /// Exits either when an error was observed, or if the exit_if_resource_stopped flag is set, it
+    /// will exit with Ok(()) if the entire resource group has stopped.
+    pub async fn observe_loop(
+        &self,
+        client: &ocf_resource_agent::Client,
+        exit_if_resource_stopped: bool,
+        loc: Location,
+    ) -> Result<(), ManagementError> {
+        loop {
+            self.update_resources(client, loc).await?;
+            if exit_if_resource_stopped
+                && !self.resources().map(|res| res.get_status()).any(|status| {
+                    matches!(
+                        status,
+                        ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway
+                    )
+                })
+            {
+                return Ok(());
             }
-        };
 
-        body().await.unwrap_err()
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
     }
 
     /// Check the statuses of each of the resources in this resource group.
