@@ -9,7 +9,11 @@ use std::{
     process::{Command, Stdio},
 };
 
-use {clap::ValueEnum, log::debug};
+use {
+    clap::ValueEnum,
+    log::debug,
+    tokio::io::{AsyncReadExt, AsyncWriteExt},
+};
 
 #[derive(Debug)]
 pub struct FenceError {}
@@ -161,6 +165,9 @@ impl super::Host {
     /// Attempt to power on or off this host.
     ///
     /// If self.fence_agent is not set, then panics.
+    ///
+    /// This is the blocking variant - it is safe to use in commands, but should not be called from
+    /// the management service.
     pub fn do_fence(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
         let agent = self.fence_agent.as_ref().unwrap();
 
@@ -184,6 +191,43 @@ impl super::Host {
 
         let mut out = String::new();
         child.stdout.unwrap().read_to_string(&mut out)?;
+        debug!("out: {out}");
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Box::new(FenceError {}))
+        }
+    }
+
+    /// Do a fence operation using the non-blocking APIs for spawning a command and waiting for its
+    /// result. Suitable to be called by the management service.
+    pub async fn do_fence_nonblocking(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
+        let agent = self.fence_agent.as_ref().unwrap();
+
+        let mut child = tokio::process::Command::new(agent.get_executable())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let command_bytes = agent.generate_command_bytes(&self.address.name, command);
+
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(&command_bytes)
+            .await?;
+
+        let status = child.wait().await?;
+
+        let mut out = String::new();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut out)
+            .await?;
         debug!("out: {out}");
 
         if status.success() {
