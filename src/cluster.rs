@@ -48,7 +48,9 @@ impl Cluster {
                 todo!("Implement management loop for non-HA cluster.");
             }
         } else if self.failover {
-            todo!("Implement observer-only loop for HA cluster.")
+            let futures: Vec<_> = self.hosts.values().map(|h| h.observe_ha(self)).collect();
+
+            let _ = future::join_all(futures).await;
         } else {
             let futures: Vec<_> = self.hosts.values().map(|h| h.observe(self)).collect();
 
