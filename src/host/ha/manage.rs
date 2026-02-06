@@ -403,7 +403,7 @@ impl Host {
         warn!("Host {} has been powered off.", self.id());
 
         for mut rg in state.resources_in_transit.drain(..) {
-            let partner = self.failover_partner().unwrap();
+            let partner = self.ha_failover_partner();
             match rg.location {
                 Location::Home => rg.location = Location::Away,
                 Location::Away => rg.location = Location::Home,
@@ -460,7 +460,7 @@ impl Host {
             }
         };
 
-        let partner = self.failover_partner().unwrap();
+        let partner = self.ha_failover_partner();
 
         match token.location {
             Location::Home => token.location = Location::Away,
@@ -518,9 +518,7 @@ impl Host {
                 Err(_) => (Vec::new(), my_resources),
             };
 
-        let partner = self
-            .failover_partner()
-            .expect("Host without failover partner in HA routine.");
+        let partner = self.ha_failover_partner();
 
         for mut token in send_these {
             token.location = Location::Away;
@@ -568,9 +566,7 @@ impl Host {
                 if is_running_here {
                     new_message(token, Message::ManageResourceGroup)
                 } else {
-                    let partner = self
-                        .failover_partner()
-                        .expect("Host without failover partner in HA management routine.");
+                    let partner = self.ha_failover_partner();
 
                     token.location = Location::Home;
                     let message = new_message(token, Message::ManageResourceGroup);
