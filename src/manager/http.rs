@@ -108,7 +108,7 @@ async fn set_managed(
 ) -> Result<(), StatusCode> {
     for rg in cluster.resource_groups() {
         if rg.root.id == resource_id {
-            *rg.managed.lock().unwrap() = payload.managed;
+            rg.set_managed(payload.managed);
             return Ok(());
         }
     }

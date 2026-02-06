@@ -62,7 +62,7 @@ fn get_worst_error(
 pub struct ResourceGroup {
     pub root: Resource,
     overall_status: Mutex<ResourceStatus>,
-    pub managed: Mutex<bool>,
+    managed: Mutex<bool>,
 }
 
 impl ResourceGroup {
