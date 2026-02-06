@@ -12,7 +12,6 @@ use {
 
 use crate::{
     halo_capnp::*,
-    remote::ocf,
     resource::{Location, ManagementError},
     Cluster,
 };
@@ -542,32 +541,9 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> (ResourceToken, bool) {
-        let rg = cluster.get_resource_group(&token.id);
-        let status = remote_ocf_operation_given_client(
-            &rg.root,
-            client,
-            ocf_resource_agent::Operation::Monitor,
-        )
-        .await;
-        let status = status.expect("FIXME: handle error here...");
-
-        let status = match status {
-            AgentReply::Success(status) => status,
-            AgentReply::Error(message) => {
-                panic!("Remote agent gave unexpected error: {message}. TODO: handle this...")
-            }
-        };
-
-        match status {
-            ocf::Status::Success => {
-                (token, true)
-            }
-            ocf::Status::Error(error_type, message) => {
-                match error_type {
-                    ocf::OcfError::ErrNotRunning => (token, false),
-                    other => panic!("Remote agent gave unexpected status: {other:?}: {message}. TODO: handle this..."),
-                }
-            }
+        match is_resource_group_running_here(&token, cluster, client).await {
+            Ok(is_running_here) => (token, is_running_here),
+            Err(_) => todo!(),
         }
     }
 
@@ -589,45 +565,25 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> HostMessage {
-        let rg = cluster.get_resource_group(&token.id);
-        let status = remote_ocf_operation_given_client(
-            &rg.root,
-            client,
-            ocf_resource_agent::Operation::Monitor,
-        )
-        .await;
-        let status = status.expect("FIXME: handle error here...");
+        match is_resource_group_running_here(&token, cluster, client).await {
+            Ok(is_running_here) => {
+                if is_running_here {
+                    new_message(token, Message::ManageResourceGroup)
+                } else {
+                    let partner = self
+                        .failover_partner()
+                        .expect("Host without failover partner in HA management routine.");
 
-        let status = match status {
-            AgentReply::Success(status) => status,
-            AgentReply::Error(message) => {
-                debug!("Remote agent returned error: {message}");
-                return new_message(token, Message::ResourceError);
-            }
-        };
+                    token.location = Location::Home;
+                    let message = new_message(token, Message::ManageResourceGroup);
+                    partner.sender.send(message).await.unwrap();
 
-        match status {
-            ocf::Status::Success => {
-                return new_message(token, Message::ManageResourceGroup);
-            }
-            ocf::Status::Error(error_type, message) => match error_type {
-                ocf::OcfError::ErrNotRunning => {}
-                other => {
-                    debug!("Remote agent returned error: {other:?}: {message}");
-                    return new_message(token, Message::ResourceError);
+                    HostMessage::None
                 }
-            },
-        };
-
-        let partner = self
-            .failover_partner()
-            .expect("Host without failover partner in HA management routine.");
-
-        token.location = Location::Home;
-        let message = new_message(token, Message::ManageResourceGroup);
-        partner.sender.send(message).await.unwrap();
-
-        HostMessage::None
+            }
+            Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
+            Err(ManagementError::Connection) => todo!(),
+        }
     }
 
     /// Management of a resource group proceeds by calling the management loop method on
