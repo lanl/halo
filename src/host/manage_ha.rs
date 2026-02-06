@@ -346,7 +346,7 @@ impl Host {
             match event {
                 HostMessage::Command(command) => {
                     match command {
-                        HostCommand::Failback => self.do_failback(state, cluster).await,
+                        HostCommand::Failback => self.do_failback(state, cluster),
                     };
 
                     tasks.push(Box::pin(self.receive_message()));
@@ -515,6 +515,8 @@ impl Host {
     }
 
     async fn do_failover(&self, state: &mut HostState) {
+        // TODO: this needs to use spawn_blocking or similar...
+        // do_fence() could take a long time....
         self.do_fence(FenceCommand::Off)
             .expect("Fencing failed... TODO: handle this case...");
 
@@ -535,7 +537,7 @@ impl Host {
         }
     }
 
-    async fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
+    fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
         let still_running = take(&mut state.outstanding_resource_tasks)
             .into_iter()
             .filter(|task| {
