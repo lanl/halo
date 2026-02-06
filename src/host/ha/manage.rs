@@ -10,11 +10,7 @@ use {
     log::{debug, warn},
 };
 
-use crate::{
-    halo_capnp::*,
-    resource::{Location, ManagementError},
-    Cluster,
-};
+use crate::{halo_capnp::*, resource::ManagementError, Cluster};
 
 use super::*;
 
@@ -402,18 +398,9 @@ impl Host {
 
         warn!("Host {} has been powered off.", self.id());
 
-        for mut rg in state.resources_in_transit.drain(..) {
-            let partner = self.ha_failover_partner();
-            match rg.location {
-                Location::Home => rg.location = Location::Away,
-                Location::Away => rg.location = Location::Home,
-            };
-
-            partner
-                .sender
-                .send(new_message(rg, Message::ManageResourceGroup))
-                .await
-                .unwrap();
+        for rg in take(&mut state.resources_in_transit) {
+            self.send_message_to_partner(rg, Message::ManageResourceGroup)
+                .await;
         }
     }
 
@@ -442,7 +429,7 @@ impl Host {
 
     async fn switch_host(
         &self,
-        mut token: ResourceToken,
+        token: ResourceToken,
         client: &ocf_resource_agent::Client,
         cluster: &Cluster,
     ) -> HostMessage {
@@ -460,18 +447,8 @@ impl Host {
             }
         };
 
-        let partner = self.ha_failover_partner();
-
-        match token.location {
-            Location::Home => token.location = Location::Away,
-            Location::Away => token.location = Location::Home,
-        };
-
-        partner
-            .sender
-            .send(new_message(token, Message::ManageResourceGroup))
-            .await
-            .unwrap();
+        self.send_message_to_partner(token, Message::ManageResourceGroup)
+            .await;
 
         HostMessage::None
     }
@@ -518,12 +495,9 @@ impl Host {
                 Err(_) => (Vec::new(), my_resources),
             };
 
-        let partner = self.ha_failover_partner();
-
-        for mut token in send_these {
-            token.location = Location::Away;
-            let message = new_message(token, Message::CheckResourceGroup);
-            partner.sender.send(message).await.unwrap();
+        for token in send_these {
+            self.send_message_to_partner(token, Message::CheckResourceGroup)
+                .await;
         }
 
         manage_these
@@ -557,7 +531,7 @@ impl Host {
     ///   the situation.
     async fn away_startup_check(
         &self,
-        mut token: ResourceToken,
+        token: ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> HostMessage {
@@ -566,11 +540,8 @@ impl Host {
                 if is_running_here {
                     new_message(token, Message::ManageResourceGroup)
                 } else {
-                    let partner = self.ha_failover_partner();
-
-                    token.location = Location::Home;
-                    let message = new_message(token, Message::ManageResourceGroup);
-                    partner.sender.send(message).await.unwrap();
+                    self.send_message_to_partner(token, Message::ManageResourceGroup)
+                        .await;
 
                     HostMessage::None
                 }

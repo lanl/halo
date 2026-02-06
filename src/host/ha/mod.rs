@@ -149,6 +149,24 @@ impl Host {
         self.failover_partner()
             .expect("Host without failover partner in HA routine.")
     }
+
+    /// Sends the token over to the partner in the given message type.
+    ///
+    /// This flips the location field -- the caller should NOT adjust location before calling this!
+    async fn send_message_to_partner(&self, mut token: ResourceToken, message: Message) {
+        match token.location {
+            Location::Home => token.location = Location::Away,
+            Location::Away => token.location = Location::Home,
+        };
+
+        let partner = self.ha_failover_partner();
+
+        partner
+            .sender
+            .send(new_message(token, message))
+            .await
+            .unwrap();
+    }
 }
 
 /// Determine if a resource is running on the system connected in the given client.
