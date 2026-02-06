@@ -93,10 +93,12 @@ impl Host {
     pub async fn manage_ha(&self, cluster: &Cluster) {
         let mut state = HostState::new();
 
+        let my_resources = self.mint_resource_tokens(cluster);
+
         // Check whether this host's primary resources are running locally, in order to determine if
         // they should be managed locally or if the failover partner needs to check if they are
         // failed over.
-        state.manage_these_resources = self.startup(cluster).await;
+        state.manage_these_resources = self.startup(cluster, my_resources).await;
 
         loop {
             match get_client(&self.address()).await {
@@ -480,10 +482,6 @@ impl Host {
     /// The purpose of this procedure is to perform startup logic to discover the existing state of
     /// resources when the management service starts.
     ///
-    /// It begins by minting a ResourceToken for each ResourceGroup whose home is this Host. This
-    /// is the only place that ResourceTokens should be created - and they must never be
-    /// destroyed.
-    ///
     /// - for each ResourceGroup:
     ///     - Query the status of the resoource group on this host
     ///     - if it is discovered to be running, return the token to the caller, who will arrange
@@ -495,23 +493,20 @@ impl Host {
     ///
     /// If a connection to the remote agent for this Host cannot be established, then just send
     /// a message to the failover partner to see if the ResourceGroup is running there.
-    async fn startup(&self, cluster: &Cluster) -> Vec<ResourceToken> {
-        // Mint tokens for each resource group:
-        let my_resources = cluster
-            .host_home_resource_groups(self)
-            .map(|rg| ResourceToken {
-                id: rg.id().to_string(),
-                location: Location::Home,
-            });
-
+    async fn startup(
+        &self,
+        cluster: &Cluster,
+        my_resources: Vec<ResourceToken>,
+    ) -> Vec<ResourceToken> {
         let (manage_these, send_these): (Vec<ResourceToken>, Vec<ResourceToken>) =
             match get_client(&self.address()).await {
                 Ok(client) => {
                     let mut manage_these = Vec::new();
                     let mut send_these = Vec::new();
 
-                    let statuses =
-                        my_resources.map(|token| self.home_startup_check(token, cluster, &client));
+                    let statuses = my_resources
+                        .into_iter()
+                        .map(|token| self.home_startup_check(token, cluster, &client));
 
                     for (token, is_home) in future::join_all(statuses).await {
                         if is_home {
@@ -523,7 +518,7 @@ impl Host {
 
                     (manage_these, send_these)
                 }
-                Err(_) => (Vec::new(), my_resources.collect()),
+                Err(_) => (Vec::new(), my_resources),
             };
 
         let partner = self

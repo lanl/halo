@@ -10,7 +10,9 @@ use crate::cluster::Cluster;
 use super::*;
 
 impl Host {
-    pub async fn observe_ha(&self, _cluster: &Cluster) {
+    pub async fn observe_ha(&self, cluster: &Cluster) {
+        let _my_resources = self.mint_resource_tokens(cluster);
+
         loop {
             match get_client(&self.address()).await {
                 Ok(client) => self.remote_connected_loop_observe(&client),

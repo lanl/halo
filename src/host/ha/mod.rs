@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use tokio::sync::Notify;
 
-use crate::{halo_capnp::*, resource::Location};
+use crate::{cluster::Cluster, halo_capnp::*, resource::Location};
 
 use super::*;
 
@@ -121,5 +121,19 @@ struct ResourceToken {
 impl Drop for ResourceToken {
     fn drop(&mut self) {
         panic!("Resource token {self:?} was illegally dropped!");
+    }
+}
+
+impl Host {
+    /// Mint a ResourceToken for each ResourceGroup whose home is this Host. This is the only place
+    /// that ResourceTokens can be created - and they must never be destroyed.
+    fn mint_resource_tokens(&self, cluster: &Cluster) -> Vec<ResourceToken> {
+        cluster
+            .host_home_resource_groups(self)
+            .map(|rg| ResourceToken {
+                id: rg.id().to_string(),
+                location: Location::Home,
+            })
+            .collect()
     }
 }
