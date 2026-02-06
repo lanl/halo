@@ -13,10 +13,10 @@ use crate::{commands::Handle, halo_capnp::*};
 pub mod power;
 pub use power::{FenceAgent, FenceCommand, RedfishArgs};
 
-mod manage_ha;
+mod ha;
 mod observe;
 
-use manage_ha::HostMessage;
+use ha::HostMessage;
 
 #[derive(Debug, Clone)]
 struct HostAddress {
