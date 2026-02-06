@@ -144,6 +144,11 @@ impl Host {
             })
             .collect()
     }
+
+    fn ha_failover_partner(&self) -> &Arc<Host> {
+        self.failover_partner()
+            .expect("Host without failover partner in HA routine.")
+    }
 }
 
 /// Determine if a resource is running on the system connected in the given client.
