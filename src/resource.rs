@@ -115,8 +115,8 @@ impl ResourceGroup {
         body().await.unwrap_err()
     }
 
-    pub async fn observe_loop(&self, client: &ocf_resource_agent::Client) -> capnp::Error {
-        let body = async || -> Result<(), capnp::Error> {
+    pub async fn observe_loop(&self, client: &ocf_resource_agent::Client) -> ManagementError {
+        let body = async || -> Result<(), ManagementError> {
             loop {
                 self.update_resources(client, Location::Home).await?;
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -144,42 +144,22 @@ impl ResourceGroup {
         &self,
         client: &ocf_resource_agent::Client,
         loc: Location,
-    ) -> Result<(), capnp::Error> {
+    ) -> Result<(), ManagementError> {
         let futures = self
             .resources()
-            .map(|r| async move { (r, r.monitor_client(client).await) });
+            .map(|r| async move { (r, r.is_running_here(client, loc).await) });
 
         let statuses = future::join_all(futures).await;
-
         let mut res = Ok(());
-        for (resource, status) in statuses.into_iter() {
-            match status {
-                Ok(AgentReply::Success(ocf::Status::Success)) => {
-                    resource.set_status(if loc == Location::Home {
-                        ResourceStatus::RunningOnHome
-                    } else {
-                        ResourceStatus::RunningOnAway
-                    })
-                }
-                Ok(AgentReply::Success(ocf::Status::Error(error_type, message))) => {
-                    match error_type {
-                        ocf::OcfError::ErrNotRunning => {
-                            resource.set_status(ResourceStatus::Stopped)
-                        }
-                        other => {
-                            error!("Remote agent returned error: {other:?}: {message}");
-                            resource.set_status(ResourceStatus::Error(message));
-                        }
+
+        for (resource, result) in statuses {
+            match result {
+                Ok(is_running_here) => {
+                    if !is_running_here {
+                        resource.set_status(ResourceStatus::Stopped)
                     }
                 }
-                Ok(AgentReply::Error(message)) => {
-                    error!("Remote agent could not run resource program: {message}");
-                    resource.set_status(ResourceStatus::Error(message))
-                }
-                Err(e) => {
-                    resource.set_status(ResourceStatus::Unknown);
-                    res = Err(e);
-                }
+                Err(e) => res = Err(e),
             }
         }
         self.update_overall_status();
@@ -307,6 +287,42 @@ impl Resource {
             failover_node,
             context,
             id,
+        }
+    }
+
+    /// This method checks if the resource is running on the system connected via the given Client.
+    ///
+    /// If the RPC reply says the resource is not running, this does NOT set the resource status to
+    /// Stopped! This is because this method is called in scenarios where it is not yet known which
+    /// host the resource is (supposed to be) running on -- like manager startup.
+    ///
+    /// For any response other than "Not Running" this does update the status -- either to
+    /// "Running", or to an appropriate error status if an error was observed.
+    pub async fn is_running_here(
+        &self,
+        client: &ocf_resource_agent::Client,
+        loc: Location,
+    ) -> Result<bool, ManagementError> {
+        match self.monitor_client(client).await {
+            Ok(AgentReply::Success(ocf::Status::Success)) => {
+                self.set_running_on_loc(loc);
+                Ok(true)
+            }
+            Ok(AgentReply::Success(ocf::Status::Error(kind, reason))) => match kind {
+                ocf::OcfError::ErrNotRunning => Ok(false),
+                _ => {
+                    self.set_status(ResourceStatus::Error(reason));
+                    Err(ManagementError::Configuration)
+                }
+            },
+            Ok(AgentReply::Error(reason)) => {
+                self.set_status(ResourceStatus::Error(reason));
+                Err(ManagementError::Configuration)
+            }
+            Err(e) => {
+                self.set_status(ResourceStatus::Unknown);
+                Err(e.into())
+            }
         }
     }
 

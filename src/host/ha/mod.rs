@@ -5,7 +5,11 @@ use std::rc::Rc;
 
 use tokio::sync::Notify;
 
-use crate::{cluster::Cluster, halo_capnp::*, resource::Location};
+use crate::{
+    cluster::Cluster,
+    halo_capnp::*,
+    resource::{Location, ManagementError},
+};
 
 use super::*;
 
@@ -136,4 +140,18 @@ impl Host {
             })
             .collect()
     }
+}
+
+/// Determine if a resource is running on the system connected in the given client.
+///
+/// If communication fails for some reason, an answer cannot be given, so Err(_) is returned
+/// instead.
+async fn is_resource_group_running_here(
+    token: &ResourceToken,
+    cluster: &Cluster,
+    client: &ocf_resource_agent::Client,
+) -> Result<bool, ManagementError> {
+    let rg = cluster.get_resource_group(&token.id);
+
+    rg.root.is_running_here(client, token.location).await
 }
