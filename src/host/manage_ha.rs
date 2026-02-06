@@ -515,9 +515,8 @@ impl Host {
     }
 
     async fn do_failover(&self, state: &mut HostState) {
-        // TODO: this needs to use spawn_blocking or similar...
-        // do_fence() could take a long time....
-        self.do_fence(FenceCommand::Off)
+        self.do_fence_nonblocking(FenceCommand::Off)
+            .await
             .expect("Fencing failed... TODO: handle this case...");
 
         warn!("Host {} has been powered off.", self.id());
