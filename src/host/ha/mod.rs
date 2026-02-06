@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::rc::Rc;
+use std::{future::Future, pin::Pin, rc::Rc};
 
-use tokio::sync::Notify;
+use {futures::stream::FuturesUnordered, tokio::sync::Notify};
 
 use crate::{
     cluster::Cluster,
@@ -15,6 +15,10 @@ use super::*;
 
 pub mod manage;
 pub mod observe;
+
+/// A set of tasks that the Host management task is currently running.
+// TODO: This Pin<Box<_>> stuff is gross... Can I use `Either` instead and make this nicer?
+pub type ManagementTasks<'a> = FuturesUnordered<Pin<Box<dyn Future<Output = HostMessage> + 'a>>>;
 
 #[derive(Debug)]
 pub enum HostMessage {

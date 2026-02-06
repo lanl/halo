@@ -3,7 +3,7 @@
 
 //! Management of a failover cluster with HA pairs.
 
-use std::{future::Future, io, mem::take, pin::Pin};
+use std::{io, mem::take};
 
 use {
     futures::{future, stream::FuturesUnordered, StreamExt},
@@ -197,9 +197,7 @@ impl Host {
         state: &mut HostState,
     ) {
         // Create a queue of tasks related to this host's management duties.
-        // TODO: This Pin<Box<_>> stuff is gross... Can I use `Either` instead and make this nicer?
-        let mut tasks: FuturesUnordered<Pin<Box<dyn Future<Output = HostMessage>>>> =
-            FuturesUnordered::new();
+        let mut tasks: ManagementTasks = FuturesUnordered::new();
 
         // Push a listening task so that the host receives messages, which includes both messages
         // from its failover partner (like "check if my resources are failed over to you"), as well
