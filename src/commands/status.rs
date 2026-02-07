@@ -20,16 +20,7 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
         None => &crate::default_socket(),
     };
 
-    let do_request = || -> reqwest::Result<http::ClusterJson> {
-        let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(addr.as_str())
-            .build()?;
-
-        let response = client.get("http://halo_manager/status").send()?;
-        response.json()
-    };
-
-    let cluster = do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
+    let cluster = get_status(addr)?;
 
     for res in cluster.resources {
         if args.exclude_normal && res.status == "Running" {
@@ -57,4 +48,17 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
     }
 
     Ok(())
+}
+
+pub fn get_status(socket: &str) -> HandledResult<http::ClusterJson> {
+    let do_request = || -> reqwest::Result<http::ClusterJson> {
+        let client = reqwest::blocking::ClientBuilder::new()
+            .unix_socket(socket)
+            .build()?;
+
+        let response = client.get("http://halo_manager/status").send()?;
+        response.json()
+    };
+
+    do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))
 }
