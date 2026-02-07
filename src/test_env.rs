@@ -3,7 +3,7 @@
 
 use std::{fs, io, io::Write, net};
 
-use crate::{cluster::Cluster, manager, resource::Resource};
+use crate::{cluster::Cluster, config::Config, manager, resource::Resource};
 
 /// Given a relative `path` in the test directory, prepend the
 /// full path to the test directory.
@@ -61,6 +61,8 @@ pub struct TestEnvironment {
     /// The agent binary path has to be passed in as an argument from the tests because the
     /// CARGO_BIN_EXE_* environment variables aren't defined during non-test compilation.
     agent_binary_path: String,
+
+    manager_binary_path: String,
 }
 
 impl TestEnvironment {
@@ -68,7 +70,7 @@ impl TestEnvironment {
     ///
     /// Creates a specific unique subdirectory for the test and sets up the necessary environment
     /// variables for the remote agents.
-    pub fn new(test_id: String, agent_binary_path: &str) -> Self {
+    pub fn new(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
         // Each test gets a "private" directory named after its test_id.
         let private_dir_path = test_path(&format!("test_output/{test_id}"));
         // Start by emptying out the test's private directory, so that files from a previous test
@@ -98,7 +100,20 @@ impl TestEnvironment {
             log_file_path,
             log_file,
             agent_binary_path: agent_binary_path.to_string(),
+            manager_binary_path: manager_binary_path.to_string(),
         }
+    }
+
+    /// Writes out the given config as a yaml file in the tests private directory.
+    pub fn write_out_config(&self, config: Config) {
+        let mut config_file =
+            std::fs::File::create(format!("{}/config.yaml", &self.private_dir_path)).unwrap();
+        let contents = serde_yaml::to_string(&config).unwrap();
+        config_file.write_all(contents.as_bytes()).unwrap();
+    }
+
+    pub fn socket_path(&self) -> String {
+        format!("{}/test.socket", &self.private_dir_path)
     }
 
     /// Build a MgrContext for the given test environment. This assumes that the config file for
@@ -170,6 +185,24 @@ impl TestEnvironment {
         }
 
         handles
+    }
+
+    /// Starts the manager in a new process for
+    pub fn start_manager(&self) -> ChildHandle {
+        let handle = std::process::Command::new(&self.manager_binary_path)
+            .args(vec![
+                "--verbose",
+                "--manage-resources",
+                "--fence-on-connection-close",
+                "--config",
+                &format!("{}/config.yaml", &self.private_dir_path),
+                "--socket",
+                &format!("{}/test.socket", &self.private_dir_path),
+            ])
+            .spawn()
+            .expect("could not launch manager process");
+
+        ChildHandle { handle }
     }
 
     /// Reads a line from the shared file used for communication from the agent, and asserts that
