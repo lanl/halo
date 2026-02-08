@@ -48,7 +48,7 @@ mod tests {
                 .unwrap()
         }
 
-        fn start_manager(&self) -> ChildHandle {
+        fn start_manager(&self) -> ManagerHandle {
             self.env.start_manager()
         }
 

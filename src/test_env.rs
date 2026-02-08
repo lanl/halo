@@ -37,6 +37,38 @@ impl Drop for ChildHandle {
     }
 }
 
+/// This struct is used to hold the handle to the manager service so that it can be shut down when
+/// the test ends.
+///
+/// This needs different logic from the remote agent handle because when the manager shuts down, we
+/// want to block until it actually stops - to be sure that the manager stops before the remote
+/// agents.
+pub struct ManagerHandle {
+    handle: std::process::Child,
+    socket_path: String,
+}
+
+impl Drop for ManagerHandle {
+    fn drop(&mut self) {
+        let _ = self.handle.kill();
+
+        // Block until manager actually stops...
+        let mut counter = 20;
+        while counter > 0 {
+            match std::os::unix::net::UnixStream::connect(&self.socket_path) {
+                Ok(_) => {}
+                Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => return,
+                Err(e) => panic!("Unexpected error wait for manager to stop: {e}."),
+            }
+
+            counter -= 1;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+
+        panic!("Manager service did not stop within a reasonable amount of time.");
+    }
+}
+
 /// A TestEnvironment holds all the information needed to access a test's runtime state. This
 /// includes a "private" working directory in which log files, resource status files, and other
 /// state for the running test will be stored.
@@ -146,7 +178,7 @@ impl TestEnvironment {
     ///
     /// Waits until the remotes are listening and ready to accept connections before returning, so
     /// that any subsequent code knows the remotes are up and ready.
-    pub fn start_remote_agents(&self, mut agents: Vec<TestAgent>) -> Vec<ChildHandle> {
+    pub fn start_remote_agents(&self, agents: Vec<TestAgent>) -> Vec<ChildHandle> {
         let handles = agents
             .iter()
             .map(|agent| ChildHandle {
@@ -165,30 +197,18 @@ impl TestEnvironment {
             })
             .collect();
 
-        let mut counter = 20;
-        while !agents.is_empty() && counter > 0 {
-            // Try to connect to each port; when connecting to one succeeds, remove it from the list
-            // but keep trying the others.
-            agents.retain(|agent| {
-                let addr: net::SocketAddr = format!("127.0.0.1:{}", agent.port).parse().unwrap();
-                match net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(50)) {
-                    Ok(_) => false,
-                    Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => true,
-                    Err(e) => {
-                        panic!("Unexpected error attempting to connect to agent at {addr}: {e}")
-                    }
-                }
-            });
-
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            counter -= 1;
+        for agent in agents {
+            // Wait for connection to each agent to succeed.
+            wait_for_service(&format!("127.0.0.1:{}", agent.port), true);
         }
 
         handles
     }
 
     /// Starts the manager in a new process for
-    pub fn start_manager(&self) -> ChildHandle {
+    pub fn start_manager(&self) -> ManagerHandle {
+        let socket_path = format!("{}/test.socket", &self.private_dir_path);
+
         let handle = std::process::Command::new(&self.manager_binary_path)
             .args(vec![
                 "--verbose",
@@ -197,12 +217,17 @@ impl TestEnvironment {
                 "--config",
                 &format!("{}/config.yaml", &self.private_dir_path),
                 "--socket",
-                &format!("{}/test.socket", &self.private_dir_path),
+                &socket_path,
             ])
             .spawn()
             .expect("could not launch manager process");
 
-        ChildHandle { handle }
+        wait_for_service(&socket_path, false);
+
+        ManagerHandle {
+            handle,
+            socket_path,
+        }
     }
 
     /// Reads a line from the shared file used for communication from the agent, and asserts that
@@ -244,6 +269,39 @@ impl TestEnvironment {
         let path = test_path(&format!("test_output/{}/", self.test_id)) + &path;
         std::fs::remove_file(&path).expect(&format!("failed to remove file '{}'", &path));
     }
+}
+
+/// Wait for the service (e.g., manager, remote agent) at the specified address to start.
+/// TCP socket if tcp is true, else Unix socket.
+///
+/// Panics if too much time passes without the service starting.
+fn wait_for_service(addr: &str, tcp: bool) {
+    let mut counter = 20;
+    while counter > 0 {
+        if tcp {
+            let addr: net::SocketAddr = addr.parse().unwrap();
+            match net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(50)) {
+                Ok(_) => return,
+                Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {}
+                Err(e) => {
+                    panic!("Unexpected error attempting to connect to agent at {addr}: {e}")
+                }
+            }
+        } else {
+            match std::os::unix::net::UnixStream::connect(addr) {
+                Ok(_) => return,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    panic!("Unexpected error attempting to connect to manager at {addr}: {e}")
+                }
+            }
+        };
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        counter -= 1;
+    }
+
+    panic!("Unable to connect to service at {addr} within a reasonable time.");
 }
 
 /// The information needed to launch a remote agent binary in the test environment.

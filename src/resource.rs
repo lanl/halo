@@ -351,6 +351,14 @@ impl Resource {
     ) -> Result<(), ManagementError> {
         // If this resource is already running, don't bother doing anything:
         if !self.is_running() {
+            warn!(
+                "Attempting to start resource {} on {}.",
+                self.id,
+                match loc {
+                    Location::Home => "its home node",
+                    Location::Away => "its failover node",
+                }
+            );
             match self.start_client(client).await {
                 // Agent replies that the resource was started succesfully.
                 Ok(AgentReply::Success(ocf::Status::Success)) => self.set_running_on_loc(loc),
