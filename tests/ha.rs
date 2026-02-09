@@ -16,6 +16,7 @@ mod tests {
         env: TestEnvironment,
         ports: [u16; 2],
         test_id: String,
+        config: Config,
     }
 
     impl HaEnvironment {
@@ -27,18 +28,19 @@ mod tests {
                 env!("CARGO_BIN_EXE_halo_manager"),
             );
             let config = ha_config(ports, test_id.to_string());
-            env.write_out_config(config);
+            env.write_out_config(&config);
             Self {
                 env,
                 test_id: test_id.to_string(),
                 ports,
+                config,
             }
         }
 
         fn start_agent(&self, which_one: usize) -> ChildHandle {
             let agent = TestAgent {
                 port: self.ports[which_one],
-                id: Some(self.test_id.clone()),
+                id: Some(format!("{}_{}", self.test_id, which_one)),
             };
 
             self.env
@@ -54,6 +56,17 @@ mod tests {
 
         fn socket_path(&self) -> String {
             self.env.socket_path()
+        }
+
+        fn start_resource(&self, resource_id: &str, which_agent: usize) {
+            for host in &self.config.hosts {
+                if let Some(resource) = host.resources.get(resource_id) {
+                    self.env.start_resource(resource, which_agent);
+                    return;
+                }
+            }
+
+            panic!("Unable to find resource with id {resource_id}");
         }
     }
 
@@ -115,9 +128,11 @@ mod tests {
         config
     }
 
+    /// Startup, both agents running, all resources stopped.
+    /// Agents should start resources on their home nodes.
     #[test]
-    fn startup_agents_running_resources_stopped() {
-        let env = HaEnvironment::new("startup_agents_running_resources_stopped");
+    fn startup1() {
+        let env = HaEnvironment::new("startup1");
         let _a = env.start_agent(0);
         let _b = env.start_agent(1);
         let _m = env.start_manager();
@@ -131,6 +146,182 @@ mod tests {
 
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running");
+        }
+    }
+
+    /// Startup, one agent stopped, all resources stopped.
+    /// All resources should enter "error" status because the system cannot tell if they are
+    /// running on the "down" node so it isn't safe to start them.
+    #[test]
+    fn startup2() {
+        let env = HaEnvironment::new("startup2");
+        let _a = env.start_agent(0);
+        let _m = env.start_manager();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Error");
+        }
+    }
+
+    /// Startup, one agent stopped, one running. Up node resources are running locally, down node
+    /// resources are not.
+    /// Manager should report up resources as running, down resources as Error since it cannot tell
+    /// if they are started anywhere.
+    #[test]
+    fn startup3() {
+        let env = HaEnvironment::new("startup3");
+
+        // Just starting the resource group root is enough to get HALO to treat the entire resource
+        // group as located on a particular node.
+        env.start_resource("zpool_0", 0);
+
+        let _a = env.start_agent(0);
+        let _m = env.start_manager();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Error");
+            }
+        }
+    }
+
+    /// Startup, one agent stopped, one running, all resources started on running node.
+    /// Manager should report all resources as running, with the correct ones as failed over.
+    #[test]
+    fn startup4() {
+        let env = HaEnvironment::new("startup4");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("zpool_1", 0);
+
+        let _a = env.start_agent(0);
+        let _m = env.start_manager();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+    }
+
+    /// Startup, both agents down - there is nothing the manager can do, report resources in error
+    /// status.
+    ///
+    /// Then, once both agents start, the resources can be started.
+    #[test]
+    fn startup5() {
+        let env = HaEnvironment::new("startup5");
+
+        // Not starting agents...
+        let _m = env.start_manager();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Error");
+        }
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+
+        // Hopefully this is a long enough sleep...
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+
+        // Make sure these drop first, just to avoid noise in the error output...
+        drop(_a);
+        drop(_b);
+    }
+
+    /// Startup, one agent down, all resources running on down node. Resources should be in error
+    /// status.
+    /// Start the down agent, all resources should go to running, with the correct ones failed
+    /// over.
+    #[test]
+    fn startup6() {
+        let env = HaEnvironment::new("startup6");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("zpool_1", 0);
+
+        let _a = env.start_agent(1); // Start only the agent where no resources are running.
+
+        let _m = env.start_manager();
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Error");
+        }
+
+        let _b = env.start_agent(0); // Now start the agent where the resources are running.
+
+        // Hopefully this is a long enough sleep...
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+
+        drop(_b);
+    }
+
+    /// Failover
+    #[test]
+    fn failover1() {
+        let env = HaEnvironment::new("failover1");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Stop the remote agent to trigger failover:
+        drop(_b);
+
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        eprintln!("{cluster_status:?}");
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
         }
     }
 }

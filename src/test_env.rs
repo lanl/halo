@@ -3,7 +3,7 @@
 
 use std::{fs, io, io::Write, net};
 
-use crate::{cluster::Cluster, config::Config, manager, resource::Resource};
+use crate::{cluster::Cluster, config, config::Config, manager, resource::Resource};
 
 /// Given a relative `path` in the test directory, prepend the
 /// full path to the test directory.
@@ -137,7 +137,7 @@ impl TestEnvironment {
     }
 
     /// Writes out the given config as a yaml file in the tests private directory.
-    pub fn write_out_config(&self, config: Config) {
+    pub fn write_out_config(&self, config: &Config) {
         let mut config_file =
             std::fs::File::create(format!("{}/config.yaml", &self.private_dir_path)).unwrap();
         let contents = serde_yaml::to_string(&config).unwrap();
@@ -244,15 +244,23 @@ impl TestEnvironment {
         assert_eq!(contents, line);
     }
 
-    /// Stop over a given resource.
-    ///
-    /// Simulates a resource stopping by removing the state file that the test OCF resource
+    /// Simulate a resource stopping by removing the state file that the test OCF resource
     /// script checks to determine if the resource is running.
-    // TODO: once test agents are ran with an agent-specific ID, instead of a test ID that applies
-    // to the entire test, then this should be updated to use that agent-specific ID in the
-    // statefile name instead of the test ID. (the test ID will continue to be used for the
-    // directory name.)
-    pub fn stop_resource(&self, resource: &Resource) {
+    pub fn stop_resource(&self, resource: &config::Resource, agent: usize) {
+        let path = self.get_resource_path(resource, agent);
+        std::fs::remove_file(&path).expect(&format!("failed to remove file '{}'", &path));
+    }
+
+    /// Simulate a resource startin by creating the state file that the test OCF resource
+    /// script checks to determine if the resource is running.
+    pub fn start_resource(&self, resource: &config::Resource, agent: usize) {
+        let path = self.get_resource_path(resource, agent);
+        std::fs::File::create(&path).expect(&format!("failed to create file '{}'", &path));
+    }
+
+    /// Get the path to the "resource state file" used in a test -- that is, the file whose
+    /// presence indicates the resource is running and whose absence indicates it is stopped.
+    fn get_resource_path(&self, resource: &config::Resource, agent: usize) -> String {
         let path = match resource.kind.as_str() {
             "heartbeat/ZFS" => &format!("zfs.{}", resource.parameters.get("pool").unwrap()),
             "lustre/Lustre" => &format!(
@@ -265,9 +273,8 @@ impl TestEnvironment {
             ),
             _ => unreachable!(),
         };
-        let path = format!("{}.{}", self.test_id, path);
-        let path = test_path(&format!("test_output/{}/", self.test_id)) + &path;
-        std::fs::remove_file(&path).expect(&format!("failed to remove file '{}'", &path));
+        let path = format!("{}_{agent}.{}", self.test_id, path);
+        test_path(&format!("test_output/{}/", self.test_id)) + &path
     }
 }
 
