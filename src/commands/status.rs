@@ -30,15 +30,23 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
         print!("{}: ", res.status);
         print!("{}\t", res.kind);
 
-        print!(" [");
-        let mut params = res.parameters.iter();
-        if let Some((key, val)) = params.next() {
-            print!("{key}: {val}");
-            for (key, val) in params {
-                print!("; {key}: {val}");
+        print!("{}\t", res.id);
+
+        if cli.verbose {
+            print!(" [");
+            let mut params = res.parameters.iter();
+            if let Some((key, val)) = params.next() {
+                print!("{key}: {val}");
+                for (key, val) in params {
+                    print!("; {key}: {val}");
+                }
             }
+            print!("]");
         }
-        print!("]");
+
+        if let Some(comment) = res.comment {
+            print!(" {comment} ");
+        }
 
         if !res.managed {
             print!(" (Unmanaged)");

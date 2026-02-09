@@ -56,26 +56,36 @@ pub struct ClusterJson {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ResourceJson {
+    pub id: String,
     pub kind: String,
     pub parameters: HashMap<String, String>,
     pub status: String,
+    pub comment: Option<String>,
     pub managed: bool,
 }
 
 impl ResourceJson {
     fn build(res: &Resource, managed: bool) -> Self {
+        let mut comment = None;
+
         let status = match *res.status.lock().unwrap() {
-            ResourceStatus::Unknown => "Unknown".to_string(),
-            ResourceStatus::Error(ref reason) => format!("Error: ({reason})"),
-            ResourceStatus::Stopped => "Stopped".to_string(),
-            ResourceStatus::RunningOnAway => "Running (Failed Over)".to_string(),
-            ResourceStatus::RunningOnHome => "Running".to_string(),
-        };
+            ResourceStatus::Unknown => "Unknown",
+            ResourceStatus::Error(ref reason) => {
+                comment = Some(reason.clone());
+                "Error"
+            }
+            ResourceStatus::Stopped => "Stopped",
+            ResourceStatus::RunningOnAway => "Running (Failed Over)",
+            ResourceStatus::RunningOnHome => "Running",
+        }
+        .to_string();
 
         Self {
+            id: res.id.clone(),
             kind: res.kind.clone(),
             parameters: res.parameters.clone(),
             status,
+            comment,
             managed,
         }
     }
