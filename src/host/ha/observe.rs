@@ -107,10 +107,8 @@ impl Host {
         {
             Ok(is_running_here) => {
                 if is_running_here {
-                    self.sender
-                        .send(new_message(token, Message::ObserveResourceGroup))
-                        .await
-                        .unwrap();
+                    self.send_message_to_self(token, Message::ObserveResourceGroup)
+                        .await;
 
                     HostMessage::None
                 } else {

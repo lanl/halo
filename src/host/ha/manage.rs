@@ -543,17 +543,13 @@ impl Host {
         match is_resource_group_running_here(&token, cluster, client, true).await {
             Ok(is_running_here) => {
                 if is_running_here {
-                    self.sender
-                        .send(new_message(token, Message::ManageResourceGroup))
-                        .await
-                        .unwrap();
+                    self.send_message_to_self(token, Message::ManageResourceGroup)
+                        .await;
                 } else if rg.get_managed() {
                     match token.location {
                         Location::Home => {
-                            self.sender
-                                .send(new_message(token, Message::ManageResourceGroup))
-                                .await
-                                .unwrap();
+                            self.send_message_to_self(token, Message::ManageResourceGroup)
+                                .await;
                         }
                         Location::Away => {
                             self.send_message_to_partner(token, Message::ManageResourceGroup)
