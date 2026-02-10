@@ -114,7 +114,8 @@ impl Host {
 
                     HostMessage::None
                 } else {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
+                        .await;
                     self.send_message_to_partner(token, Message::CheckResourceGroup)
                         .await;
 
@@ -136,7 +137,8 @@ impl Host {
         match rg.observe_loop(client, true, token.location).await {
             // Resource stopped: need to see if it started running on partner.
             Ok(()) => {
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
+                    .await;
                 self.send_message_to_partner(token, Message::CheckResourceGroup)
                     .await;
 

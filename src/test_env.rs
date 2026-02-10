@@ -160,6 +160,7 @@ impl TestEnvironment {
             verbose: false,
             manage_resources: true,
             fence_on_connection_close: true,
+            sleep_time: 5000,
         }
     }
 
@@ -230,6 +231,8 @@ impl TestEnvironment {
             &config_path,
             "--socket",
             &socket_path,
+            "--sleep-time",
+            "500",
         ];
 
         if manage_resources {

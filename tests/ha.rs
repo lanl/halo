@@ -257,8 +257,7 @@ mod tests {
         let _a = env.start_agent(0);
         let _b = env.start_agent(1);
 
-        // Hopefully this is a long enough sleep...
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         eprintln!("{cluster_status:?}");
@@ -294,8 +293,7 @@ mod tests {
 
         let _b = env.start_agent(0); // Now start the agent where the resources are running.
 
-        // Hopefully this is a long enough sleep...
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         eprintln!("{cluster_status:?}");
@@ -323,7 +321,7 @@ mod tests {
         // Stop the remote agent to trigger failover:
         drop(_b);
 
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         eprintln!("{cluster_status:?}");
@@ -344,7 +342,7 @@ mod tests {
         let _b = env.start_agent(1);
         let _m = env.start_manager(false);
 
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         for res in cluster_status.resources {
@@ -366,7 +364,7 @@ mod tests {
         env.start_resource("zpool_1", 0);
         env.start_resource("mdt_1", 0);
 
-        std::thread::sleep(std::time::Duration::from_secs(11));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         for res in cluster_status.resources {
@@ -398,7 +396,7 @@ mod tests {
         env.stop_resource("mdt_1", 1);
         env.stop_resource("zpool_1", 1);
 
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         for res in cluster_status.resources {
@@ -417,7 +415,7 @@ mod tests {
             env.start_resource("mdt_1", 1);
         }
 
-        std::thread::sleep(std::time::Duration::from_secs(11));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         for res in cluster_status.resources {

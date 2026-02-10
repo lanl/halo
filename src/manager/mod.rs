@@ -37,6 +37,10 @@ pub struct Cli {
     /// errors indicate a configuration issue that needs to be resolved.
     #[arg(long, hide = true)]
     pub fence_on_connection_close: bool,
+
+    /// How many milliseconds to sleep between each iteration of the resource management loops.
+    #[arg(long, hide = true, default_value_t = 5000)]
+    pub sleep_time: u64,
 }
 
 /// Get a unix socket listener from a given socket path.
