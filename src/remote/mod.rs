@@ -169,9 +169,10 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
             let value = pry!(pry!(arg.get_value()).to_str());
             ocf_args.push((key, value));
         }
-        let ocf_args = ocf::Arguments::from(&ocf_args);
 
         log_operation(&op, &ocf_args);
+
+        let ocf_args = ocf::Arguments::from(&ocf_args);
 
         match ocf::do_operation(resource, op, &ocf_args, &self.cli) {
             Ok((exit_code, error_output)) => {
@@ -202,10 +203,11 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
 }
 
 /// Print a message to stderr with the operation and arguments, for debugging.
-fn log_operation(op: &ocf::Operation, ocf_args: &ocf::Arguments) {
-    let mut msg = format!("Got operation request: {op}\n");
-    for (k, v) in ocf_args.args.iter() {
-        msg.push_str(&format!("    {}: {}\n", k, v));
+fn log_operation(op: &ocf::Operation, ocf_args: &Vec<(&str, &str)>) {
+    let mut msg = format!("Got operation request: {op}, resource: [");
+    for (k, v) in ocf_args {
+        msg.push_str(&format!("{}: {}, ", k, v));
     }
+    msg.push(']');
     trace!("{msg}");
 }
