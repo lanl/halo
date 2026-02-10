@@ -341,7 +341,6 @@ mod tests {
         }
     }
 
-
     /// Failover - both resource groups running on same node, both get failed over.
     #[test]
     fn failover2() {
@@ -555,7 +554,7 @@ mod tests {
         } else {
             env.start_resource("zpool_0", 0);
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(2));
         let cluster_status = get_status(&env.socket_path()).unwrap();
         for res in cluster_status.resources {
             if res.id == "mdt_0" {
