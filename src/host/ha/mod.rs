@@ -154,6 +154,11 @@ impl Host {
             .expect("Host without failover partner in HA routine.")
     }
 
+    /// Sends a message of the given type to self.
+    async fn send_message_to_self(&self, token: ResourceToken, message: Message) {
+        self.sender.send(new_message(token, message)).await.unwrap();
+    }
+
     /// Sends the token over to the partner in the given message type.
     ///
     /// This flips the location field -- the caller should NOT adjust location before calling this!
