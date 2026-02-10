@@ -181,19 +181,29 @@ impl TestEnvironment {
     pub fn start_remote_agents(&self, agents: Vec<TestAgent>) -> Vec<ChildHandle> {
         let handles = agents
             .iter()
-            .map(|agent| ChildHandle {
-                handle: std::process::Command::new(&self.agent_binary_path)
-                    .args(vec![
-                        "--test-id",
-                        &agent.id.as_ref().unwrap_or(&self.test_id),
-                    ])
-                    .env("HALO_TEST_LOG", &self.log_file_path)
-                    .env("HALO_TEST_DIRECTORY", &self.private_dir_path)
-                    .env("OCF_ROOT", test_path("ocf_resources"))
-                    .env("HALO_NET", "127.0.0.0/24")
-                    .env("HALO_PORT", format!("{}", agent.port))
-                    .spawn()
-                    .expect("could not launch process"),
+            .map(|agent| {
+                let log_file = match &agent.id {
+                    Some(id) => format!("{}/agent_{id}_log", &self.private_dir_path),
+                    None => format!("{}/agent_log", &self.private_dir_path),
+                };
+                let log_file = std::fs::File::create(log_file).unwrap();
+
+                ChildHandle {
+                    handle: std::process::Command::new(&self.agent_binary_path)
+                        .args(vec![
+                            "--verbose",
+                            "--test-id",
+                            &agent.id.as_ref().unwrap_or(&self.test_id),
+                        ])
+                        .env("HALO_TEST_LOG", &self.log_file_path)
+                        .env("HALO_TEST_DIRECTORY", &self.private_dir_path)
+                        .env("OCF_ROOT", test_path("ocf_resources"))
+                        .env("HALO_NET", "127.0.0.0/24")
+                        .env("HALO_PORT", format!("{}", agent.port))
+                        .stderr(std::process::Stdio::from(log_file))
+                        .spawn()
+                        .expect("could not launch process"),
+                }
             })
             .collect();
 
@@ -208,6 +218,8 @@ impl TestEnvironment {
     /// Starts the manager in a new process for
     pub fn start_manager(&self) -> ManagerHandle {
         let socket_path = format!("{}/test.socket", &self.private_dir_path);
+        let log_file = format!("{}/manager_log", &self.private_dir_path);
+        let log_file = std::fs::File::create(log_file).unwrap();
 
         let handle = std::process::Command::new(&self.manager_binary_path)
             .args(vec![
@@ -219,6 +231,7 @@ impl TestEnvironment {
                 "--socket",
                 &socket_path,
             ])
+            .stderr(std::process::Stdio::from(log_file))
             .spawn()
             .expect("could not launch manager process");
 
