@@ -181,8 +181,10 @@ async fn is_resource_group_running_here(
     token: &ResourceToken,
     cluster: &Cluster,
     client: &ocf_resource_agent::Client,
+    update_status_if_stopped: bool,
 ) -> Result<bool, ManagementError> {
     let rg = cluster.get_resource_group(&token.id);
 
-    rg.root.is_running_here(client, token.location).await
+    rg.is_running_here(client, token.location, update_status_if_stopped)
+        .await
 }
