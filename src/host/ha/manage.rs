@@ -192,7 +192,7 @@ impl Host {
         cluster: &Cluster,
         state: &mut HostState,
     ) {
-        // Create a queue of tasks related to this host's management duties.
+        // Create a set of tasks related to this host's management duties.
         let mut tasks: ManagementTasks = FuturesUnordered::new();
 
         // Push a listening task so that the host receives messages, which includes both messages
@@ -516,7 +516,7 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> (ResourceToken, bool) {
-        match is_resource_group_running_here(&token, cluster, client).await {
+        match is_resource_group_running_here(&token, cluster, client, false).await {
             Ok(is_running_here) => (token, is_running_here),
             Err(_) => todo!(),
         }
@@ -540,7 +540,7 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> HostMessage {
-        match is_resource_group_running_here(&token, cluster, client).await {
+        match is_resource_group_running_here(&token, cluster, client, true).await {
             Ok(is_running_here) => {
                 if is_running_here {
                     new_message(token, Message::ManageResourceGroup)

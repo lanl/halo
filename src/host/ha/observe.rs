@@ -17,10 +17,15 @@ use super::*;
 impl Host {
     pub async fn observe_ha(&self, cluster: &Cluster) {
         let mut my_resources = self.mint_resource_tokens(cluster);
+        debug!("host {}: resources: {my_resources:?}", self.id());
 
         loop {
             match get_client(&self.address()).await {
                 Ok(client) => {
+                    debug!(
+                        "Host {} established connection to its remote agent.",
+                        self.id()
+                    );
                     self.remote_connected_loop_observe(take(&mut my_resources), cluster, &client)
                         .await
                 }
@@ -42,13 +47,15 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) {
-        // Create a queue of tasks related to this host's management duties.
+        // Create a set of tasks related to this host's management duties.
         let mut tasks: ManagementTasks = FuturesUnordered::new();
 
         tasks.push(Box::pin(self.receive_message()));
 
         for token in resources_to_check {
-            tasks.push(Box::pin(self.check_resource_group(token, cluster, client)));
+            tasks.push(Box::pin(
+                self.check_resource_group(token, cluster, client, false),
+            ));
         }
 
         while let Some(event) = tasks.next().await {
@@ -61,6 +68,7 @@ impl Host {
                             event.resource_group,
                             cluster,
                             client,
+                            true,
                         )));
                         tasks.push(Box::pin(self.receive_message()));
                     }
@@ -92,9 +100,11 @@ impl Host {
         token: ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
+        update_status_if_stopped: bool,
     ) -> HostMessage {
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        match is_resource_group_running_here(&token, cluster, client).await {
+        match is_resource_group_running_here(&token, cluster, client, update_status_if_stopped)
+            .await
+        {
             Ok(is_running_here) => {
                 if is_running_here {
                     self.sender
@@ -104,6 +114,7 @@ impl Host {
 
                     HostMessage::None
                 } else {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     self.send_message_to_partner(token, Message::CheckResourceGroup)
                         .await;
 
@@ -125,6 +136,7 @@ impl Host {
         match rg.observe_loop(client, true, token.location).await {
             // Resource stopped: need to see if it started running on partner.
             Ok(()) => {
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 self.send_message_to_partner(token, Message::CheckResourceGroup)
                     .await;
 

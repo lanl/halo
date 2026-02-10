@@ -165,18 +165,14 @@ impl ResourceGroup {
     ) -> Result<(), ManagementError> {
         let futures = self
             .resources()
-            .map(|r| async move { (r, r.is_running_here(client, loc).await) });
+            .map(|r| r.is_running_here(client, loc, true));
 
         let statuses = future::join_all(futures).await;
         let mut res = Ok(());
 
-        for (resource, result) in statuses {
+        for result in statuses {
             match result {
-                Ok(is_running_here) => {
-                    if !is_running_here {
-                        resource.set_status(ResourceStatus::Stopped)
-                    }
-                }
+                Ok(_) => {}
                 Err(e) => res = Err(e),
             }
         }
@@ -237,6 +233,34 @@ impl ResourceGroup {
     pub fn set_managed(&self, managed: bool) {
         let mut managed_status = self.managed.lock().unwrap();
         *managed_status = managed;
+    }
+
+    /// Check if the resource group is running on the system connected via the given Client.
+    ///
+    /// This checks each resource individually for the purpose of updating the status, but it uses
+    /// the result of the root resource to determine the "overall" status.
+    pub async fn is_running_here(
+        &self,
+        client: &ocf_resource_agent::Client,
+        loc: Location,
+        update_status_if_stopped: bool,
+    ) -> Result<bool, ManagementError> {
+        let futures = self
+            .resources()
+            .map(|r| r.is_running_here(client, loc, update_status_if_stopped));
+
+        for result in future::join_all(futures).await {
+            match result {
+                Ok(_) => {}
+                Err(e) => return Err(e),
+            }
+        }
+
+        if self.root.is_running() {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -311,17 +335,11 @@ impl Resource {
     }
 
     /// This method checks if the resource is running on the system connected via the given Client.
-    ///
-    /// If the RPC reply says the resource is not running, this does NOT set the resource status to
-    /// Stopped! This is because this method is called in scenarios where it is not yet known which
-    /// host the resource is (supposed to be) running on -- like manager startup.
-    ///
-    /// For any response other than "Not Running" this does update the status -- either to
-    /// "Running", or to an appropriate error status if an error was observed.
     pub async fn is_running_here(
         &self,
         client: &ocf_resource_agent::Client,
         loc: Location,
+        update_status_if_stopped: bool,
     ) -> Result<bool, ManagementError> {
         match self.monitor_client(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
@@ -329,7 +347,12 @@ impl Resource {
                 Ok(true)
             }
             Ok(AgentReply::Success(ocf::Status::Error(kind, reason))) => match kind {
-                ocf::OcfError::ErrNotRunning => Ok(false),
+                ocf::OcfError::ErrNotRunning => {
+                    if update_status_if_stopped {
+                        self.set_status(ResourceStatus::Stopped);
+                    }
+                    Ok(false)
+                }
                 _ => {
                     self.set_status(ResourceStatus::Error(reason));
                     Err(ManagementError::Configuration)
