@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn unmanage3() {
         let env = HaEnvironment::new("unmanage3");
-        unmanage_then_stop_and_remanage(env, false);
+        unmanage_then_stop_and_remanage(env, None);
     }
 
     /// A resource is unmanaged, then manually stopped - status should correctly report that it is
@@ -533,7 +533,18 @@ mod tests {
     #[test]
     fn unmanage4() {
         let env = HaEnvironment::new("unmanage4");
-        unmanage_then_stop_and_remanage(env, true);
+        unmanage_then_stop_and_remanage(env, Some(true));
+    }
+
+    /// A resource is unmanaged, then manually stopped - status should correctly report that it is
+    /// stopped.
+    ///
+    /// Then the root resources is started on the home node, and it is re-managed. Manager
+    /// should start the child resource on the home node.
+    #[test]
+    fn unmanage5() {
+        let env = HaEnvironment::new("unmanage5");
+        unmanage_then_stop_and_remanage(env, Some(false));
     }
 
     fn unmanage_then_stop_and_start(env: HaEnvironment, manual_fail_over: bool) {
@@ -583,7 +594,11 @@ mod tests {
         }
     }
 
-    fn unmanage_then_stop_and_remanage(env: HaEnvironment, manual_fail_over: bool) {
+    /// start_failed_over:
+    /// - None: do not start resources manually, let manager start
+    /// - Some(true): start resources manually on FAILOVER node
+    /// - Some(false): start resources manually on HOME node
+    fn unmanage_then_stop_and_remanage(env: HaEnvironment, start_failed_over: Option<bool>) {
         env.start_resource("zpool_0", 0);
         env.start_resource("mdt_0", 0);
         env.start_resource("zpool_1", 1);
@@ -595,16 +610,18 @@ mod tests {
 
         unmanage_then_stop(&env);
 
-        if manual_fail_over {
-            env.start_resource("zpool_0", 1);
-        }
+        match start_failed_over {
+            Some(true) => env.start_resource("zpool_0", 1),
+            Some(false) => env.start_resource("zpool_0", 0),
+            None => {}
+        };
 
         env.manage_resource("zpool_0");
 
         std::thread::sleep(std::time::Duration::from_secs(1));
         let cluster_status = get_status(&env.socket_path()).unwrap();
         for res in cluster_status.resources {
-            if manual_fail_over && res.id.contains("0") {
+            if start_failed_over == Some(true) && res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
             } else {
                 assert_eq!(res.status, "Running");
