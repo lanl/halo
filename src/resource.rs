@@ -111,9 +111,7 @@ impl ResourceGroup {
                         return Ok(());
                     }
                 }
-                ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
-                    self.update_resources(client, loc).await?;
-                }
+                ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {}
                 other => {
                     warn!("resource status was unexpected: {other:?}");
                     return Err(ManagementError::Configuration);
