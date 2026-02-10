@@ -259,7 +259,9 @@ impl Host {
                             state.outstanding_resource_tasks.push(revoke);
                             tasks.push(Box::pin(self.receive_message()));
                         }
-                        Message::ObserveResourceGroup => {}
+                        Message::ObserveResourceGroup => {
+                            panic!("Unexpected to receive a ObserveResourceGroup event in manage mode.")
+                        }
                         // Child task for management of this resource group encountered an error indicating
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
