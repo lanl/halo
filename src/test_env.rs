@@ -201,6 +201,7 @@ impl TestEnvironment {
                         .env("OCF_ROOT", test_path("ocf_resources"))
                         .env("HALO_NET", "127.0.0.0/24")
                         .env("HALO_PORT", format!("{}", agent.port))
+                        .env("HALO_LOG", "trace")
                         .stderr(std::process::Stdio::from(log_file))
                         .spawn()
                         .expect("could not launch process"),
