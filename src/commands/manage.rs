@@ -18,15 +18,19 @@ pub struct UnManageArgs {
 }
 
 pub fn manage(cli: &Cli, args: &ManageArgs) -> HandledResult<()> {
-    send_command(cli, &args.resource_id, true)
+    send_command(&cli.socket, &args.resource_id, true)
 }
 
 pub fn unmanage(cli: &Cli, args: &UnManageArgs) -> HandledResult<()> {
-    send_command(cli, &args.resource_id, false)
+    send_command(&cli.socket, &args.resource_id, false)
 }
 
-fn send_command(cli: &Cli, resource: &str, managed: bool) -> HandledResult<()> {
-    let addr = match &cli.socket {
+pub fn send_command(
+    socket_path: &Option<String>,
+    resource: &str,
+    managed: bool,
+) -> HandledResult<()> {
+    let addr = match socket_path {
         Some(s) => s,
         None => &crate::default_socket(),
     };

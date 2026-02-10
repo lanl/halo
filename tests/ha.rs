@@ -6,7 +6,7 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     use halo_lib::{
-        commands::status::get_status,
+        commands::{self, status::get_status},
         config::{self, Config},
         test_env::*,
     };
@@ -78,6 +78,14 @@ mod tests {
             }
 
             panic!("Unable to find resource with id {resource_id}");
+        }
+
+        fn manage_resource(&self, resource_id: &str) {
+            commands::manage::send_command(&Some(self.socket_path()), resource_id, true).unwrap();
+        }
+
+        fn unmanage_resource(&self, resource_id: &str) {
+            commands::manage::send_command(&Some(self.socket_path()), resource_id, false).unwrap();
         }
     }
 
@@ -445,5 +453,151 @@ mod tests {
         let env = HaEnvironment::new("observe4");
 
         observe_start_and_stop(env, true);
+    }
+
+    /// A resource is unmanaged, then manually stopped - status should correctly report that it is
+    /// stopped.
+    ///
+    /// Then it is started on the same node - status should correctly report that it is started.
+    #[test]
+    fn unmanage1() {
+        let env = HaEnvironment::new("unmanage1");
+        unmanage_then_stop_and_start(env, false);
+    }
+
+    /// A resource is unmanaged, then manually stopped - status should correctly report that it is
+    /// stopped.
+    ///
+    /// Then it is started on the failover node - status should correctly report that it is
+    /// started, but failed over.
+    #[test]
+    fn unmanage2() {
+        let env = HaEnvironment::new("unmanage2");
+        unmanage_then_stop_and_start(env, true);
+    }
+
+    /// A resource is unmanaged, then manually stopped - status should correctly report that it is
+    /// stopped.
+    ///
+    /// Then it is re-managed - manager should start it on the home node.
+    #[test]
+    fn unmanage3() {
+        let env = HaEnvironment::new("unmanage3");
+        unmanage_then_stop_and_remanage(env, false);
+    }
+
+    /// A resource is unmanaged, then manually stopped - status should correctly report that it is
+    /// stopped.
+    ///
+    /// Then the root resources is started on the failover node, and it is re-managed. Manager
+    /// should start the child resource on the failover node.
+    #[test]
+    fn unmanage4() {
+        let env = HaEnvironment::new("unmanage4");
+        unmanage_then_stop_and_remanage(env, true);
+    }
+
+    fn unmanage_then_stop_and_start(env: HaEnvironment, manual_fail_over: bool) {
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        unmanage_then_stop(&env);
+
+        // First start just the root resource...
+        if manual_fail_over {
+            env.start_resource("zpool_0", 1);
+        } else {
+            env.start_resource("zpool_0", 0);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id == "mdt_0" {
+                assert_eq!(res.status, "Stopped");
+            } else if res.id == "zpool_0" && manual_fail_over {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+
+        // ...then start the child resource.
+        if manual_fail_over {
+            env.start_resource("mdt_0", 1);
+        } else {
+            env.start_resource("mdt_0", 0);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if manual_fail_over && res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
+    fn unmanage_then_stop_and_remanage(env: HaEnvironment, manual_fail_over: bool) {
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        unmanage_then_stop(&env);
+
+        if manual_fail_over {
+            env.start_resource("zpool_0", 1);
+        }
+
+        env.manage_resource("zpool_0");
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if manual_fail_over && res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
+    fn unmanage_then_stop(env: &HaEnvironment) {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        env.unmanage_resource("zpool_0");
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert!(!res.managed);
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+
+        env.stop_resource("mdt_0", 0);
+        env.stop_resource("zpool_0", 0);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Stopped");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
     }
 }

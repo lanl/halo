@@ -10,6 +10,7 @@ use {
         routing::{get, patch, post},
         Json, Router,
     },
+    log::warn,
     serde::{Deserialize, Serialize},
 };
 
@@ -121,6 +122,11 @@ async fn set_managed(
 ) -> Result<(), StatusCode> {
     for rg in cluster.resource_groups() {
         if rg.root.id == resource_id {
+            warn!(
+                "Resource group {}: setting managed={}",
+                rg.id(),
+                if payload.managed { "true" } else { "false" }
+            );
             rg.set_managed(payload.managed);
             return Ok(());
         }

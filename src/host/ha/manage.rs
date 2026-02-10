@@ -215,7 +215,9 @@ impl Host {
 
         // Create a task to check on each resource group that wasn't running on the partner host.
         for token in take(&mut state.check_these_resources) {
-            tasks.push(Box::pin(self.away_startup_check(token, cluster, client)));
+            tasks.push(Box::pin(
+                self.check_resource_group_managed(token, cluster, client),
+            ));
         }
 
         while let Some(event) = tasks.next().await {
@@ -235,7 +237,7 @@ impl Host {
                         // running already, this Host proceeds to manage them; otherwise, the original Host
                         // should manage them.
                         Message::CheckResourceGroup => {
-                            tasks.push(Box::pin(self.away_startup_check(
+                            tasks.push(Box::pin(self.check_resource_group_managed(
                                 event.resource_group,
                                 cluster,
                                 client,
@@ -255,13 +257,9 @@ impl Host {
                                 revoke.clone(),
                             )));
                             state.outstanding_resource_tasks.push(revoke);
-                            // TODO: ManageResourceGroup is sent sometimes not as a message but as a
-                            // return value (e.g., in away_startup_check()) -- it is thus not
-                            // appropriate to always push a new receive_message() task. Need to
-                            // figure out the right way to handle this....
                             tasks.push(Box::pin(self.receive_message()));
                         }
-                        Message::ObserveResourceGroup => todo!(),
+                        Message::ObserveResourceGroup => {}
                         // Child task for management of this resource group encountered an error indicating
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
@@ -534,22 +532,42 @@ impl Host {
     ///
     /// - If an error was observed, returns a Message::ResourceError to inform the main Host task of
     ///   the situation.
-    async fn away_startup_check(
+    async fn check_resource_group_managed(
         &self,
         token: ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> HostMessage {
+        let rg = cluster.get_resource_group(&token.id);
+
         match is_resource_group_running_here(&token, cluster, client, true).await {
             Ok(is_running_here) => {
                 if is_running_here {
-                    new_message(token, Message::ManageResourceGroup)
+                    self.sender
+                        .send(new_message(token, Message::ManageResourceGroup))
+                        .await
+                        .unwrap();
+                } else if rg.get_managed() {
+                    match token.location {
+                        Location::Home => {
+                            self.sender
+                                .send(new_message(token, Message::ManageResourceGroup))
+                                .await
+                                .unwrap();
+                        }
+                        Location::Away => {
+                            self.send_message_to_partner(token, Message::ManageResourceGroup)
+                                .await;
+                        }
+                    }
                 } else {
-                    self.send_message_to_partner(token, Message::ManageResourceGroup)
+                    tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
+                    self.send_message_to_partner(token, Message::CheckResourceGroup)
+                        .await;
+                };
 
-                    HostMessage::None
-                }
+                HostMessage::None
             }
             Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
             Err(ManagementError::Connection) => todo!(),
@@ -584,18 +602,22 @@ impl Host {
                 new_message(token, Message::SwitchHost)
             }
 
-            // If the resource management loop returns, it must be because it observed an error
-            // condition.
-            err = rg.manage_loop(client, token.location) => {
-                debug!(
-                    "{} received error '{err:?}' for resource group {}",
-                    self.id(),
-                    rg.id()
-                );
-
-                match err {
-                    ManagementError::Connection => new_message(token, Message::RequestFailover),
-                    ManagementError::Configuration => {
+            // If the resource management loop returns, it is either because an error was observed,
+            // or because the "managed" flag is set to false and the resource was stopped.
+            res = rg.manage_loop(client, token.location) => {
+                match res {
+                    // Resource was stopped, and it is no longer supposed to be managed.
+                    // Enter "Observe" mode, starting with a check on the partner host.
+                    Ok(()) => {
+                        self.send_message_to_partner(token, Message::CheckResourceGroup)
+                            .await;
+                        HostMessage::None
+                    }
+                    Err(ManagementError::Connection) => {
+                        debug!("{}: broken connection while managing {}", self.id(), token.id);
+                        new_message(token, Message::RequestFailover)
+                    }
+                    Err(ManagementError::Configuration) => {
                         debug!("host {} got a configuration error when managing resource group {}", self.id(), token.id);
                         new_message(token, Message::ResourceError)
                     }
