@@ -47,7 +47,9 @@ pub struct ResourceMessage {
 /// The commands that can be sent to a Host management task.
 #[derive(Debug)]
 enum Message {
-    /// Check the status of the resource group to determine if it is running or not.
+    /// Check the status of the resource group to determine if it is running or not. This message
+    /// carries the assumption that the resource group should be started on the home node, if
+    /// it is found to not be running on either node in the pair.
     CheckResourceGroup,
 
     /// Begin management of the resource group.
@@ -71,9 +73,6 @@ enum Message {
     /// A resource management task reported that this resource has an error which prevents the
     /// service from managing it.
     ResourceError,
-    // TODO: probably need a message for "Unmanage"--when a resource is unmanaged, its management
-    // task should be cancelled and a new task launched that will monitor it on both hosts, for
-    // cases where the admin manually moves it over to the failover partner.
 }
 
 fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {

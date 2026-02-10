@@ -260,7 +260,12 @@ impl Host {
                             tasks.push(Box::pin(self.receive_message()));
                         }
                         Message::ObserveResourceGroup => {
-                            panic!("Unexpected to receive a ObserveResourceGroup event in manage mode.")
+                            tasks.push(Box::pin(self.observe_resource_group_managed_mode(
+                                event.resource_group,
+                                cluster,
+                                client,
+                            )));
+                            tasks.push(Box::pin(self.receive_message()));
                         }
                         // Child task for management of this resource group encountered an error indicating
                         // that this Host should be fenced, and resources currently on it should be failed
@@ -522,19 +527,56 @@ impl Host {
         }
     }
 
-    /// Perform startup logic for a single resource group on its failover node.
-    ///
-    /// Checks if the resource group appears to be running on the failover node.
+    /// Checks if the resource group appears to be running on the node with the given client.
     ///
     /// - If yes, this sends a Message::ManageResourceGroup message to self, to direct this Host
     ///   task to begin managing the resource group.
     ///
-    /// - If not, sends a ManageResourceGroup message back to the home node to tell that node to
-    ///   assume management of the resource.
+    /// - If not, then behavior depends on whether this is runnong on the home node or not.
+    ///   - Home node: send a CheckResourceGroup message to the failover Host, to see if the
+    ///     resource might be running there.
+    ///   - Failover node: send a ManageResourceGroup back to the home Host, to direct it to begin
+    ///     managing the resource group.
     ///
     /// - If an error was observed, returns a Message::ResourceError to inform the main Host task of
     ///   the situation.
     async fn check_resource_group_managed(
+        &self,
+        token: ResourceToken,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+    ) -> HostMessage {
+        match is_resource_group_running_here(&token, cluster, client, true).await {
+            Ok(is_running_here) => {
+                if is_running_here {
+                    self.send_message_to_self(token, Message::ManageResourceGroup)
+                        .await;
+                } else {
+                    match token.location {
+                        Location::Away => {
+                            self.send_message_to_partner(token, Message::ManageResourceGroup)
+                                .await;
+                        }
+                        Location::Home => {
+                            self.send_message_to_partner(token, Message::CheckResourceGroup)
+                                .await;
+                        }
+                    }
+                };
+
+                HostMessage::None
+            }
+            Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
+            Err(ManagementError::Connection) => todo!(),
+        }
+    }
+
+    /// Perform observation of a resource group when the manager process is in "managed mode", but
+    /// the resource group itself is set to "managed = false".
+    ///
+    /// This checks each Host in a pair in turn, and if the resource becomes managed again, then it
+    /// needs to redo the startup checks.
+    async fn observe_resource_group_managed_mode(
         &self,
         token: ResourceToken,
         cluster: &Cluster,
@@ -548,28 +590,20 @@ impl Host {
                     self.send_message_to_self(token, Message::ManageResourceGroup)
                         .await;
                 } else if rg.get_managed() {
-                    match token.location {
-                        Location::Home => {
-                            self.send_message_to_self(token, Message::ManageResourceGroup)
-                                .await;
-                        }
-                        Location::Away => {
-                            self.send_message_to_partner(token, Message::ManageResourceGroup)
-                                .await;
-                        }
-                    }
+                    self.send_message_to_partner(token, Message::CheckResourceGroup)
+                        .await;
                 } else {
                     tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
-                    self.send_message_to_partner(token, Message::CheckResourceGroup)
+                    self.send_message_to_partner(token, Message::ObserveResourceGroup)
                         .await;
-                };
-
-                HostMessage::None
+                }
             }
-            Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
+            Err(ManagementError::Configuration) => todo!(),
             Err(ManagementError::Connection) => todo!(),
-        }
+        };
+
+        HostMessage::None
     }
 
     /// Management of a resource group proceeds by calling the management loop method on
@@ -607,7 +641,7 @@ impl Host {
                     // Resource was stopped, and it is no longer supposed to be managed.
                     // Enter "Observe" mode, starting with a check on the partner host.
                     Ok(()) => {
-                        self.send_message_to_partner(token, Message::CheckResourceGroup)
+                        self.send_message_to_partner(token, Message::ObserveResourceGroup)
                             .await;
                         HostMessage::None
                     }
