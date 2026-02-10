@@ -216,21 +216,28 @@ impl TestEnvironment {
     }
 
     /// Starts the manager in a new process for
-    pub fn start_manager(&self) -> ManagerHandle {
-        let socket_path = format!("{}/test.socket", &self.private_dir_path);
+    pub fn start_manager(&self, manage_resources: bool) -> ManagerHandle {
         let log_file = format!("{}/manager_log", &self.private_dir_path);
         let log_file = std::fs::File::create(log_file).unwrap();
 
+        let socket_path = format!("{}/test.socket", &self.private_dir_path);
+        let config_path = format!("{}/config.yaml", &self.private_dir_path);
+
+        let mut args = vec![
+            "--verbose",
+            "--fence-on-connection-close",
+            "--config",
+            &config_path,
+            "--socket",
+            &socket_path,
+        ];
+
+        if manage_resources {
+            args.push("--manage-resources");
+        }
+
         let handle = std::process::Command::new(&self.manager_binary_path)
-            .args(vec![
-                "--verbose",
-                "--manage-resources",
-                "--fence-on-connection-close",
-                "--config",
-                &format!("{}/config.yaml", &self.private_dir_path),
-                "--socket",
-                &socket_path,
-            ])
+            .args(args)
             .stderr(std::process::Stdio::from(log_file))
             .spawn()
             .expect("could not launch manager process");
