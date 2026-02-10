@@ -87,36 +87,40 @@ impl ResourceGroup {
         &self.root.home_node
     }
 
-    /// The host-driven resource management loop manages resources on a given location until an
-    /// error is observed, at which point it returns back to the host management code so that the
-    /// host can take the appropriate action, whether that be fencing or trying again.
+    /// The host-driven resource management loop manages resources on a given location until
+    /// either:
+    ///
+    ///   - An error is observed: it returns back to the host management code so that the host can
+    ///     take the appropriate action, whether that be fencing or trying again;
+    ///
+    ///   - The root resource is discovered to be stopped, and the resource group is unmanaged: it
+    ///     returns back to the host management code so that the host can begin checing the
+    ///     failover partner to see if the resource was started there (manual failover).
     pub async fn manage_loop(
         &self,
         client: &ocf_resource_agent::Client,
         loc: Location,
-    ) -> ManagementError {
-        let body = async || -> Result<(), ManagementError> {
-            loop {
-                self.update_resources(client, loc).await?;
-                match self.get_overall_status() {
-                    ResourceStatus::Stopped => {
-                        if self.get_managed() {
-                            self.start_resources(client, loc).await?;
-                        }
+    ) -> Result<(), ManagementError> {
+        loop {
+            self.update_resources(client, loc).await?;
+            match self.get_overall_status() {
+                ResourceStatus::Stopped => {
+                    if self.get_managed() {
+                        self.start_resources(client, loc).await?;
+                    } else if !self.root.is_running() {
+                        return Ok(());
                     }
-                    ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
-                        self.update_resources(client, loc).await?;
-                    }
-                    other => {
-                        warn!("resource status was unexpected: {other:?}");
-                        return Err(ManagementError::Configuration);
-                    }
-                };
-                tokio::time::sleep(tokio::time::Duration::from_millis(self.args.sleep_time)).await;
-            }
-        };
-
-        body().await.unwrap_err()
+                }
+                ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {
+                    self.update_resources(client, loc).await?;
+                }
+                other => {
+                    warn!("resource status was unexpected: {other:?}");
+                    return Err(ManagementError::Configuration);
+                }
+            };
+            tokio::time::sleep(tokio::time::Duration::from_millis(self.args.sleep_time)).await;
+        }
     }
 
     /// Observe some resources.
@@ -131,14 +135,7 @@ impl ResourceGroup {
     ) -> Result<(), ManagementError> {
         loop {
             self.update_resources(client, loc).await?;
-            if exit_if_resource_stopped
-                && !self.resources().map(|res| res.get_status()).any(|status| {
-                    matches!(
-                        status,
-                        ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway
-                    )
-                })
-            {
+            if exit_if_resource_stopped && !self.resources().any(|res| res.is_running()) {
                 return Ok(());
             }
 
@@ -539,15 +536,6 @@ impl Resource {
                 self.id, old_status_copy, status
             )
         }
-    }
-
-    pub fn status_update_string(&self, old: ResourceStatus, new: ResourceStatus) -> String {
-        format!(
-            "Updating status of resource {} from {:?} to {:?}",
-            self.params_string(),
-            old,
-            new,
-        )
     }
 
     fn is_running(&self) -> bool {
