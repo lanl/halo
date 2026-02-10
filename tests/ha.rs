@@ -304,7 +304,6 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -316,7 +315,7 @@ mod tests {
         drop(_b);
     }
 
-    /// Failover
+    /// Failover - All resources start out on home.
     #[test]
     fn failover1() {
         let env = HaEnvironment::new("failover1");
@@ -329,7 +328,7 @@ mod tests {
         // Stop the remote agent to trigger failover:
         drop(_b);
 
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(1));
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         eprintln!("{cluster_status:?}");
@@ -338,6 +337,47 @@ mod tests {
                 assert_eq!(res.status, "Running");
             } else {
                 assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+    }
+
+
+    /// Failover - both resource groups running on same node, both get failed over.
+    #[test]
+    fn failover2() {
+        let env = HaEnvironment::new("failover2");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+
+        // Stop the remote agent to trigger failover:
+        drop(_a);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
             }
         }
     }
