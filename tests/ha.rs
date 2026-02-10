@@ -50,8 +50,8 @@ mod tests {
                 .unwrap()
         }
 
-        fn start_manager(&self) -> ManagerHandle {
-            self.env.start_manager()
+        fn start_manager(&self, manage_resources: bool) -> ManagerHandle {
+            self.env.start_manager(manage_resources)
         }
 
         fn socket_path(&self) -> String {
@@ -62,6 +62,17 @@ mod tests {
             for host in &self.config.hosts {
                 if let Some(resource) = host.resources.get(resource_id) {
                     self.env.start_resource(resource, which_agent);
+                    return;
+                }
+            }
+
+            panic!("Unable to find resource with id {resource_id}");
+        }
+
+        fn stop_resource(&self, resource_id: &str, which_agent: usize) {
+            for host in &self.config.hosts {
+                if let Some(resource) = host.resources.get(resource_id) {
+                    self.env.stop_resource(resource, which_agent);
                     return;
                 }
             }
@@ -135,7 +146,7 @@ mod tests {
         let env = HaEnvironment::new("startup1");
         let _a = env.start_agent(0);
         let _b = env.start_agent(1);
-        let _m = env.start_manager();
+        let _m = env.start_manager(true);
 
         // Sleep for a second to give the manager enough time to start resources...
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -156,7 +167,7 @@ mod tests {
     fn startup2() {
         let env = HaEnvironment::new("startup2");
         let _a = env.start_agent(0);
-        let _m = env.start_manager();
+        let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -181,7 +192,7 @@ mod tests {
         env.start_resource("zpool_0", 0);
 
         let _a = env.start_agent(0);
-        let _m = env.start_manager();
+        let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -207,7 +218,7 @@ mod tests {
         env.start_resource("zpool_1", 0);
 
         let _a = env.start_agent(0);
-        let _m = env.start_manager();
+        let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -232,7 +243,7 @@ mod tests {
         let env = HaEnvironment::new("startup5");
 
         // Not starting agents...
-        let _m = env.start_manager();
+        let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -273,7 +284,7 @@ mod tests {
 
         let _a = env.start_agent(1); // Start only the agent where no resources are running.
 
-        let _m = env.start_manager();
+        let _m = env.start_manager(true);
 
         let cluster_status = get_status(&env.socket_path()).unwrap();
         eprintln!("{cluster_status:?}");
@@ -305,7 +316,7 @@ mod tests {
         let env = HaEnvironment::new("failover1");
         let _a = env.start_agent(0);
         let _b = env.start_agent(1);
-        let _m = env.start_manager();
+        let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -323,5 +334,118 @@ mod tests {
                 assert_eq!(res.status, "Running (Failed Over)");
             }
         }
+    }
+
+    /// Observe mode - test that a resource stays stopped
+    #[test]
+    fn observe1() {
+        let env = HaEnvironment::new("observe1");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(false);
+
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Stopped");
+        }
+    }
+
+    /// Observe mode - test that a resource already started shows up as started, and failed over if
+    /// appropriate.
+    #[test]
+    fn observe2() {
+        let env = HaEnvironment::new("observe2");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(false);
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        std::thread::sleep(std::time::Duration::from_secs(11));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+    }
+
+    fn observe_start_and_stop(env: HaEnvironment, manual_fail_over: bool) {
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(false);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+
+        env.stop_resource("mdt_1", 1);
+        env.stop_resource("zpool_1", 1);
+
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Stopped");
+            }
+        }
+
+        if manual_fail_over {
+            env.start_resource("zpool_1", 0);
+            env.start_resource("mdt_1", 0);
+        } else {
+            env.start_resource("zpool_1", 1);
+            env.start_resource("mdt_1", 1);
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(11));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else if manual_fail_over {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
+    /// Observe mode - test that a resource started, stopped, and then started on the same node,
+    /// shows the correct statuses
+    #[test]
+    fn observe3() {
+        let env = HaEnvironment::new("observe3");
+
+        observe_start_and_stop(env, false);
+    }
+
+    /// Observe mode - test that a resource started, stopped, and then started on the partner,
+    /// shows the correct statuses
+    #[test]
+    fn observe4() {
+        let env = HaEnvironment::new("observe4");
+
+        observe_start_and_stop(env, true);
     }
 }
