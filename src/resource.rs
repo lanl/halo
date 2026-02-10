@@ -70,7 +70,9 @@ impl ResourceGroup {
         assert!(root.kind == "heartbeat/ZFS");
         Self {
             root,
-            overall_status: Mutex::new(ResourceStatus::Unknown),
+            overall_status: Mutex::new(ResourceStatus::Unknown(
+                "Manager is starting up".to_string(),
+            )),
             managed: Mutex::new(true),
         }
     }
@@ -298,7 +300,9 @@ impl Resource {
             kind: res.kind,
             parameters: res.parameters,
             dependents,
-            status: Mutex::new(ResourceStatus::Unknown),
+            status: Mutex::new(ResourceStatus::Unknown(
+                "Manager is starting up".to_string(),
+            )),
             home_node,
             failover_node,
             id,
@@ -336,7 +340,7 @@ impl Resource {
                 Err(ManagementError::Configuration)
             }
             Err(e) => {
-                self.set_status(ResourceStatus::Unknown);
+                self.set_status(ResourceStatus::Unknown(format!("{e}")));
                 Err(e.into())
             }
         }
@@ -385,7 +389,7 @@ impl Resource {
                         "Error: '{e:?}' when attempting to start resource '{}'.",
                         self.id
                     );
-                    self.set_status(ResourceStatus::Unknown);
+                    self.set_status(ResourceStatus::Unknown(format!("{e}")));
                     return Err(e.into());
                 }
             };
@@ -436,7 +440,7 @@ impl Resource {
                     "Error: '{e:?}' when attempting to start resource '{}'.",
                     self.id
                 );
-                self.set_status(ResourceStatus::Unknown);
+                self.set_status(ResourceStatus::Unknown(format!("{e}")));
                 Err(e.into())
             }
         }
@@ -569,7 +573,7 @@ impl Resource {
 pub enum ResourceStatus {
     /// The resource's status cannot be determined because communication failed between the manager
     /// service and the remote agent.
-    Unknown,
+    Unknown(String),
 
     /// An operation failed in a way that the manager cannot address, and so the resource is
     /// impossible to manage. For example, if a "start" operation is performed, and fails, there
@@ -596,7 +600,7 @@ impl ResourceStatus {
     where
         L: Iterator<Item = ResourceStatus>,
     {
-        list.min().unwrap_or(Self::Unknown)
+        list.min().unwrap_or(Self::Unknown("".to_string()))
     }
 }
 
@@ -613,11 +617,11 @@ mod tests {
     #[test]
     fn test_get_worst() {
         assert_eq!(
-            ResourceStatus::Unknown,
+            ResourceStatus::Unknown("".to_string()),
             ResourceStatus::get_worst(
                 vec![
-                    ResourceStatus::Unknown,
-                    ResourceStatus::Error("".to_string())
+                    ResourceStatus::Unknown("".to_string()),
+                    ResourceStatus::Error("".to_string()),
                 ]
                 .into_iter()
             )
@@ -625,7 +629,7 @@ mod tests {
 
         assert_eq!(
             ResourceStatus::get_worst(vec![].into_iter()),
-            ResourceStatus::Unknown
+            ResourceStatus::Unknown("".to_string()),
         );
 
         assert_eq!(

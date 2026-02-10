@@ -69,7 +69,10 @@ impl ResourceJson {
         let mut comment = None;
 
         let status = match *res.status.lock().unwrap() {
-            ResourceStatus::Unknown => "Unknown",
+            ResourceStatus::Unknown(ref reason) => {
+                comment = Some(reason.clone());
+                "Unknown"
+            }
             ResourceStatus::Error(ref reason) => {
                 comment = Some(reason.clone());
                 "Error"
