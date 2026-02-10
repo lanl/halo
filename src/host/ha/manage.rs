@@ -134,18 +134,18 @@ impl Host {
     /// CLI utility, and handle them.
     async fn remote_disconnected_loop(&self, cluster: &Cluster, state: &mut HostState) {
         tokio::select! {
-            _ = self.remote_liveness_check() => {}
+            _ = self.remote_liveness_check(cluster) => {}
             _ = self.handle_messages_remote_disconnected(cluster, state) => {}
         }
     }
 
-    async fn remote_liveness_check(&self) {
+    async fn remote_liveness_check(&self, cluster: &Cluster) {
         loop {
             if get_client(&self.address()).await.is_ok() {
                 return;
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time)).await;
         }
     }
 

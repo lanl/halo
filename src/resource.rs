@@ -63,10 +63,11 @@ pub struct ResourceGroup {
     pub root: Resource,
     overall_status: Mutex<ResourceStatus>,
     managed: Mutex<bool>,
+    args: manager::Cli,
 }
 
 impl ResourceGroup {
-    pub fn new(root: Resource) -> Self {
+    pub fn new(root: Resource, args: manager::Cli) -> Self {
         assert!(root.kind == "heartbeat/ZFS");
         Self {
             root,
@@ -74,6 +75,7 @@ impl ResourceGroup {
                 "Manager is starting up".to_string(),
             )),
             managed: Mutex::new(true),
+            args,
         }
     }
 
@@ -110,7 +112,7 @@ impl ResourceGroup {
                         return Err(ManagementError::Configuration);
                     }
                 };
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(self.args.sleep_time)).await;
             }
         };
 
@@ -140,7 +142,7 @@ impl ResourceGroup {
                 return Ok(());
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(self.args.sleep_time)).await;
         }
     }
 

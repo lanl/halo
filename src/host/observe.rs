@@ -25,7 +25,7 @@ impl Host {
             let _ = future::join_all(futures).await;
 
             // Once all tasks exited (because an RPC error occurred), just wait a bit and try again:
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time)).await;
         }
     }
 

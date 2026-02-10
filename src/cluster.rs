@@ -315,7 +315,7 @@ impl Cluster {
                     failover_host.clone(),
                     args.clone(),
                 );
-                ResourceGroup::new(root)
+                ResourceGroup::new(root, args.clone())
             })
             .collect()
     }
