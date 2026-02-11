@@ -40,7 +40,7 @@ mod tests {
         fn start_agent(&self, which_one: usize) -> ChildHandle {
             let agent = TestAgent {
                 port: self.ports[which_one],
-                id: Some(format!("{}_{}", self.test_id, which_one)),
+                id: Some(self.agent_id(which_one)),
             };
 
             self.env
@@ -48,6 +48,10 @@ mod tests {
                 .into_iter()
                 .next()
                 .unwrap()
+        }
+
+        fn agent_id(&self, which_one: usize) -> String {
+            format!("{}_{}", self.test_id, which_one)
         }
 
         fn start_manager(&self, manage_resources: bool) -> ManagerHandle {
@@ -84,6 +88,10 @@ mod tests {
 
         fn unmanage_resource(&self, resource_id: &str) {
             commands::manage::send_command(&Some(self.socket_path()), resource_id, false).unwrap();
+        }
+
+        fn failback(&self, onto: usize) {
+            commands::failback::do_failback(&self.socket_path(), &self.agent_id(onto)).unwrap();
         }
     }
 
@@ -411,6 +419,100 @@ mod tests {
             } else {
                 assert_eq!(res.status, "Running");
             }
+        }
+    }
+
+    /// Failover - resource groups start failed over, failback command is used to bring them home.
+    #[test]
+    fn failover3() {
+        let env = HaEnvironment::new("failover3");
+
+        env.start_resource("zpool_0", 1);
+        env.start_resource("mdt_0", 1);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running (Failed Over)");
+        }
+
+        env.failback(0);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+
+        env.failback(1);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+    }
+
+    /// Failover - failback command should have no effect when resources are not failed over.
+    #[test]
+    fn failover4() {
+        let env = HaEnvironment::new("failover4");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        // Wait for manager to start the resources
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        env.failback(0);
+        env.failback(1);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+    }
+
+    /// Failover - after manager triggers failover, if agent starts, failback should bring resources
+    /// back.
+    #[test]
+    fn failover5() {
+        let env = HaEnvironment::new("failover5");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Stop the remote agent to trigger failover:
+        drop(_b);
+
+        // Wait for failover to occur
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Restart remote agent...
+        let _b = env.start_agent(1);
+
+        // Wait for manager to reconnect
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        env.failback(1);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
         }
     }
 
