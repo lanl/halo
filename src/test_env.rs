@@ -282,6 +282,12 @@ impl TestEnvironment {
         std::fs::File::create(&path).expect(&format!("failed to create file '{}'", &path));
     }
 
+    /// Returns true if a resource is "started", meaning its state file exists for the given agent.
+    pub fn resource_is_started(&self, resource: &config::Resource, agent: usize) -> bool {
+        let path = self.get_resource_path(resource, agent);
+        std::fs::exists(path).unwrap()
+    }
+
     /// Get the path to the "resource state file" used in a test -- that is, the file whose
     /// presence indicates the resource is running and whose absence indicates it is stopped.
     fn get_resource_path(&self, resource: &config::Resource, agent: usize) -> String {
