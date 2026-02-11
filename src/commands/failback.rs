@@ -20,13 +20,17 @@ pub fn failback(cli: &Cli, args: &FailbackArgs) -> HandledResult<()> {
 
     let hostname = &args.hostname;
 
+    do_failback(addr, hostname)
+}
+
+pub fn do_failback(addr: &str, hostname: &str) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "failback".into(),
     };
 
     let do_request = || -> reqwest::Result<_> {
         let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(addr.as_str())
+            .unix_socket(addr)
             .build()?;
 
         client
