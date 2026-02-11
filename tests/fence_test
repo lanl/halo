@@ -21,13 +21,14 @@
 fence_off() {
 	echo "fencing OFF $target"
 	pid=$(<$test_directory/$target.pid)
+
+	# remove all of the state files managed by this agent so that the resources appear stopped:
+	rm $test_directory/$target.*
+
 	if [ -z "$pid" ]; then
 		echo "$target is already OFF"
 		exit 0
 	fi
-
-	# remove all of the state files managed by this agent so that the resources appear stopped:
-	rm $test_directory/$target.*
 
 	# Verify the remote agent's identity
 	local remote_agent_args=$(ps -p $pid -o args=)

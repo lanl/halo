@@ -58,26 +58,24 @@ mod tests {
             self.env.socket_path()
         }
 
-        fn start_resource(&self, resource_id: &str, which_agent: usize) {
+        fn get_resource_by_id(&self, resource_id: &str) -> &config::Resource {
             for host in &self.config.hosts {
                 if let Some(resource) = host.resources.get(resource_id) {
-                    self.env.start_resource(resource, which_agent);
-                    return;
+                    return resource;
                 }
             }
 
             panic!("Unable to find resource with id {resource_id}");
         }
 
-        fn stop_resource(&self, resource_id: &str, which_agent: usize) {
-            for host in &self.config.hosts {
-                if let Some(resource) = host.resources.get(resource_id) {
-                    self.env.stop_resource(resource, which_agent);
-                    return;
-                }
-            }
+        fn start_resource(&self, resource_id: &str, which_agent: usize) {
+            self.env
+                .start_resource(self.get_resource_by_id(resource_id), which_agent);
+        }
 
-            panic!("Unable to find resource with id {resource_id}");
+        fn stop_resource(&self, resource_id: &str, which_agent: usize) {
+            self.env
+                .stop_resource(self.get_resource_by_id(resource_id), which_agent);
         }
 
         fn manage_resource(&self, resource_id: &str) {
@@ -86,6 +84,22 @@ mod tests {
 
         fn unmanage_resource(&self, resource_id: &str) {
             commands::manage::send_command(&Some(self.socket_path()), resource_id, false).unwrap();
+        }
+    }
+
+    impl Drop for HaEnvironment {
+        /// When dropping the environment, make sure that no resources were "double-started"--that
+        /// is, started on both hosts in a pair.
+        fn drop(&mut self) {
+            for host in self.config.hosts.iter() {
+                for (id, resource) in host.resources.iter() {
+                    if self.env.resource_is_started(resource, 0)
+                        && self.env.resource_is_started(resource, 1)
+                    {
+                        panic!("Resource {} was double-started!", id)
+                    }
+                }
+            }
         }
     }
 
@@ -136,7 +150,7 @@ mod tests {
                 ]),
                 fence_agent: Some("fence_test".to_string()),
                 fence_parameters: Some(HashMap::from([
-                    ("target".to_string(), format!("fence_mds_{i}")),
+                    ("target".to_string(), format!("{test_id}_{i}")),
                     ("test_id".to_string(), test_id.clone()),
                 ])),
             };
@@ -145,6 +159,25 @@ mod tests {
         }
 
         config
+    }
+
+    /// Make sure that the test environment correctly detects a test that results in a
+    /// "double-started" resource. This should panic the test, normally causing it to fail, but in
+    /// this test we want to make sure the panic happens.
+    #[test]
+    #[should_panic]
+    fn double_started_resource() {
+        let env = HaEnvironment::new("double_started_resource");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        // Sleep for a second to give the manager enough time to start resources...
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Manually start the zpool on the failover node, even though it's already started on the
+        // home node:
+        env.start_resource("zpool_0", 1);
     }
 
     /// Startup, both agents running, all resources stopped.
