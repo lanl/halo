@@ -56,6 +56,7 @@ pub struct Host {
     address: HostAddress,
     fence_agent: Option<FenceAgent>,
     failover_partner: OnceLock<Option<Arc<Host>>>,
+    already_fenced: std::sync::Mutex<bool>,
 
     /// The sender, receiver pair is used to send commands to the Host management task.
     sender: mpsc::Sender<HostMessage>,
@@ -85,6 +86,7 @@ impl Host {
             },
             fence_agent,
             failover_partner: OnceLock::new(),
+            already_fenced: std::sync::Mutex::new(false),
             sender,
             receiver: tokio::sync::Mutex::new(receiver),
             active: std::sync::Mutex::new(true),
@@ -185,6 +187,14 @@ impl Host {
         } else {
             self.name().to_string()
         }
+    }
+
+    pub fn set_fenced(&self, fenced: bool) {
+        *self.already_fenced.lock().unwrap() = fenced;
+    }
+
+    pub fn fenced(&self) -> bool {
+        *self.already_fenced.lock().unwrap()
     }
 
     pub fn set_active(&self, active: bool) {
