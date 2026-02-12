@@ -47,6 +47,7 @@ pub enum HostCommand {
     /// Deactivate this Host - HALO must not start any resources on this Host while it is
     /// deactivated.
     Deactivate,
+    Fence,
 }
 
 /// A server on which services can run.

@@ -6,26 +6,24 @@ use {clap::Args, reqwest::StatusCode};
 use crate::{commands::*, manager::http};
 
 #[derive(Args, Debug, Clone)]
-pub struct FailbackArgs {
-    /// Host to failback onto
-    #[arg(long = "onto")]
+pub struct FenceArgs {
+    /// Host to fence
+    #[arg()]
     hostname: String,
 }
 
-pub fn failback(cli: &Cli, args: &FailbackArgs) -> HandledResult<()> {
+pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
     let addr = match &cli.socket {
         Some(s) => s,
         None => &crate::default_socket(),
     };
 
-    let hostname = &args.hostname;
-
-    do_failback(addr, hostname)
+    do_fence(addr, &args.hostname)
 }
 
-pub fn do_failback(addr: &str, hostname: &str) -> HandledResult<()> {
+pub fn do_fence(addr: &str, hostname: &str) -> HandledResult<()> {
     let params = http::HostArgs {
-        command: "failback".into(),
+        command: "fence".into(),
     };
 
     let do_request = || -> reqwest::Result<_> {
@@ -38,23 +36,22 @@ pub fn do_failback(addr: &str, hostname: &str) -> HandledResult<()> {
             .json(&params)
             .send()
     };
-
     let response = do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
 
     match response.status() {
         StatusCode::OK => return Ok(()),
         StatusCode::NOT_FOUND => {
-            eprintln!("Could not perform failback onto '{hostname}': host not found.");
+            eprintln!("Could not fence '{hostname}': host not found.");
         }
         StatusCode::BAD_REQUEST => {
-            eprint!("Could not perform failback onto '{hostname}': ");
+            eprint!("Could not fence '{hostname}': ");
             match response.text() {
                 Ok(text) => eprintln!("{text}"),
                 Err(e) => eprintln!("Error decoding response: {e}"),
             };
         }
         other => {
-            eprintln!("Could not perform failback onto '{hostname}': unexpected error: {other}");
+            eprintln!("Could not fence '{hostname}': unexpected error: {other}");
         }
     }
 
