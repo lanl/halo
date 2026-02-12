@@ -175,36 +175,24 @@ async fn host_post(
         return Err((StatusCode::NOT_FOUND, ""));
     };
 
+    let Some(partner) = host.failover_partner() else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Host does not have a failover partner.",
+        ));
+    };
     match payload.command.as_str() {
         "failback" => {
-            let Some(partner) = host.failover_partner() else {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Host does not have a failover partner.",
-                ));
-            };
-
             partner.command(HostCommand::Failback).await;
         }
+        "fence" => {
+            host.command(HostCommand::Fence).await;
+        }
         "activate" => {
-            let Some(_) = host.failover_partner() else {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Host does not have a failover partner. Activate command can only be used in HA cluster.",
-                ));
-            };
-
             host.set_active(true);
             host.command(HostCommand::Activate).await;
         }
         "deactivate" => {
-            let Some(partner) = host.failover_partner() else {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Host does not have a failover partner. Deactivate command can only be used in HA cluster.",
-                ));
-            };
-
             if !partner.active() {
                 return Err((StatusCode::CONFLICT, "Partner host is already deactivated. You cannot deactivate both hosts in a pair."));
             }

@@ -4,6 +4,7 @@
 pub mod activate;
 pub mod discover;
 pub mod failback;
+pub mod fence;
 pub mod manage;
 pub mod power;
 pub mod start;
@@ -15,6 +16,7 @@ use {
     activate::{ActivateArgs, DeactivateArgs},
     discover::DiscoverArgs,
     failback::FailbackArgs,
+    fence::FenceArgs,
     manage::{ManageArgs, UnManageArgs},
     power::PowerArgs,
     status::StatusArgs,
@@ -90,6 +92,7 @@ pub enum Commands {
     Stop,
     Discover(DiscoverArgs),
     Failback(FailbackArgs),
+    Fence(FenceArgs),
     Power(PowerArgs),
     Validate,
     Manage(ManageArgs),
@@ -119,6 +122,7 @@ pub fn main(cli: &Cli) -> HandledResult<()> {
     match &cli.command {
         Commands::Discover(args) => return discover::discover(args),
         Commands::Failback(args) => return failback::failback(cli, args),
+        Commands::Fence(args) => return fence::fence(cli, args),
         Commands::Power(args) => return power::power(cli, args),
         Commands::Validate => return validate::validate(cli),
         Commands::Status(args) => return status::status(cli, args),
