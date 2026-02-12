@@ -12,8 +12,7 @@ pub struct FenceArgs {
     hostname: String,
 }
 
-
-pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()>{
+pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
     let addr = match &cli.socket {
         Some(s) => s,
         None => &crate::default_socket(),
@@ -22,7 +21,7 @@ pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()>{
     do_fence(addr, &args.hostname)
 }
 
-pub fn do_fence(addr: &str, hostname: &str) -> HandledResult<()>{
+pub fn do_fence(addr: &str, hostname: &str) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "fence".into(),
     };

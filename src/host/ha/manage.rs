@@ -43,7 +43,7 @@ struct HostState {
     /// found".
     resources_with_errors: Vec<ResourceToken>,
 
-    admin_requested_fence: bool
+    admin_requested_fence: bool,
 }
 
 impl HostState {
@@ -183,7 +183,7 @@ impl Host {
                 },
                 HostMessage::Command(command) => match command {
                     HostCommand::Failback => warn!("{}", failback_message),
-                    HostCommand::Fence => todo!()
+                    HostCommand::Fence => todo!(),
                 },
                 HostMessage::None => {
                     panic!("Unexpected message type 'None' in client disconnected routine.")
@@ -233,11 +233,8 @@ impl Host {
                     match command {
                         HostCommand::Failback => self.do_failback(state, cluster),
                         HostCommand::Fence => {
-
                             //stop child processes
                             self.admin_fence_request(state);
-                            
-                            
                         }
                     };
 
@@ -330,7 +327,7 @@ impl Host {
             // If there are outstanding resource group tasks, they need to be notified to exit.
             // However, they must only be notified once, so only do this if this is the first task
             // to request failover.
-            for revoke in &state.outstanding_resource_tasks{
+            for revoke in &state.outstanding_resource_tasks {
                 debug!(
                     "request failover: notifiying task for resource '{}'",
                     revoke.id
@@ -359,11 +356,10 @@ impl Host {
         state: &mut HostState,
         cluster: &Cluster,
     ) -> Option<ocf_resource_agent::Client> {
-
-        if state.admin_requested_fence{
-            state.admin_requested_fence=false;
+        if state.admin_requested_fence {
+            state.admin_requested_fence = false;
             self.do_failover(state).await;
-            return None
+            return None;
         }
 
         let mut tries = 2;
@@ -433,9 +429,9 @@ impl Host {
                 .await;
         }
     }
-    fn admin_fence_request(&self, state: &mut HostState){
+    fn admin_fence_request(&self, state: &mut HostState) {
         state.admin_requested_fence = true;
-        for task in &state.outstanding_resource_tasks{
+        for task in &state.outstanding_resource_tasks {
             task.lost_connection.notify_one();
         }
     }
