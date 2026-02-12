@@ -145,12 +145,12 @@ async fn host_post(
     Json(payload): Json<HostArgs>,
     cluster: Arc<Cluster>,
 ) -> Result<(), (StatusCode, &'static str)> {
+    let Some(host) = cluster.get_host(&host_id) else {
+        return Err((StatusCode::NOT_FOUND, ""));
+    };
+
     match payload.command.as_str() {
         "failback" => {
-            let Some(host) = cluster.get_host(&host_id) else {
-                return Err((StatusCode::NOT_FOUND, ""));
-            };
-
             let Some(partner) = host.failover_partner() else {
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -159,9 +159,35 @@ async fn host_post(
             };
 
             partner.command(HostCommand::Failback).await;
-
-            Ok(())
         }
-        _ => Err((StatusCode::BAD_REQUEST, "Unsupported command.")),
+        "activate" => {
+            let Some(_) = host.failover_partner() else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Host does not have a failover partner. Activate command can only be used in HA cluster.",
+                ));
+            };
+
+            host.set_active(true);
+            host.command(HostCommand::Activate).await;
+        }
+        "deactivate" => {
+            let Some(partner) = host.failover_partner() else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Host does not have a failover partner. Deactivate command can only be used in HA cluster.",
+                ));
+            };
+
+            if !partner.active() {
+                return Err((StatusCode::CONFLICT, "Partner host is already deactivated. You cannot deactivate both hosts in a pair."));
+            }
+
+            host.set_active(false);
+            host.command(HostCommand::Deactivate).await;
+        }
+        _ => return Err((StatusCode::BAD_REQUEST, "Unsupported command.")),
     }
+
+    Ok(())
 }

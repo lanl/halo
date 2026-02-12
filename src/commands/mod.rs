@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
+pub mod activate;
 pub mod discover;
 pub mod failback;
 pub mod manage;
@@ -11,6 +12,7 @@ pub mod stop;
 pub mod validate;
 
 use {
+    activate::{ActivateArgs, DeactivateArgs},
     discover::DiscoverArgs,
     failback::FailbackArgs,
     manage::{ManageArgs, UnManageArgs},
@@ -92,6 +94,8 @@ pub enum Commands {
     Validate,
     Manage(ManageArgs),
     Unmanage(UnManageArgs),
+    Activate(ActivateArgs),
+    Deactivate(DeactivateArgs),
 }
 
 /// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
@@ -120,6 +124,8 @@ pub fn main(cli: &Cli) -> HandledResult<()> {
         Commands::Status(args) => return status::status(cli, args),
         Commands::Manage(args) => return manage::manage(cli, args),
         Commands::Unmanage(args) => return manage::unmanage(cli, args),
+        Commands::Activate(args) => return activate::activate(cli, args),
+        Commands::Deactivate(args) => return activate::deactivate(cli, args),
         _ => {}
     }
 
