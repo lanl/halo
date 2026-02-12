@@ -43,7 +43,7 @@ pub struct HandledError {}
 
 pub type HandledResult<T> = std::result::Result<T, HandledError>;
 
-pub fn handled_error() -> HandledResult<()> {
+pub fn handled_error<T>() -> HandledResult<T> {
     HandledResult::Err(HandledError {})
 }
 
@@ -69,6 +69,9 @@ impl<T, E, F: FnOnce(E)> Handle<T, F> for std::result::Result<T, E> {
 pub struct Cli {
     #[arg(long, global = true)]
     pub config: Option<String>,
+
+    #[arg(long, global = true)]
+    pub statefile: Option<String>,
 
     #[arg(long, global = true)]
     pub socket: Option<String>,

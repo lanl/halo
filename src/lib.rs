@@ -9,6 +9,7 @@ pub mod host;
 pub mod manager;
 pub mod remote;
 pub mod resource;
+pub mod state;
 pub mod test_env;
 pub mod tls;
 
@@ -33,6 +34,13 @@ pub fn default_config_path() -> String {
     match std::env::var("HALO_CONFIG") {
         Ok(conf) => conf,
         Err(_) => "/etc/halo/halo.conf".to_string(),
+    }
+}
+
+pub fn default_statefile_path() -> String {
+    match std::env::var("HALO_STATEFILE") {
+        Ok(statefile) => statefile,
+        Err(_) => "/etc/halo/halo.state".to_string(),
     }
 }
 

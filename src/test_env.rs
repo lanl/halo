@@ -152,10 +152,12 @@ impl TestEnvironment {
     /// the test is in a yaml file named {test_id}.yaml.
     pub fn manager_args(&self) -> manager::Cli {
         let config_path = test_path(&format!("{}.yaml", self.test_id));
+        let statefile_path = test_path("halo.state");
         let socket_path = format!("{}/{}", self.private_dir_path, "test.socket");
         manager::Cli {
             config: Some(config_path),
             socket: Some(socket_path),
+            statefile: Some(statefile_path),
             mtls: false,
             verbose: false,
             manage_resources: true,
@@ -224,12 +226,15 @@ impl TestEnvironment {
 
         let socket_path = format!("{}/test.socket", &self.private_dir_path);
         let config_path = format!("{}/config.yaml", &self.private_dir_path);
+        let statefile_path = format!("{}/halo.state", &self.private_dir_path);
 
         let mut args = vec![
             "--verbose",
             "--fence-on-connection-close",
             "--config",
             &config_path,
+            "--statefile",
+            &statefile_path,
             "--socket",
             &socket_path,
             "--sleep-time",

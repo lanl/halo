@@ -10,6 +10,7 @@ use crate::{
     host::*,
     manager,
     resource::*,
+    state::State,
 };
 
 /// Cluster is the model used to represent the dynamic state of a cluster in memory.
@@ -33,9 +34,68 @@ pub struct Cluster {
 
     /// True if this is a failover cluster (hosts are in high-availability pairs)
     failover: bool,
+
+    /// File to use to store/load cluster state. This must be specified on the manager side where
+    /// state must be considered; otherwise, this does not need to be specified.
+    state: Option<State>,
 }
 
 impl Cluster {
+    /// Apply a state Delta to this Cluster's Hosts.
+    pub fn apply_state(&self) {
+        if let Some(state) = &self.state {
+            // Track which hosts have been updated here in order to determine hosts that aren't in
+            // the cluster.
+            let mut unapplied_hosts: HashMap<String, Option<usize>> = HashMap::new();
+            state.delta.hosts().iter().for_each(|v| {
+                unapplied_hosts.insert(v.clone(), None);
+            });
+
+            for cluster_host in self.hosts() {
+                let cluster_host_id = cluster_host.id();
+
+                match state.delta.hosts_fenced.get(&cluster_host_id) {
+                    Some(fenced) => {
+                        cluster_host.set_fenced(*fenced);
+                        unapplied_hosts.remove_entry(&cluster_host_id);
+                    }
+                    None => {}
+                }
+                match state.delta.hosts_activated.get(&cluster_host_id) {
+                    Some(fenced) => {
+                        cluster_host.set_active(*fenced);
+                        unapplied_hosts.remove_entry(&cluster_host_id);
+                    }
+                    None => {}
+                }
+            }
+            for host in unapplied_hosts.keys() {
+                eprintln!("host '{host}' not found in cluster");
+            }
+
+            // Track which resources have been updated here in order to determine hosts that aren't
+            // in the cluster.
+            let mut unapplied_resources: HashMap<String, Option<usize>> = HashMap::new();
+            state.delta.resources().iter().for_each(|v| {
+                unapplied_hosts.insert(v.clone(), None);
+            });
+            for cluster_rg in self.resource_groups() {
+                let cluster_rg_id = cluster_rg.id();
+
+                match state.delta.resources_managed.get(cluster_rg_id) {
+                    Some(managed) => {
+                        cluster_rg.set_managed(*managed);
+                        unapplied_resources.remove_entry(cluster_rg_id);
+                    }
+                    None => {}
+                };
+            }
+            for rg in unapplied_resources.keys() {
+                eprintln!("resource '{rg}' not found in cluster");
+            }
+        }
+    }
+
     pub async fn main_loop(&self) {
         if self.args.manage_resources {
             if self.failover {
@@ -128,17 +188,31 @@ impl Cluster {
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
     pub fn new(args: manager::Cli) -> HandledResult<Self> {
-        let path = match &args.config {
+        let configpath = match &args.config {
             Some(path) => path,
             None => &crate::default_config_path(),
         };
-        let config = std::fs::read_to_string(path).handle_err(|e| {
-            eprintln!("Could not open config file \"{path}\": {e}");
+        let config = std::fs::read_to_string(configpath).handle_err(|e| {
+            eprintln!("Could not open config file \"{configpath}\": {e}");
         })?;
 
         let config: crate::config::Config = serde_yaml::from_str(&config).handle_err(|e| {
-            eprintln!("Could not parse config file \"{path}\": {e}");
+            eprintln!("Could not parse config file \"{configpath}\": {e}");
         })?;
+
+        // TODO: Move this somewhere else
+        //let state = std::fs::read_to_string(statefilepath).or_else(|_| {
+        //    eprintln!("Statefile does not exist, attempting to create it at \"{statefilepath}\"");
+        //    std::fs::File::create_new(statefilepath).handle_err(|e| {
+        //        eprintln!("Could not create statefile: \"{statefilepath}\": {e}");
+        //    })?;
+        //    Ok(String::new())
+        //})?;
+
+        let state = match &args.statefile {
+            Some(f) => Some(State::new(f)?),
+            None => None,
+        };
 
         let mut new = Cluster {
             resource_groups: Vec::new(),
@@ -147,6 +221,7 @@ impl Cluster {
             num_targets: 0,
             args: args.clone(),
             failover: false,
+            state,
         };
 
         let hosts: HashMap<String, Arc<Host>> = config
