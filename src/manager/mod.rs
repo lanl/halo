@@ -22,6 +22,9 @@ pub struct Cli {
     pub socket: Option<String>,
 
     #[arg(long)]
+    pub statefile: Option<String>,
+
+    #[arg(long)]
     pub mtls: bool,
 
     #[arg(long)]

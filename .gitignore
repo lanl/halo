@@ -1,3 +1,4 @@
+halo.state
 /halo
 /halo_remote
 proto/*.pb.go
