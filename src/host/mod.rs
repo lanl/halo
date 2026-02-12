@@ -37,6 +37,13 @@ pub enum HostCommand {
     /// Failback resources. If any of this host's resources are not currently home, then reclaim
     /// them from the partner and start managing them (if possible).
     Failback,
+
+    /// Activate this Host - it can now begin managing resources.
+    Activate,
+
+    /// Deactivate this Host - HALO must not start any resources on this Host while it is
+    /// deactivated.
+    Deactivate,
 }
 
 /// A server on which services can run.
@@ -49,6 +56,9 @@ pub struct Host {
     /// The sender, receiver pair is used to send commands to the Host management task.
     sender: mpsc::Sender<HostMessage>,
     receiver: tokio::sync::Mutex<mpsc::Receiver<HostMessage>>,
+
+    /// Whether the Host is active (i.e., resources are allowed to be ran on it)
+    active: std::sync::Mutex<bool>,
 }
 
 impl Host {
@@ -66,6 +76,7 @@ impl Host {
             failover_partner: OnceLock::new(),
             sender,
             receiver: tokio::sync::Mutex::new(receiver),
+            active: std::sync::Mutex::new(true),
         }
     }
 
@@ -161,6 +172,14 @@ impl Host {
         } else {
             self.name().to_string()
         }
+    }
+
+    pub fn set_active(&self, active: bool) {
+        *self.active.lock().unwrap() = active;
+    }
+
+    pub fn active(&self) -> bool {
+        *self.active.lock().unwrap()
     }
 }
 

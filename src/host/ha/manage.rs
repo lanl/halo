@@ -57,6 +57,9 @@ impl HostState {
 
     /// When a ResourceGroup task exits, it needs to remove its ResourceTaskCancel object from
     /// outsanding_resource_tasks.
+    // TODO: is this method even necessary? Check the callers, in some / all cases, the resource
+    // tasks have already been removed from outstanding_resource_tasks *before* the task itself
+    // exits.
     fn resource_task_exited(&mut self, id: &str) {
         let still_running = take(&mut self.outstanding_resource_tasks)
             .into_iter()
@@ -105,8 +108,12 @@ impl Host {
                     loop {
                         self.remote_connected_loop(&client, cluster, &mut state)
                             .await;
-                        // remote_connected_loop() only returns once a failover has been requested, and
-                        // all host tasks are cancelled.
+
+                        // All resource management tasks must have been cancelled before
+                        // remote_connected_loop() returns:
+                        assert!(state.outstanding_resource_tasks.is_empty());
+
+                        // If we reached this point, failover must have been requested
                         match self.maybe_do_failover(&mut state, cluster).await {
                             // If maybe_do_failover() returned a Client (because it was able to
                             // re-establish connection), we can use that client to re-enter the
@@ -178,6 +185,8 @@ impl Host {
                 },
                 HostMessage::Command(command) => match command {
                     HostCommand::Failback => warn!("{}", failback_message),
+                    HostCommand::Activate => todo!("activate in disconnected mode"),
+                    HostCommand::Deactivate => todo!("deactivate in disconnected mode"),
                 },
                 HostMessage::None => {
                     panic!("Unexpected message type 'None' in client disconnected routine.")
@@ -226,6 +235,10 @@ impl Host {
                 HostMessage::Command(command) => {
                     match command {
                         HostCommand::Failback => self.do_failback(state, cluster),
+                        HostCommand::Activate => {}
+                        HostCommand::Deactivate => {
+                            self.deactivate(state);
+                        }
                     };
 
                     tasks.push(Box::pin(self.receive_message()));
@@ -299,6 +312,22 @@ impl Host {
                 }
                 HostMessage::None => {}
             }
+        }
+
+        unreachable!()
+    }
+
+    /// Deactivate this Host:
+    ///   - Cancel any outstanding resource management tasks
+    ///   - send the ResourceTokens over to the partner
+    fn deactivate(&self, state: &mut HostState) {
+        for revoke in take(&mut state.outstanding_resource_tasks) {
+            debug!(
+                "Deactivating host {}: notifying task for resource '{}'",
+                self.id(),
+                revoke.id
+            );
+            revoke.switch_host.notify_one();
         }
     }
 
@@ -394,6 +423,16 @@ impl Host {
             }
 
             tries -= 1;
+        }
+
+        // do not proceed if the partner is deactivated.
+        if !self.ha_failover_partner().active() {
+            warn!(
+                "Host {} is disconnected, but cannot fail over because partner is deactivated.",
+                self.id()
+            );
+            state.manage_these_resources = take(&mut state.resources_in_transit);
+            return None;
         }
 
         self.do_failover(state).await;
@@ -618,7 +657,13 @@ impl Host {
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
 
-        debug!("Host {} is managing resource group {}", self.id(), rg.id());
+        if !self.active() {
+            warn!("Host {} asked to manage resource group {}, but it is inactive. Requesting partner manage it.", self.id(), token.id);
+            self.send_message_to_self(token, Message::SwitchHost).await;
+            return HostMessage::None;
+        }
+
+        debug!("Host {} is managing resource group {}", self.id(), token.id);
 
         tokio::select! {
             // Biased because if a task has been cancelled, it should exit ASAP and not bother
