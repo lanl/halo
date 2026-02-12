@@ -7,7 +7,6 @@ use {futures::stream::FuturesUnordered, tokio::sync::Notify};
 
 use crate::{
     cluster::Cluster,
-    halo_capnp::*,
     resource::{Location, ManagementError},
 };
 

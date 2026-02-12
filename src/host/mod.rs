@@ -2,13 +2,16 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use std::{
-    fmt,
+    fmt, io,
     sync::{Arc, OnceLock},
 };
 
 use tokio::sync::mpsc;
 
-use crate::{commands::Handle, halo_capnp::*};
+use crate::{
+    commands::Handle,
+    halo_capnp::{self, *},
+};
 
 pub mod power;
 pub use power::{FenceAgent, FenceCommand, RedfishArgs};
@@ -62,8 +65,6 @@ pub struct Host {
 
     /// Whether the manager has an alive connection to the remote agent that corresponds to this
     /// Host.
-    // TODO: Maybe make a get_client() method on Host that calls halo_capnp::get_client() and then
-    // always sets the connected field based on the result?
     connected: std::sync::Mutex<bool>,
 }
 
@@ -195,6 +196,15 @@ impl Host {
 
     pub fn connected(&self) -> bool {
         *self.connected.lock().unwrap()
+    }
+
+    async fn get_client(&self) -> io::Result<ocf_resource_agent::Client> {
+        let client = halo_capnp::get_client(&self.address()).await;
+        match client {
+            Ok(_) => self.set_connected(true),
+            Err(_) => self.set_connected(false),
+        };
+        client
     }
 }
 
