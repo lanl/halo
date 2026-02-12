@@ -10,7 +10,7 @@ use {
     log::{debug, warn},
 };
 
-use crate::{cluster::Cluster, halo_capnp::*, resource::ManagementError};
+use crate::{cluster::Cluster, resource::ManagementError};
 
 use super::*;
 
@@ -99,9 +99,8 @@ impl Host {
         state.manage_these_resources = self.startup(cluster, my_resources).await;
 
         loop {
-            match get_client(&self.address()).await {
+            match self.get_client().await {
                 Ok(mut client) => {
-                    self.set_connected(true);
                     debug!(
                         "Host {} established connection to its remote agent.",
                         self.id()
@@ -150,7 +149,7 @@ impl Host {
 
     async fn remote_liveness_check(&self, cluster: &Cluster) {
         loop {
-            if get_client(&self.address()).await.is_ok() {
+            if self.get_client().await.is_ok() {
                 return;
             }
 
@@ -384,7 +383,7 @@ impl Host {
                 "Trying to reconnect to remote agent at {}, attempt {tries}",
                 self.id()
             );
-            match get_client(&self.address()).await {
+            match self.get_client().await {
                 // If we were able to re-establish connection to the client, then return and let
                 // the manager try again to manage the resources that were running on this Host.
                 Ok(client) => {
@@ -524,9 +523,8 @@ impl Host {
         my_resources: Vec<ResourceToken>,
     ) -> Vec<ResourceToken> {
         let (manage_these, send_these): (Vec<ResourceToken>, Vec<ResourceToken>) =
-            match get_client(&self.address()).await {
+            match self.get_client().await {
                 Ok(client) => {
-                    self.set_connected(true);
                     let mut manage_these = Vec::new();
                     let mut send_these = Vec::new();
 

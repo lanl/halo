@@ -13,9 +13,7 @@ use super::*;
 impl Host {
     pub async fn observe(&self, cluster: &Cluster) {
         loop {
-            let client = crate::halo_capnp::get_client(&self.address())
-                .await
-                .expect("TODO: handle error here.");
+            let client = self.get_client().await.expect("TODO: handle error here.");
 
             let futures: Vec<_> = cluster
                 .host_home_resource_groups(self)
