@@ -101,6 +101,7 @@ impl Host {
         loop {
             match get_client(&self.address()).await {
                 Ok(mut client) => {
+                    self.set_connected(true);
                     debug!(
                         "Host {} established connection to its remote agent.",
                         self.id()
@@ -124,6 +125,7 @@ impl Host {
                     }
                 }
                 Err(_e) => {
+                    self.set_connected(false);
                     debug!(
                         "Host {} failed to establish connection to its remote agent.",
                         self.id()
@@ -524,6 +526,7 @@ impl Host {
         let (manage_these, send_these): (Vec<ResourceToken>, Vec<ResourceToken>) =
             match get_client(&self.address()).await {
                 Ok(client) => {
+                    self.set_connected(true);
                     let mut manage_these = Vec::new();
                     let mut send_these = Vec::new();
 
@@ -541,7 +544,10 @@ impl Host {
 
                     (manage_these, send_these)
                 }
-                Err(_) => (Vec::new(), my_resources),
+                Err(_) => {
+                    self.set_connected(false);
+                    (Vec::new(), my_resources)
+                }
             };
 
         for token in send_these {
