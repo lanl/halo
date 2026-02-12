@@ -145,21 +145,23 @@ async fn host_post(
     Json(payload): Json<HostArgs>,
     cluster: Arc<Cluster>,
 ) -> Result<(), (StatusCode, &'static str)> {
+    let Some(host) = cluster.get_host(&host_id) else {
+        return Err((StatusCode::NOT_FOUND, ""));
+    };
+
+    let Some(partner) = host.failover_partner() else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Host does not have a failover partner.",
+        ));
+    };
     match payload.command.as_str() {
         "failback" => {
-            let Some(host) = cluster.get_host(&host_id) else {
-                return Err((StatusCode::NOT_FOUND, ""));
-            };
-
-            let Some(partner) = host.failover_partner() else {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Host does not have a failover partner.",
-                ));
-            };
-
             partner.command(HostCommand::Failback).await;
-
+            Ok(())
+        }
+        "fence" => {
+            host.command(HostCommand::Fence).await;
             Ok(())
         }
         _ => Err((StatusCode::BAD_REQUEST, "Unsupported command.")),

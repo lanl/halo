@@ -37,6 +37,7 @@ pub enum HostCommand {
     /// Failback resources. If any of this host's resources are not currently home, then reclaim
     /// them from the partner and start managing them (if possible).
     Failback,
+    Fence,
 }
 
 /// A server on which services can run.
