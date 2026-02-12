@@ -55,6 +55,52 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
         println!();
     }
 
+    let mut connected_activated = String::new();
+    let mut connected_deactivated = String::new();
+    let mut disconnected_activated = String::new();
+    let mut disconnected_deactivated = String::new();
+    for host in cluster.hosts {
+        let node = format!("{},", host.id);
+        if host.active {
+            if host.connected {
+                connected_activated.push_str(&node);
+            } else {
+                disconnected_activated.push_str(&node);
+            }
+        } else if host.connected {
+            connected_deactivated.push_str(&node);
+        } else {
+            disconnected_deactivated.push_str(&node);
+        }
+    }
+
+    let ca: nodeset::NodeSet = connected_activated
+        .parse()
+        .expect("Unable to parse nodeset from hostnames.");
+    let cd: nodeset::NodeSet = connected_deactivated
+        .parse()
+        .expect("Unable to parse nodeset from hostnames.");
+    let da: nodeset::NodeSet = disconnected_activated
+        .parse()
+        .expect("Unable to parse nodeset from hostnames.");
+    let dd: nodeset::NodeSet = disconnected_deactivated
+        .parse()
+        .expect("Unable to parse nodeset from hostnames.");
+
+    print!("Connected hosts:\t{}", ca);
+    if connected_deactivated.is_empty() {
+        println!();
+    } else {
+        println!(", {} (deactivated)", cd);
+    }
+
+    print!("Disconnected hosts:\t{}", da);
+    if disconnected_deactivated.is_empty() {
+        println!();
+    } else {
+        println!(", {} (deactivated)", dd);
+    }
+
     Ok(())
 }
 

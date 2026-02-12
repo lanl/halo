@@ -16,7 +16,7 @@ use {
 
 use crate::{
     cluster::Cluster,
-    host::HostCommand,
+    host::{Host, HostCommand},
     resource::{Resource, ResourceStatus},
 };
 
@@ -50,11 +50,16 @@ pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluste
     axum::serve(listener, server).await.unwrap();
 }
 
+/// The representation of Cluster state that is communicated back to the admin using the status
+/// command.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClusterJson {
     pub resources: Vec<ResourceJson>,
+    pub hosts: Vec<HostJson>,
 }
 
+/// The representation of Resource state that is communicated back to the admin using the status
+/// command.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ResourceJson {
     pub id: String,
@@ -95,6 +100,25 @@ impl ResourceJson {
     }
 }
 
+/// The representation of Host state that is communicated back to the admin using the status
+/// command.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HostJson {
+    pub id: String,
+    pub active: bool,
+    pub connected: bool,
+}
+
+impl HostJson {
+    fn build(host: &Host) -> Self {
+        Self {
+            id: host.id(),
+            active: host.active(),
+            connected: host.connected(),
+        }
+    }
+}
+
 async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
     let status = ClusterJson {
         resources: cluster
@@ -105,6 +129,8 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
                     .map(move |res| ResourceJson::build(res, managed))
             })
             .collect(),
+
+        hosts: cluster.hosts().map(|host| HostJson::build(host)).collect(),
     };
 
     Json(status)

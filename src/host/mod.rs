@@ -59,6 +59,12 @@ pub struct Host {
 
     /// Whether the Host is active (i.e., resources are allowed to be ran on it)
     active: std::sync::Mutex<bool>,
+
+    /// Whether the manager has an alive connection to the remote agent that corresponds to this
+    /// Host.
+    // TODO: Maybe make a get_client() method on Host that calls halo_capnp::get_client() and then
+    // always sets the connected field based on the result?
+    connected: std::sync::Mutex<bool>,
 }
 
 impl Host {
@@ -77,6 +83,7 @@ impl Host {
             sender,
             receiver: tokio::sync::Mutex::new(receiver),
             active: std::sync::Mutex::new(true),
+            connected: std::sync::Mutex::new(false),
         }
     }
 
@@ -180,6 +187,14 @@ impl Host {
 
     pub fn active(&self) -> bool {
         *self.active.lock().unwrap()
+    }
+
+    pub fn set_connected(&self, connected: bool) {
+        *self.connected.lock().unwrap() = connected;
+    }
+
+    pub fn connected(&self) -> bool {
+        *self.connected.lock().unwrap()
     }
 }
 
