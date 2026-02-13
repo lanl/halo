@@ -565,12 +565,12 @@ impl Resource {
         output
     }
 
-    pub fn set_error_recursive(&self, reason: String) {
+    pub fn set_status_recursive(&self, status: ResourceStatus) {
         for child in self.dependents.iter() {
-            child.set_error_recursive(reason.clone());
+            child.set_status_recursive(status.clone());
         }
 
-        self.set_status(ResourceStatus::Error(reason));
+        self.set_status(status);
     }
 }
 

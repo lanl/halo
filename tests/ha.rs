@@ -6,7 +6,7 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     use halo_lib::{
-        commands::{self, status::get_status},
+        commands::{self, status::get_status, HandledResult},
         config::{self, Config},
         test_env::*,
     };
@@ -90,12 +90,22 @@ mod tests {
             commands::manage::send_command(&Some(self.socket_path()), resource_id, false).unwrap();
         }
 
-        fn failback(&self, onto: usize) {
-            commands::failback::do_failback(&self.socket_path(), &self.agent_id(onto)).unwrap();
+        fn failback(&self, onto: usize) -> HandledResult<()> {
+            commands::failback::do_failback(&self.socket_path(), &self.agent_id(onto))
         }
 
         fn fence(&self, which_one: usize) {
             commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one)).unwrap();
+        }
+
+        fn activate_host(&self, which_one: usize) {
+            commands::activate::do_activate(&self.socket_path(), &self.agent_id(which_one), true)
+                .unwrap();
+        }
+
+        fn deactivate_host(&self, which_one: usize) {
+            commands::activate::do_activate(&self.socket_path(), &self.agent_id(which_one), false)
+                .unwrap();
         }
     }
 
@@ -446,7 +456,7 @@ mod tests {
             assert_eq!(res.status, "Running (Failed Over)");
         }
 
-        env.failback(0);
+        env.failback(0).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
         let cluster_status = get_status(&env.socket_path()).unwrap();
@@ -458,7 +468,7 @@ mod tests {
             }
         }
 
-        env.failback(1);
+        env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
         let cluster_status = get_status(&env.socket_path()).unwrap();
@@ -478,8 +488,8 @@ mod tests {
         // Wait for manager to start the resources
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        env.failback(0);
-        env.failback(1);
+        env.failback(0).unwrap();
+        env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
         let cluster_status = get_status(&env.socket_path()).unwrap();
@@ -511,7 +521,7 @@ mod tests {
         // Wait for manager to reconnect
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        env.failback(1);
+        env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
         let cluster_status = get_status(&env.socket_path()).unwrap();
@@ -861,6 +871,151 @@ mod tests {
                 assert_eq!(res.status, "Stopped");
             } else {
                 assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
+    /// When a host is deactivated, it should gracefully stop the resources and bring them up on
+    /// the partner host.
+    ///
+    /// After reactivating the host, it should be possible to fail back the resources onto it.
+    #[test]
+    fn deactivate1() {
+        let env = HaEnvironment::new("deactivate1");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        deactivate_one_host(&env);
+
+        env.activate_host(0);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        env.failback(0).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for host in cluster_status.hosts {
+            assert!(host.active)
+        }
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+    }
+
+    /// Deactivate a host.
+    /// Then, stop the partner host. Resources should enter Unknown status rather than run on the
+    /// deactivated host.
+    ///
+    /// Then, start up the partner host. Resources should be restarted on it.
+    #[test]
+    fn deactivate2() {
+        let env = HaEnvironment::new("deactivate2");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        deactivate_one_host(&env);
+
+        drop(_b);
+
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for host in cluster_status.hosts {
+            if host.id.contains("0") {
+                assert!(!host.active);
+                assert!(host.connected);
+            } else {
+                assert!(host.active);
+                assert!(!host.connected);
+            }
+        }
+
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Unknown");
+        }
+
+        let _b = env.start_agent(1);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for host in cluster_status.hosts {
+            if host.id.contains("0") {
+                assert!(!host.active);
+                assert!(host.connected);
+            } else {
+                assert!(host.active);
+                assert!(host.connected);
+            }
+        }
+
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
+    /// If a host is deactivated, a failback onto that host should not succeed.
+    #[test]
+    fn deactivate3() {
+        let env = HaEnvironment::new("deactivate3");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        deactivate_one_host(&env);
+
+        assert!(env.failback(0).is_err());
+    }
+
+    /// Startup - a host is deactivated, but still running resources. The manager should notice
+    /// that the resources are running on the deactivated host, and move them over to the activated
+    /// host.
+    #[test]
+    fn deactivate4() {
+        let env = HaEnvironment::new("deactivate4");
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+        let _m = env.start_manager(true);
+        env.deactivate_host(0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
+    fn deactivate_one_host(env: &HaEnvironment) {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.deactivate_host(0);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+        for host in cluster_status.hosts {
+            if host.id.contains("0") {
+                assert!(!host.active)
+            } else {
+                assert!(host.active)
             }
         }
     }
