@@ -10,7 +10,10 @@ use {
     log::{debug, warn},
 };
 
-use crate::{cluster::Cluster, resource::ManagementError};
+use crate::{
+    cluster::Cluster,
+    resource::{ManagementError, ResourceStatus},
+};
 
 use super::*;
 
@@ -175,12 +178,14 @@ impl Host {
                 HostMessage::Resource(message) => match message.kind {
                     Message::ManageResourceGroup => {
                         let rg = cluster.get_resource_group(&message.resource_group.id);
-                        rg.root.set_error_recursive(home_message.to_string());
+                        rg.root
+                            .set_status_recursive(ResourceStatus::Error(home_message.to_string()));
                         state.manage_these_resources.push(message.resource_group);
                     }
                     Message::CheckResourceGroup => {
                         let rg = cluster.get_resource_group(&message.resource_group.id);
-                        rg.root.set_error_recursive(away_message.to_string());
+                        rg.root
+                            .set_status_recursive(ResourceStatus::Error(away_message.to_string()));
                         state.check_these_resources.push(message.resource_group);
                     }
                     other => {
@@ -188,10 +193,12 @@ impl Host {
                     }
                 },
                 HostMessage::Command(command) => match command {
-                    HostCommand::Activate => todo!("activate in disconnected mode"),
-                    HostCommand::Deactivate => todo!("deactivate in disconnected mode"),
                     HostCommand::Failback => warn!("{}", failback_message),
                     HostCommand::Fence => todo!(),
+                    HostCommand::Activate => todo!("activate in disconnected mode"),
+                    // Deactivate message: nothing to do because the remote is disconnected. No
+                    // ability to stop resources even if they happened to be running on the remote.
+                    HostCommand::Deactivate => {}
                 },
                 HostMessage::None => {
                     panic!("Unexpected message type 'None' in client disconnected routine.")
@@ -289,7 +296,7 @@ impl Host {
                         // over.
                         Message::RequestFailover => {
                             state.resource_task_exited(id);
-                            if self.request_failover(state, event.resource_group) {
+                            if self.ready_for_failover(state, event.resource_group) {
                                 return;
                             }
                         }
@@ -297,7 +304,11 @@ impl Host {
                         // cancel management.
                         Message::TaskCanceled => {
                             state.resource_task_exited(id);
-                            if self.request_failover(state, event.resource_group) {
+                            let rg = cluster.get_resource_group(id);
+                            rg.root.set_status_recursive(ResourceStatus::Unknown(
+                                "Connection lost; currently unmanaged.".to_string(),
+                            ));
+                            if self.ready_for_failover(state, event.resource_group) {
                                 return;
                             }
                         }
@@ -340,7 +351,7 @@ impl Host {
     /// This is needed so that the loop in remote_connected_loop() knows whether to break out to the
     /// "top level" loop in manage_ha().
     // TODO: can I come up with a cleaner way to do that?
-    fn request_failover(&self, state: &mut HostState, rg: ResourceToken) -> bool {
+    fn ready_for_failover(&self, state: &mut HostState, rg: ResourceToken) -> bool {
         state.resources_in_transit.push(rg);
 
         if state.outstanding_resource_tasks.is_empty() {
@@ -381,7 +392,7 @@ impl Host {
     ) -> Option<ocf_resource_agent::Client> {
         if state.admin_requested_fence {
             state.admin_requested_fence = false;
-            self.do_failover(state).await;
+            self.do_failover(state, cluster).await;
             return None;
         }
 
@@ -445,20 +456,24 @@ impl Host {
             return None;
         }
 
-        self.do_failover(state).await;
+        self.do_failover(state, cluster).await;
 
         None
     }
 
-    async fn do_failover(&self, state: &mut HostState) {
+    async fn do_failover(&self, state: &mut HostState, cluster: &Cluster) {
         self.do_fence_nonblocking(FenceCommand::Off)
             .await
             .expect("Fencing failed... TODO: handle this case...");
 
         warn!("Host {} has been powered off.", self.id());
 
-        for rg in take(&mut state.resources_in_transit) {
-            self.send_message_to_partner(rg, Message::ManageResourceGroup)
+        for token in take(&mut state.resources_in_transit) {
+            let rg = cluster.get_resource_group(&token.id);
+            // We know resource is stopped if fencing succeeded:
+            rg.root.set_status_recursive(ResourceStatus::Stopped);
+
+            self.send_message_to_partner(token, Message::ManageResourceGroup)
                 .await;
         }
     }
@@ -678,8 +693,7 @@ impl Host {
 
         if !self.active() {
             warn!("Host {} asked to manage resource group {}, but it is inactive. Requesting partner manage it.", self.id(), token.id);
-            self.send_message_to_self(token, Message::SwitchHost).await;
-            return HostMessage::None;
+            return new_message(token, Message::SwitchHost);
         }
 
         debug!("Host {} is managing resource group {}", self.id(), token.id);

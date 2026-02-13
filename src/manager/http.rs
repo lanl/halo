@@ -10,7 +10,7 @@ use {
         routing::{get, patch, post},
         Json, Router,
     },
-    log::warn,
+    log::{trace, warn},
     serde::{Deserialize, Serialize},
 };
 
@@ -120,6 +120,7 @@ impl HostJson {
 }
 
 async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
+    trace!("Manager handling GET /status request");
     let status = ClusterJson {
         resources: cluster
             .resource_groups()
@@ -183,6 +184,13 @@ async fn host_post(
     };
     match payload.command.as_str() {
         "failback" => {
+            if !host.active() {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Host is deactivated. Please activate it before running resources on it.",
+                ));
+            }
+
             partner.command(HostCommand::Failback).await;
         }
         "fence" => {
@@ -194,7 +202,10 @@ async fn host_post(
         }
         "deactivate" => {
             if !partner.active() {
-                return Err((StatusCode::CONFLICT, "Partner host is already deactivated. You cannot deactivate both hosts in a pair."));
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Partner host is already deactivated. You cannot deactivate both hosts in a pair."
+                ));
             }
 
             host.set_active(false);

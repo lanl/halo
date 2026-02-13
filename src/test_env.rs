@@ -242,6 +242,7 @@ impl TestEnvironment {
 
         let handle = std::process::Command::new(&self.manager_binary_path)
             .args(args)
+            .env("HALO_LOG", "trace")
             .stderr(std::process::Stdio::from(log_file))
             .spawn()
             .expect("could not launch manager process");
