@@ -93,6 +93,10 @@ mod tests {
         fn failback(&self, onto: usize) {
             commands::failback::do_failback(&self.socket_path(), &self.agent_id(onto)).unwrap();
         }
+
+        fn fence(&self, which_one: usize) {
+            commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one)).unwrap();
+        }
     }
 
     impl Drop for HaEnvironment {
@@ -725,6 +729,75 @@ mod tests {
                 assert_eq!(res.status, "Running (Failed Over)");
             } else {
                 assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
+    #[test]
+    fn admin_fence1() {
+        let env = HaEnvironment::new("admin_fence1");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        // Sleep for a second to give the manager enough time to start resources...
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        env.fence(0);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+        for host in cluster_status.hosts {
+            if host.id.contains("0") {
+                assert!(!host.connected)
+            } else {
+                assert!(host.connected)
+            }
+        }
+    }
+
+    /// Fence node while holding both its own and partner resources
+    #[test]
+    fn admin_fence2() {
+        let env = HaEnvironment::new("admin_fence2");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        // Sleep for a second to give the manager enough time to start resources...
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        env.fence(0);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+        for host in cluster_status.hosts {
+            if host.id.contains("0") {
+                assert!(!host.connected)
+            } else {
+                assert!(host.connected)
             }
         }
     }
