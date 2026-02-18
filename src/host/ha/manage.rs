@@ -169,8 +169,6 @@ impl Host {
             "Warning: Failback command received by host {} but remote is disconnected.",
             self.id()
         );
-        // let fence_message =
-        //     "Cannot"
 
         loop {
             match self.receive_message().await {
@@ -243,13 +241,8 @@ impl Host {
                     match command {
                         HostCommand::Failback => self.do_failback(state, cluster),
                         HostCommand::Activate => {}
-                        HostCommand::Deactivate => {
-                            self.deactivate(state);
-                        }
-                        HostCommand::Fence => {
-                            //stop child processes
-                            self.admin_fence_request(state);
-                        }
+                        HostCommand::Deactivate => self.deactivate(state),
+                        HostCommand::Fence => self.admin_fence_request(state),
                     };
 
                     tasks.push(Box::pin(self.receive_message()));
