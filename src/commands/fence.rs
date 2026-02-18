@@ -10,6 +10,7 @@ pub struct FenceArgs {
     /// Host to fence
     #[arg()]
     hostname: String,
+    force: bool, 
 }
 
 pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
