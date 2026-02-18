@@ -463,10 +463,17 @@ impl Host {
         }
     }
     fn admin_fence_request(&self, state: &mut HostState) {
-        state.admin_requested_fence = true;
-        for task in &state.outstanding_resource_tasks {
-            task.lost_connection.notify_one();
+        // Check if our failover partner has/is fenced
+        if self.ha_failover_partner().is_fenced(){
+            panic!("Partner Already Fenced");
+        } else {
+            self.set_fenced(true);
+            state.admin_requested_fence = true;
+            for task in &state.outstanding_resource_tasks {
+                task.lost_connection.notify_one();
+            }
         }
+
     }
 
     fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
