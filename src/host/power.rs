@@ -203,11 +203,8 @@ impl super::Host {
     /// Do a fence operation using the non-blocking APIs for spawning a command and waiting for its
     /// result. Suitable to be called by the management service.
     pub async fn do_fence_nonblocking(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
-        match command {
-            FenceCommand::Off => {
-                self.set_fenced(true);
-            }
-            _ => {}
+        if let FenceCommand::Off = command {
+            self.set_fenced(true);
         }
 
         let agent = self.fence_agent.as_ref().unwrap();
