@@ -67,6 +67,9 @@ pub struct Host {
     /// Whether the manager has an alive connection to the remote agent that corresponds to this
     /// Host.
     connected: std::sync::Mutex<bool>,
+
+    /// Tells us if a fence of any kind has been activated on this host
+    fenced: std::sync::Mutex<bool>,
 }
 
 impl Host {
@@ -86,6 +89,7 @@ impl Host {
             receiver: tokio::sync::Mutex::new(receiver),
             active: std::sync::Mutex::new(true),
             connected: std::sync::Mutex::new(false),
+            fenced: std::sync::Mutex::new(false),
         }
     }
 
@@ -197,6 +201,14 @@ impl Host {
 
     pub fn connected(&self) -> bool {
         *self.connected.lock().unwrap()
+    }
+
+    pub fn is_fenced(&self) -> bool {
+        *self.fenced.lock().unwrap()
+    }
+
+    pub fn set_fenced(&self, val: bool) {
+        *self.fenced.lock().unwrap() = val;
     }
 
     async fn get_client(&self) -> io::Result<ocf_resource_agent::Client> {

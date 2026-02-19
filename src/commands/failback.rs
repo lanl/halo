@@ -26,6 +26,7 @@ pub fn failback(cli: &Cli, args: &FailbackArgs) -> HandledResult<()> {
 pub fn do_failback(addr: &str, hostname: &str) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "failback".into(),
+        force: None,
     };
 
     let do_request = || -> reqwest::Result<_> {

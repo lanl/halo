@@ -94,8 +94,9 @@ mod tests {
             commands::failback::do_failback(&self.socket_path(), &self.agent_id(onto))
         }
 
-        fn fence(&self, which_one: usize) {
-            commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one)).unwrap();
+        fn fence(&self, which_one: usize, force_fence: bool) {
+            commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one), force_fence)
+                .unwrap();
         }
 
         fn activate_host(&self, which_one: usize) {
@@ -753,7 +754,7 @@ mod tests {
         // Sleep for a second to give the manager enough time to start resources...
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        env.fence(0);
+        env.fence(0, false);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -791,7 +792,7 @@ mod tests {
         // Sleep for a second to give the manager enough time to start resources...
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        env.fence(0);
+        env.fence(0, false);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 

@@ -10,6 +10,9 @@ pub struct FenceArgs {
     /// Host to fence
     #[arg()]
     hostname: String,
+
+    #[arg(long)]
+    force: bool,
 }
 
 pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
@@ -18,12 +21,13 @@ pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
         None => &crate::default_socket(),
     };
 
-    do_fence(addr, &args.hostname)
+    do_fence(addr, &args.hostname, args.force)
 }
 
-pub fn do_fence(addr: &str, hostname: &str) -> HandledResult<()> {
+pub fn do_fence(addr: &str, hostname: &str, force_fence: bool) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "fence".into(),
+        force: Some(force_fence),
     };
 
     let do_request = || -> reqwest::Result<_> {
