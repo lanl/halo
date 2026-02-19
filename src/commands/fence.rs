@@ -24,10 +24,10 @@ pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
     do_fence(addr, args)
 }
 
-pub fn do_fence(addr: &str, fence_args: &FenceArgs) -> HandledResult<()> {
+pub fn do_fence(addr: &str, hostname: &str, force_fence: bool) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "fence".into(),
-        force_fence: Some(fence_args.force),
+        force_fence: Some(force_fence),
     };
 
     let do_request = || -> reqwest::Result<_> {
@@ -36,7 +36,7 @@ pub fn do_fence(addr: &str, fence_args: &FenceArgs) -> HandledResult<()> {
             .build()?;
 
         client
-            .post(format!("http://halo_manager/hosts/{}", fence_args.hostname))
+            .post(format!("http://halo_manager/hosts/{hostname}"))
             .json(&params)
             .send()
     };
@@ -45,20 +45,17 @@ pub fn do_fence(addr: &str, fence_args: &FenceArgs) -> HandledResult<()> {
     match response.status() {
         StatusCode::OK => return Ok(()),
         StatusCode::NOT_FOUND => {
-            eprintln!("Could not fence '{}': host not found.", fence_args.hostname);
+            eprintln!("Could not fence '{hostname}': host not found.");
         }
         StatusCode::BAD_REQUEST => {
-            eprint!("Could not fence '{}': ", fence_args.hostname);
+            eprint!("Could not fence '{hostname}': ");
             match response.text() {
                 Ok(text) => eprintln!("{text}"),
                 Err(e) => eprintln!("Error decoding response: {e}"),
             };
         }
         other => {
-            eprintln!(
-                "Could not fence '{}': unexpected error: {other}",
-                fence_args.hostname
-            );
+            eprintln!("Could not fence '{hostname}': unexpected error: {other}");
         }
     }
 
