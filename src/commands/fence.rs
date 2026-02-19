@@ -10,6 +10,8 @@ pub struct FenceArgs {
     /// Host to fence
     #[arg()]
     hostname: String,
+
+    #[arg(long)]
     force: bool, 
 }
 

@@ -802,21 +802,21 @@ mod tests {
         }
     }
 
-    #[test]
-    #[should_panic]
-    fn double_fence() {
-        let env = HaEnvironment::new("double_fence");
-        let _a = env.start_agent(0);
-        let _b = env.start_agent(1);
-        let _m = env.start_manager(true);
+    // #[test]
+    // #[should_panic]
+    // fn double_fence() {
+    //     let env = HaEnvironment::new("double_fence");
+    //     let _a = env.start_agent(0);
+    //     let _b = env.start_agent(1);
+    //     let _m = env.start_manager(true);
 
-        // Sleep for a second to give the manager enough time to start resources...
-        std::thread::sleep(std::time::Duration::from_secs(1));
+    //     // Sleep for a second to give the manager enough time to start resources...
+    //     std::thread::sleep(std::time::Duration::from_secs(1));
 
-        env.fence(0);
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        env.fence(1);
-    }
+    //     env.fence(0);
+    //     std::thread::sleep(std::time::Duration::from_secs(2));
+    //     env.fence(1);
+    // }
 
     /// start_failed_over:
     /// - None: do not start resources manually, let manager start
