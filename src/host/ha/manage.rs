@@ -379,9 +379,16 @@ impl Host {
         state: &mut HostState,
         cluster: &Cluster,
     ) -> Option<ocf_resource_agent::Client> {
+        
         if state.admin_requested_fence {
             state.admin_requested_fence = false;
             self.do_failover(state).await;
+            return None;
+        }
+
+        if self.is_fenced(){
+            //Need to include logic, either programmatically or admin intervention to set this flag back to false
+            warn!("Host has already been fenced");
             return None;
         }
 
@@ -463,7 +470,6 @@ impl Host {
         }
     }
     fn admin_fence_request(&self, state: &mut HostState) {
-        self.set_fenced(true);
         state.admin_requested_fence = true;
         for task in &state.outstanding_resource_tasks {
             task.lost_connection.notify_one();
