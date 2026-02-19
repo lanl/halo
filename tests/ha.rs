@@ -95,7 +95,8 @@ mod tests {
         }
 
         fn fence(&self, which_one: usize, force_fence: bool) {
-            commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one), force_fence).unwrap();
+            commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one), force_fence)
+                .unwrap();
         }
     }
 
