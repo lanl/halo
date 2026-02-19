@@ -27,7 +27,7 @@ pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
 pub fn do_fence(addr: &str, hostname: &str, force_fence: bool) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "fence".into(),
-        force_fence: Some(force_fence),
+        force: Some(force_fence),
     };
 
     let do_request = || -> reqwest::Result<_> {

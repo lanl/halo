@@ -164,7 +164,7 @@ async fn set_managed(
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HostArgs {
     pub command: String,
-    pub force_fence: Option<bool>,
+    pub force: Option<bool>,
 }
 
 async fn host_post(
@@ -188,8 +188,8 @@ async fn host_post(
         }
         "fence" => {
             //Check if our partner is fenced
-            if partner.is_fenced() && !payload.force_fence.unwrap() {
-                return Err((StatusCode::BAD_REQUEST, "Partner is already fenced."));
+            if partner.is_fenced() && payload.force != Some(true) {
+                return Err((StatusCode::CONFLICT, "Partner is already fenced."));
             }
             host.command(HostCommand::Fence).await;
         }

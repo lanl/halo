@@ -46,7 +46,7 @@ pub fn do_activate(socket_path: &str, hostname: &str, active: bool) -> HandledRe
         } else {
             "deactivate".to_string()
         },
-        force_fence: None,
+        force: None,
     };
 
     let do_request = || -> reqwest::Result<_> {
