@@ -21,7 +21,7 @@ pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
         None => &crate::default_socket(),
     };
 
-    do_fence(addr, args)
+    do_fence(addr, &args.hostname, args.force)
 }
 
 pub fn do_fence(addr: &str, hostname: &str, force_fence: bool) -> HandledResult<()> {
