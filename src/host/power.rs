@@ -203,7 +203,13 @@ impl super::Host {
     /// Do a fence operation using the non-blocking APIs for spawning a command and waiting for its
     /// result. Suitable to be called by the management service.
     pub async fn do_fence_nonblocking(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
-        self.set_fenced(true);
+        match command {
+            FenceCommand::Off => {
+                self.set_fenced(true);
+            }
+            _ => {}
+        }
+
         let agent = self.fence_agent.as_ref().unwrap();
 
         let mut child = tokio::process::Command::new(agent.get_executable())

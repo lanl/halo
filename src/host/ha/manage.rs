@@ -379,16 +379,15 @@ impl Host {
         state: &mut HostState,
         cluster: &Cluster,
     ) -> Option<ocf_resource_agent::Client> {
-        
         if state.admin_requested_fence {
             state.admin_requested_fence = false;
             self.do_failover(state).await;
             return None;
         }
 
-        if self.is_fenced(){
+        if self.is_fenced() {
             //Need to include logic, either programmatically or admin intervention to set this flag back to false
-            warn!("Host has already been fenced");
+            warn!("Host {} was already fenced; not fencing again", self.id());
             return None;
         }
 
