@@ -207,7 +207,7 @@ impl Host {
         *self.fenced.lock().unwrap()
     }
 
-    pub fn set_fenced(&self, val: bool){
+    pub fn set_fenced(&self, val: bool) {
         *self.fenced.lock().unwrap() = val;
     }
 

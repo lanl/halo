@@ -12,7 +12,7 @@ pub struct FenceArgs {
     hostname: String,
 
     #[arg(long)]
-    force: bool, 
+    force: bool,
 }
 
 pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
@@ -55,7 +55,10 @@ pub fn do_fence(addr: &str, fence_args: &FenceArgs) -> HandledResult<()> {
             };
         }
         other => {
-            eprintln!("Could not fence '{}': unexpected error: {other}", fence_args.hostname);
+            eprintln!(
+                "Could not fence '{}': unexpected error: {other}",
+                fence_args.hostname
+            );
         }
     }
 

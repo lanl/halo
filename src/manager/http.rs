@@ -188,8 +188,8 @@ async fn host_post(
         }
         "fence" => {
             //Check if our partner is fenced
-            if partner.is_fenced() && !payload.force_fence.unwrap(){
-                return Err((StatusCode::BAD_REQUEST, "Partner is already fenced."))
+            if partner.is_fenced() && !payload.force_fence.unwrap() {
+                return Err((StatusCode::BAD_REQUEST, "Partner is already fenced."));
             }
             host.command(HostCommand::Fence).await;
         }
