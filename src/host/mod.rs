@@ -188,6 +188,10 @@ impl Host {
         *self.already_fenced.lock().unwrap() = fenced;
     }
 
+    pub fn fenced(&self) -> bool {
+        *self.already_fenced.lock().unwrap()
+    }
+
     pub fn set_active(&self, active: bool) {
         *self.active.lock().unwrap() = active;
     }

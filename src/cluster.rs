@@ -6,11 +6,11 @@ use std::{collections::HashMap, sync::Arc};
 use futures::future;
 
 use crate::{
-    commands::{Handle, HandledResult},
+    commands::{handled_error, Handle, HandledResult},
     host::*,
     manager,
     resource::*,
-    state::State,
+    state::{Record, State},
 };
 
 /// Cluster is the model used to represent the dynamic state of a cluster in memory.
@@ -200,15 +200,6 @@ impl Cluster {
             eprintln!("Could not parse config file \"{configpath}\": {e}");
         })?;
 
-        // TODO: Move this somewhere else
-        //let state = std::fs::read_to_string(statefilepath).or_else(|_| {
-        //    eprintln!("Statefile does not exist, attempting to create it at \"{statefilepath}\"");
-        //    std::fs::File::create_new(statefilepath).handle_err(|e| {
-        //        eprintln!("Could not create statefile: \"{statefilepath}\": {e}");
-        //    })?;
-        //    Ok(String::new())
-        //})?;
-
         let state = match &args.statefile {
             Some(f) => Some(State::new(f)?),
             None => None,
@@ -393,6 +384,17 @@ impl Cluster {
                 ResourceGroup::new(root, args.clone())
             })
             .collect()
+    }
+
+    /// Write a Record entry into the Cluster's statefile.
+    pub fn write_record(&self, record: Record) -> HandledResult<()> {
+        match self.state {
+            Some(ref state) => state.write_record(record).map(|_| ()),
+            None => {
+                eprintln!("failed to write record: cluster has no statefile");
+                handled_error()
+            }
+        }
     }
 
     /// Print out a summary of the cluster to stdout. Mainly intended for debugging purposes.

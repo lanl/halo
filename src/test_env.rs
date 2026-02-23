@@ -148,11 +148,15 @@ impl TestEnvironment {
         format!("{}/test.socket", &self.private_dir_path)
     }
 
+    pub fn statefile_path(&self) -> String {
+        format!("{}/halo.state", &self.private_dir_path)
+    }
+
     /// Build a MgrContext for the given test environment. This assumes that the config file for
     /// the test is in a yaml file named {test_id}.yaml.
     pub fn manager_args(&self) -> manager::Cli {
         let config_path = test_path(&format!("{}.yaml", self.test_id));
-        let statefile_path = test_path("halo.state");
+        let statefile_path = self.statefile_path();
         let socket_path = format!("{}/{}", self.private_dir_path, "test.socket");
         manager::Cli {
             config: Some(config_path),

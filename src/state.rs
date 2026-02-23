@@ -6,6 +6,7 @@ use std::{
     fmt,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader},
+    sync::Mutex,
 };
 
 use chrono::NaiveDateTime;
@@ -117,7 +118,7 @@ impl Delta {
 #[derive(Debug)]
 pub struct State {
     /// File that stores state
-    file: File,
+    file: Mutex<File>,
     /// Delta of state from the statefile.
     pub delta: Delta,
 }
@@ -127,12 +128,33 @@ impl State {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
+            .create(true)
             .open(path)
             .handle_err(|e| {
                 eprintln!("could not open statefile path '{path}': '{e}'");
             })?;
         let delta = Delta::new_from_file(&file)?;
-        Ok(Self { file, delta })
+        Ok(Self {
+            file: Mutex::new(file),
+            delta,
+        })
+    }
+
+    /// Writes a single record to the statefile.
+    pub fn write_record(&self, record: Record) -> HandledResult<usize> {
+        use std::io::Write;
+        self.file
+            .lock()
+            .handle_err(|e| {
+                eprintln!(
+                    "could not acquire lock on statefile '{:?}': '{e}'",
+                    self.file
+                );
+            })?
+            .write(&[record.as_string().as_bytes(), &[b'\n']].concat())
+            .handle_err(|e| {
+                eprintln!("failed to write to statefile '{:?}': '{e}'", self.file);
+            })
     }
 }
 
