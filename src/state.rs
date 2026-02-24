@@ -9,7 +9,7 @@ use std::{
     sync::Mutex,
 };
 
-use chrono::NaiveDateTime;
+use chrono::{Local, NaiveDateTime};
 
 use crate::commands::{handled_error, Handle, HandledError, HandledResult};
 
@@ -163,6 +163,15 @@ pub struct Record {
 }
 
 impl Record {
+    pub fn new(event: Event, obj_id: String, comment: Option<String>) -> Self {
+        Record {
+            timestamp: Local::now().naive_local(),
+            event,
+            obj_id,
+            comment,
+        }
+    }
+
     /// Attempt to get all Records from a File, sorted by timestamp in ascending order.
     pub fn get_all_from_file(file: &File) -> HandledResult<Vec<Record>> {
         let lines = BufReader::new(file).lines();
