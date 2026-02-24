@@ -9,8 +9,10 @@ use std::{
 use tokio::sync::mpsc;
 
 use crate::{
-    commands::Handle,
+    cluster::Cluster,
+    commands::{Handle, HandledResult},
     halo_capnp::{self, *},
+    state::{Event, Record},
 };
 
 pub mod power;
@@ -189,10 +191,6 @@ impl Host {
         }
     }
 
-    pub fn set_fenced(&self, fenced: bool) {
-        *self.already_fenced.lock().unwrap() = fenced;
-    }
-
     pub fn fenced(&self) -> bool {
         *self.already_fenced.lock().unwrap()
     }
@@ -217,8 +215,8 @@ impl Host {
         *self.fenced.lock().unwrap()
     }
 
-    pub fn set_fenced(&self, val: bool) {
-        *self.fenced.lock().unwrap() = val;
+    pub fn set_fenced(&self, fenced: bool) {
+        *self.already_fenced.lock().unwrap() = fenced;
     }
 
     async fn get_client(&self) -> io::Result<ocf_resource_agent::Client> {
@@ -228,6 +226,29 @@ impl Host {
             Err(_) => self.set_connected(false),
         };
         client
+    }
+
+    pub async fn update_activation_status(
+        self: Arc<Self>,
+        activate: bool,
+        cluster: Arc<Cluster>,
+    ) -> HandledResult<()> {
+        self.set_active(activate);
+        let event = if activate {
+            Event::Activate
+        } else {
+            Event::Deactivate
+        };
+        cluster
+            .write_record_nonblocking(Record::new(event, self.id(), None))
+            .await?;
+        self.command(if activate {
+            HostCommand::Activate
+        } else {
+            HostCommand::Deactivate
+        })
+        .await;
+        Ok(())
     }
 }
 
