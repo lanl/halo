@@ -13,7 +13,7 @@ pub struct ManageArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct UnManageArgs {
-    /// Resource to manage
+    /// Resource to unmanage
     resource_id: String,
 }
 

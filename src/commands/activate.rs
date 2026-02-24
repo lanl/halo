@@ -7,13 +7,13 @@ use crate::{commands::*, manager::http};
 
 #[derive(Args, Debug, Clone)]
 pub struct ActivateArgs {
-    /// Resource to manage
+    /// Host to activate
     hostname: String,
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct DeactivateArgs {
-    /// Resource to manage
+    /// Host to deactivate
     hostname: String,
 }
 
