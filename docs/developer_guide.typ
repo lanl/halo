@@ -137,7 +137,7 @@ test fence agent at `tests/fence_test` is hardcoded to assume that the remote PI
 2. Run the manager service:
 
 ```bash
-./target/debug/halo --config tests/failover.yaml --socket halo.socket  --manage-resources --verbose
+./target/debug/halo_manager --config tests/failover.yaml --socket halo.socket  --manage-resources --verbose
 ```
 
 3. Run `power status` to confirm that the fence agent is able to check the status of each remote:
