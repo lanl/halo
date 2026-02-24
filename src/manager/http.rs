@@ -18,6 +18,7 @@ use crate::{
     cluster::Cluster,
     host::{Host, HostCommand},
     resource::{Resource, ResourceStatus},
+    state::{Event, Record},
 };
 
 /// Main entrypoint for the command server.
@@ -145,20 +146,34 @@ async fn set_managed(
     Path(resource_id): Path<String>,
     Json(payload): Json<SetManagedArgs>,
     cluster: Arc<Cluster>,
-) -> Result<(), StatusCode> {
+) -> Result<(), (StatusCode, &'static str)> {
     for rg in cluster.resource_groups() {
-        if rg.root.id == resource_id {
+        if rg.id() == resource_id {
             warn!(
                 "Resource group {}: setting managed={}",
                 rg.id(),
                 if payload.managed { "true" } else { "false" }
             );
             rg.set_managed(payload.managed);
-            return Ok(());
+            let event = if payload.managed {
+                Event::Manage
+            } else {
+                Event::Unmanage
+            };
+            return match Arc::clone(&cluster)
+                .write_record_nonblocking(Record::new(event, rg.id().to_string(), None))
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(_) => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to append record to statefile.",
+                )),
+            };
         }
     }
 
-    Err(StatusCode::NOT_FOUND)
+    Err((StatusCode::NOT_FOUND, "Resource group not found."))
 }
 
 #[derive(Serialize, Deserialize, Debug)]

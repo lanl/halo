@@ -6,7 +6,7 @@ use std::{collections::HashMap, sync::Arc};
 use futures::future;
 
 use crate::{
-    commands::{handled_error, Handle, HandledResult},
+    commands::{Handle, HandledResult},
     host::*,
     manager,
     resource::*,
@@ -390,6 +390,15 @@ impl Cluster {
     pub fn write_record(&self, record: Record) -> HandledResult<()> {
         // TODO: The failure of this method should probably be handled in some intelligent way.
         self.state.as_ref().unwrap().write_record(record)
+    }
+
+    pub async fn write_record_nonblocking(self: Arc<Self>, record: Record) -> HandledResult<()> {
+        tokio::task::spawn_blocking(move || {
+            let cluster = &self;
+            cluster.write_record(record)
+        })
+        .await
+        .unwrap()
     }
 
     /// Print out a summary of the cluster to stdout. Mainly intended for debugging purposes.
