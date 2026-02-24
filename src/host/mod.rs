@@ -9,8 +9,10 @@ use std::{
 use tokio::sync::mpsc;
 
 use crate::{
-    commands::Handle,
+    cluster::Cluster,
+    commands::{Handle, HandledResult},
     halo_capnp::{self, *},
+    state::{Event, Record},
 };
 
 pub mod power;
@@ -215,6 +217,14 @@ impl Host {
             Err(_) => self.set_connected(false),
         };
         client
+    }
+
+    pub async fn update_activation_status(self: Arc<Self>, activate: bool, cluster: Arc<Cluster>) -> HandledResult<()> {
+        self.set_active(activate);
+        let event = if activate { Event::Activate } else { Event::Deactivate };
+        cluster.write_record_nonblocking(Record::new(event, self.id(), None)).await?;
+        self.command(if activate { HostCommand::Activate } else { HostCommand::Deactivate }).await;
+        Ok(())
     }
 }
 

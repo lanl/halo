@@ -209,8 +209,13 @@ async fn host_post(
                 ));
             };
 
-            host.set_active(true);
-            host.command(HostCommand::Activate).await;
+            return match Arc::clone(host).update_activation_status(true, cluster).await {
+                Ok(()) => Ok(()),
+                Err(_) => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to append record to statefile.",
+                )),
+            };
         }
         "deactivate" => {
             let Some(partner) = host.failover_partner() else {
@@ -224,8 +229,13 @@ async fn host_post(
                 return Err((StatusCode::CONFLICT, "Partner host is already deactivated. You cannot deactivate both hosts in a pair."));
             }
 
-            host.set_active(false);
-            host.command(HostCommand::Deactivate).await;
+            return match Arc::clone(host).update_activation_status(false, cluster).await {
+                Ok(()) => Ok(()),
+                Err(_) => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to append record to statefile.",
+                )),
+            };
         }
         _ => return Err((StatusCode::BAD_REQUEST, "Unsupported command.")),
     }
