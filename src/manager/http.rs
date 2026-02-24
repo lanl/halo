@@ -217,8 +217,23 @@ async fn host_post(
             host.command(HostCommand::Fence).await;
         }
         "activate" => {
-            host.set_active(true);
-            host.command(HostCommand::Activate).await;
+            let Some(_) = host.failover_partner() else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Host does not have a failover partner. Activate command can only be used in HA cluster.",
+                ));
+            };
+
+            return match Arc::clone(host)
+                .update_activation_status(true, cluster)
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(_) => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to append record to statefile.",
+                )),
+            };
         }
         "deactivate" => {
             if !partner.active() {
@@ -228,8 +243,16 @@ async fn host_post(
                 ));
             }
 
-            host.set_active(false);
-            host.command(HostCommand::Deactivate).await;
+            return match Arc::clone(host)
+                .update_activation_status(false, cluster)
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(_) => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to append record to statefile.",
+                )),
+            };
         }
         _ => return Err((StatusCode::BAD_REQUEST, "Unsupported command.")),
     }
