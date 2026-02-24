@@ -141,17 +141,12 @@ impl State {
     }
 
     /// Writes a single record to the statefile.
-    pub fn write_record(&self, record: Record) -> HandledResult<usize> {
+    pub fn write_record(&self, record: Record) -> HandledResult<()> {
         use std::io::Write;
         self.file
             .lock()
-            .handle_err(|e| {
-                eprintln!(
-                    "could not acquire lock on statefile '{:?}': '{e}'",
-                    self.file
-                );
-            })?
-            .write(&[record.as_string().as_bytes(), &[b'\n']].concat())
+            .unwrap()
+            .write_all(&[record.as_string().as_bytes(), &[b'\n']].concat())
             .handle_err(|e| {
                 eprintln!("failed to write to statefile '{:?}': '{e}'", self.file);
             })

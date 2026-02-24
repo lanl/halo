@@ -388,13 +388,8 @@ impl Cluster {
 
     /// Write a Record entry into the Cluster's statefile.
     pub fn write_record(&self, record: Record) -> HandledResult<()> {
-        match self.state {
-            Some(ref state) => state.write_record(record).map(|_| ()),
-            None => {
-                eprintln!("failed to write record: cluster has no statefile");
-                handled_error()
-            }
-        }
+        // TODO: The failure of this method should probably be handled in some intelligent way.
+        self.state.as_ref().unwrap().write_record(record)
     }
 
     /// Print out a summary of the cluster to stdout. Mainly intended for debugging purposes.

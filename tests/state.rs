@@ -7,10 +7,7 @@ mod tests {
 
     use chrono::Local;
 
-    use halo_lib::{
-        state::*,
-        test_env::*,
-    };
+    use halo_lib::{state::*, test_env::*};
 
     #[test]
     fn serde1() {
