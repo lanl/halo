@@ -94,15 +94,15 @@ impl Host {
     /// If an error occurs (like "Connection Timed Out"), the host task will be responsible for
     /// stopping all management activities on that host, fencing the host, and then notifying the
     /// partner host's task to assume management of those resources.
-    pub async fn manage_ha(&self, cluster: &Cluster) {
+    pub async fn manage_ha(&self, cluster: &Arc<Cluster>) {
         let mut state = HostState::new();
 
-        let my_resources = self.mint_resource_tokens(cluster);
+        let my_resources = self.mint_resource_tokens(&cluster);
 
         // Check whether this host's primary resources are running locally, in order to determine if
         // they should be managed locally or if the failover partner needs to check if they are
         // failed over.
-        state.manage_these_resources = self.startup(cluster, my_resources).await;
+        state.manage_these_resources = self.startup(&cluster, my_resources).await;
 
         loop {
             match self.get_client().await {
@@ -112,7 +112,7 @@ impl Host {
                         self.id()
                     );
                     loop {
-                        self.remote_connected_loop(&client, cluster, &mut state)
+                        self.remote_connected_loop(&client, &cluster, &mut state)
                             .await;
 
                         // All resource management tasks must have been cancelled before
@@ -120,7 +120,7 @@ impl Host {
                         assert!(state.outstanding_resource_tasks.is_empty());
 
                         // If we reached this point, failover must have been requested
-                        match self.maybe_do_failover(&mut state, cluster).await {
+                        match self.maybe_do_failover(&mut state, &cluster).await {
                             // If maybe_do_failover() returned a Client (because it was able to
                             // re-establish connection), we can use that client to re-enter the
                             // remote_connected_loop().
@@ -388,7 +388,7 @@ impl Host {
     async fn maybe_do_failover(
         &self,
         state: &mut HostState,
-        cluster: &Cluster,
+        cluster: &Arc<Cluster>,
     ) -> Option<ocf_resource_agent::Client> {
         if state.admin_requested_fence {
             state.admin_requested_fence = false;
@@ -467,10 +467,19 @@ impl Host {
         None
     }
 
-    async fn do_failover(&self, state: &mut HostState, cluster: &Cluster) {
+    async fn do_failover(&self, state: &mut HostState, cluster: &Arc<Cluster>) {
         self.do_fence_nonblocking(FenceCommand::Off)
             .await
             .expect("Fencing failed... TODO: handle this case...");
+
+        // TODO: need to figure out how to determine if manager or admin initiated fence here.
+        match Arc::clone(&cluster)
+            .write_record_nonblocking(Record::new(Event::Fence, self.id(), Some(String::from(""))))
+            .await
+        {
+            Ok(_) => {}
+            Err(_) => todo!(),
+        };
 
         warn!("Host {} has been powered off.", self.id());
 
