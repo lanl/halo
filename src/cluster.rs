@@ -98,21 +98,21 @@ impl Cluster {
         }
     }
 
-    pub async fn main_loop(&self) {
+    pub async fn main_loop(self: Arc<Self>) {
         if self.args.manage_resources {
             if self.failover {
-                let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(self)).collect();
+                let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(&self)).collect();
 
                 let _ = future::join_all(futures).await;
             } else {
                 todo!("Implement management loop for non-HA cluster.");
             }
         } else if self.failover {
-            let futures: Vec<_> = self.hosts.values().map(|h| h.observe_ha(self)).collect();
+            let futures: Vec<_> = self.hosts.values().map(|h| h.observe_ha(&self)).collect();
 
             let _ = future::join_all(futures).await;
         } else {
-            let futures: Vec<_> = self.hosts.values().map(|h| h.observe(self)).collect();
+            let futures: Vec<_> = self.hosts.values().map(|h| h.observe(&self)).collect();
 
             let _ = future::join_all(futures).await;
         };
