@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use futures::future;
 
@@ -49,10 +52,7 @@ impl Cluster {
 
         // Track which hosts have been updated here in order to determine hosts that aren't in
         // the cluster.
-        let mut unapplied_hosts: HashMap<String, Option<usize>> = HashMap::new();
-        state.delta.hosts().iter().for_each(|v| {
-            unapplied_hosts.insert(v.clone(), None);
-        });
+        let mut unapplied_hosts: HashSet<String> = state.delta.hosts();
 
         for cluster_host in self.hosts() {
             let cluster_host_id = cluster_host.id();
@@ -60,40 +60,37 @@ impl Cluster {
             match state.delta.hosts_fenced.get(&cluster_host_id) {
                 Some(fenced) => {
                     cluster_host.set_fenced(*fenced);
-                    unapplied_hosts.remove_entry(&cluster_host_id);
+                    unapplied_hosts.remove(&cluster_host_id);
                 }
                 None => {}
             }
             match state.delta.hosts_activated.get(&cluster_host_id) {
                 Some(active) => {
                     cluster_host.set_active(*active);
-                    unapplied_hosts.remove_entry(&cluster_host_id);
+                    unapplied_hosts.remove(&cluster_host_id);
                 }
                 None => {}
             }
         }
-        for host in unapplied_hosts.keys() {
+        for host in &unapplied_hosts {
             eprintln!("host '{host}' not found in cluster");
         }
 
         // Track which resources have been updated here in order to determine hosts that aren't
         // in the cluster.
-        let mut unapplied_resources: HashMap<String, Option<usize>> = HashMap::new();
-        state.delta.resources().iter().for_each(|v| {
-            unapplied_resources.insert(v.clone(), None);
-        });
+        let mut unapplied_resources: HashSet<String> = state.delta.resources();
         for cluster_rg in self.resource_groups() {
             let cluster_rg_id = cluster_rg.id();
 
             match state.delta.resources_managed.get(cluster_rg_id) {
                 Some(managed) => {
                     cluster_rg.set_managed(*managed);
-                    unapplied_resources.remove_entry(cluster_rg_id);
+                    unapplied_resources.remove(cluster_rg_id);
                 }
                 None => {}
             };
         }
-        for rg in unapplied_resources.keys() {
+        for rg in &unapplied_resources {
             eprintln!("resource '{rg}' not found in cluster");
         }
     }
