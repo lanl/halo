@@ -80,7 +80,7 @@ impl Cluster {
         // in the cluster.
         let mut unapplied_resources: HashMap<String, Option<usize>> = HashMap::new();
         state.delta.resources().iter().for_each(|v| {
-            unapplied_hosts.insert(v.clone(), None);
+            unapplied_resources.insert(v.clone(), None);
         });
         for cluster_rg in self.resource_groups() {
             let cluster_rg_id = cluster_rg.id();
