@@ -252,7 +252,7 @@ pub enum Event {
     Deactivate,
     /// Host was fenced.
     Fence,
-    /// Host had a reboot operation initiated.
+    /// Admin has reset the host after fencing, so that it can be fenced again.
     FenceReset,
 }
 
