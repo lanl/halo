@@ -57,19 +57,13 @@ impl Cluster {
         for cluster_host in self.hosts() {
             let cluster_host_id = cluster_host.id();
 
-            match state.delta.hosts_fenced.get(&cluster_host_id) {
-                Some(fenced) => {
-                    cluster_host.set_fenced(*fenced);
-                    unapplied_hosts.remove(&cluster_host_id);
-                }
-                None => {}
+            if let Some(fenced) = state.delta.hosts_fenced.get(&cluster_host_id) {
+                cluster_host.set_fenced(*fenced);
+                unapplied_hosts.remove(&cluster_host_id);
             }
-            match state.delta.hosts_activated.get(&cluster_host_id) {
-                Some(active) => {
-                    cluster_host.set_active(*active);
-                    unapplied_hosts.remove(&cluster_host_id);
-                }
-                None => {}
+            if let Some(active) = state.delta.hosts_activated.get(&cluster_host_id) {
+                cluster_host.set_active(*active);
+                unapplied_hosts.remove(&cluster_host_id);
             }
         }
         for host in &unapplied_hosts {
@@ -82,13 +76,10 @@ impl Cluster {
         for cluster_rg in self.resource_groups() {
             let cluster_rg_id = cluster_rg.id();
 
-            match state.delta.resources_managed.get(cluster_rg_id) {
-                Some(managed) => {
-                    cluster_rg.set_managed(*managed);
-                    unapplied_resources.remove(cluster_rg_id);
-                }
-                None => {}
-            };
+            if let Some(managed) = state.delta.resources_managed.get(cluster_rg_id) {
+                cluster_rg.set_managed(*managed);
+                unapplied_resources.remove(cluster_rg_id);
+            }
         }
         for rg in &unapplied_resources {
             eprintln!("resource '{rg}' not found in cluster");

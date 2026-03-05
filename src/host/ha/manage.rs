@@ -97,12 +97,12 @@ impl Host {
     pub async fn manage_ha(&self, cluster: &Arc<Cluster>) {
         let mut state = HostState::new();
 
-        let my_resources = self.mint_resource_tokens(&cluster);
+        let my_resources = self.mint_resource_tokens(cluster);
 
         // Check whether this host's primary resources are running locally, in order to determine if
         // they should be managed locally or if the failover partner needs to check if they are
         // failed over.
-        state.manage_these_resources = self.startup(&cluster, my_resources).await;
+        state.manage_these_resources = self.startup(cluster, my_resources).await;
 
         loop {
             match self.get_client().await {
@@ -112,7 +112,7 @@ impl Host {
                         self.id()
                     );
                     loop {
-                        self.remote_connected_loop(&client, &cluster, &mut state)
+                        self.remote_connected_loop(&client, cluster, &mut state)
                             .await;
 
                         // All resource management tasks must have been cancelled before
@@ -120,7 +120,7 @@ impl Host {
                         assert!(state.outstanding_resource_tasks.is_empty());
 
                         // If we reached this point, failover must have been requested
-                        match self.maybe_do_failover(&mut state, &cluster).await {
+                        match self.maybe_do_failover(&mut state, cluster).await {
                             // If maybe_do_failover() returned a Client (because it was able to
                             // re-establish connection), we can use that client to re-enter the
                             // remote_connected_loop().
@@ -473,7 +473,7 @@ impl Host {
             .expect("Fencing failed... TODO: handle this case...");
 
         // TODO: need to figure out how to determine if manager or admin initiated fence here.
-        match Arc::clone(&cluster)
+        match Arc::clone(cluster)
             .write_record_nonblocking(Record::new(Event::Fence, self.id(), Some(String::from(""))))
             .await
         {

@@ -92,10 +92,10 @@ impl Delta {
     /// Get a Vec of deduplicated hosts that this Delta applies to.
     pub fn hosts(&self) -> HashSet<String> {
         let mut merged: HashSet<String> = HashSet::new();
-        for (key, _) in &self.hosts_fenced {
+        for key in self.hosts_fenced.keys() {
             merged.insert(key.clone());
         }
-        for (key, _) in &self.hosts_activated {
+        for key in self.hosts_activated.keys() {
             merged.insert(key.clone());
         }
         merged
@@ -128,7 +128,7 @@ impl State {
     pub fn new(path: &str) -> HandledResult<Self> {
         let file = OpenOptions::new()
             .read(true)
-            .write(true)
+            .append(true)
             .create(true)
             .open(path)
             .handle_err(|e| {
@@ -147,7 +147,7 @@ impl State {
         self.file
             .lock()
             .unwrap()
-            .write_all(&[record.as_string().as_bytes(), &[b'\n']].concat())
+            .write_all(&[record.as_string().as_bytes(), b"\n"].concat())
             .handle_err(|e| {
                 error!("failed to write to statefile '{:?}': '{e}'", self.file);
             })
@@ -182,9 +182,9 @@ impl Record {
                     eprintln!("unable to parse statefile line: '{e}'");
                 })?;
 
-                Ok(Record::from_string(&line).handle_err(|_| {
+                Record::from_string(&line).handle_err(|_| {
                     eprintln!("failed parsing record from '{line}'");
-                })?)
+                })
             })
             .collect::<HandledResult<Vec<Record>>>()?;
         records.sort_by_key(|record| record.timestamp);
@@ -222,8 +222,8 @@ impl Record {
             return handled_error();
         };
         let mut comment = String::from(fields.next().unwrap_or(""));
-        while let Some(remainder) = fields.next() {
-            comment.push_str("\t");
+        for remainder in fields {
+            comment.push('\t');
             comment.push_str(remainder);
         }
 
