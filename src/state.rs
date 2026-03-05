@@ -10,6 +10,7 @@ use std::{
 };
 
 use chrono::{Local, NaiveDateTime};
+use log::error;
 
 use crate::commands::{handled_error, Handle, HandledError, HandledResult};
 
@@ -148,7 +149,7 @@ impl State {
             .unwrap()
             .write_all(&[record.as_string().as_bytes(), &[b'\n']].concat())
             .handle_err(|e| {
-                eprintln!("failed to write to statefile '{:?}': '{e}'", self.file);
+                error!("failed to write to statefile '{:?}': '{e}'", self.file);
             })
     }
 }
