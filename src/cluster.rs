@@ -65,8 +65,8 @@ impl Cluster {
                 None => {}
             }
             match state.delta.hosts_activated.get(&cluster_host_id) {
-                Some(fenced) => {
-                    cluster_host.set_active(*fenced);
+                Some(active) => {
+                    cluster_host.set_active(*active);
                     unapplied_hosts.remove_entry(&cluster_host_id);
                 }
                 None => {}
