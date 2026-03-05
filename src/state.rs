@@ -2,7 +2,7 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader},
@@ -89,19 +89,19 @@ impl Delta {
     }
 
     /// Get a Vec of deduplicated hosts that this Delta applies to.
-    pub fn hosts(&self) -> Vec<String> {
-        let mut merged: HashMap<String, Option<String>> = HashMap::new();
+    pub fn hosts(&self) -> HashSet<String> {
+        let mut merged: HashSet<String> = HashSet::new();
         for (key, _) in &self.hosts_fenced {
-            merged.insert(key.clone(), None);
+            merged.insert(key.clone());
         }
         for (key, _) in &self.hosts_activated {
-            merged.insert(key.clone(), None);
+            merged.insert(key.clone());
         }
-        merged.into_keys().collect()
+        merged
     }
 
     /// Get a Vec of deduplicated resources that this Delta applies to.
-    pub fn resources(&self) -> Vec<String> {
+    pub fn resources(&self) -> HashSet<String> {
         self.resources_managed
             .keys()
             .map(|s| s.to_string())
