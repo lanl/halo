@@ -108,6 +108,7 @@ pub struct HostJson {
     pub id: String,
     pub active: bool,
     pub connected: bool,
+    pub fenced: bool,
 }
 
 impl HostJson {
@@ -116,6 +117,7 @@ impl HostJson {
             id: host.id(),
             active: host.active(),
             connected: host.connected(),
+            fenced: host.fenced(),
         }
     }
 }
@@ -192,12 +194,25 @@ async fn host_post(
         return Err((StatusCode::NOT_FOUND, ""));
     };
 
+    // Check "reset" first because it doesn't require a partner host to be present in order to be a
+    // valid command:
+    if payload.command == "reset" {
+        if !host.fenced() {
+            return Err((StatusCode::CONFLICT, "Host has not been fenced."));
+        }
+
+        host.set_fenced(false);
+        return Ok(());
+    }
+
+    // The rest of the commands are only valid for hosts that have a partner:
     let Some(partner) = host.failover_partner() else {
         return Err((
             StatusCode::BAD_REQUEST,
             "Host does not have a failover partner.",
         ));
     };
+
     match payload.command.as_str() {
         "failback" => {
             if !host.active() {
@@ -210,8 +225,11 @@ async fn host_post(
             partner.command(HostCommand::Failback).await;
         }
         "fence" => {
-            if partner.fenced() && payload.force != Some(true) {
-                return Err((StatusCode::CONFLICT, "Partner is already fenced."));
+            if !partner.active() && payload.force != Some(true) {
+                return Err((StatusCode::CONFLICT, "Partner is disconnected."));
+            }
+            if host.fenced() && payload.force != Some(true) {
+                return Err((StatusCode::CONFLICT, "Host has already been fenced."));
             }
             host.command(HostCommand::Fence).await;
         }

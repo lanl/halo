@@ -398,6 +398,7 @@ impl Host {
 
         if self.fenced() {
             warn!("Host {} was already fenced; not fencing again", self.id());
+            state.manage_these_resources = take(&mut state.resources_in_transit);
             return None;
         }
 
@@ -479,6 +480,8 @@ impl Host {
             Ok(_) => {}
             Err(_) => todo!(),
         };
+
+        self.set_fenced(true);
 
         warn!("Host {} has been powered off.", self.id());
 

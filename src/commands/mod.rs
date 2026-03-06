@@ -7,6 +7,7 @@ pub mod failback;
 pub mod fence;
 pub mod manage;
 pub mod power;
+pub mod reset;
 pub mod start;
 pub mod status;
 pub mod stop;
@@ -19,6 +20,7 @@ use {
     fence::FenceArgs,
     manage::{ManageArgs, UnManageArgs},
     power::PowerArgs,
+    reset::ResetArgs,
     status::StatusArgs,
 };
 
@@ -97,6 +99,7 @@ pub enum Commands {
     Failback(FailbackArgs),
     Fence(FenceArgs),
     Power(PowerArgs),
+    Reset(ResetArgs),
     Validate,
     Manage(ManageArgs),
     Unmanage(UnManageArgs),
@@ -133,6 +136,7 @@ pub fn main(cli: &Cli) -> HandledResult<()> {
         Commands::Unmanage(args) => return manage::unmanage(cli, args),
         Commands::Activate(args) => return activate::activate(cli, args),
         Commands::Deactivate(args) => return activate::deactivate(cli, args),
+        Commands::Reset(args) => return reset::reset(cli, args),
         _ => {}
     }
 
