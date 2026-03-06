@@ -94,9 +94,8 @@ mod tests {
             commands::failback::do_failback(&self.socket_path(), &self.agent_id(onto))
         }
 
-        fn fence(&self, which_one: usize, force_fence: bool) {
+        fn fence(&self, which_one: usize, force_fence: bool) -> HandledResult<()> {
             commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one), force_fence)
-                .unwrap();
         }
 
         fn activate_host(&self, which_one: usize) {
@@ -107,6 +106,10 @@ mod tests {
         fn deactivate_host(&self, which_one: usize) {
             commands::activate::do_activate(&self.socket_path(), &self.agent_id(which_one), false)
                 .unwrap();
+        }
+
+        fn reset_host(&self, which_one: usize) {
+            commands::reset::do_reset(&self.socket_path(), &self.agent_id(which_one)).unwrap();
         }
     }
 
@@ -201,6 +204,8 @@ mod tests {
         // Manually start the zpool on the failover node, even though it's already started on the
         // home node:
         env.start_resource("zpool_0", 1);
+
+        // Drop implementation of HaEnvironment is expected to panic here...
     }
 
     /// Startup, both agents running, all resources stopped.
@@ -754,7 +759,7 @@ mod tests {
         // Sleep for a second to give the manager enough time to start resources...
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        env.fence(0, false);
+        env.fence(0, false).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -792,7 +797,7 @@ mod tests {
         // Sleep for a second to give the manager enough time to start resources...
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        env.fence(0, false);
+        env.fence(0, false).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -1019,5 +1024,87 @@ mod tests {
                 assert!(host.active)
             }
         }
+    }
+
+    // Fencing cannot happen twice without reset happening
+    #[test]
+    fn fence_reset1() {
+        let env = HaEnvironment::new("fence_reset1");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for host in cluster_status.hosts {
+            if host.id.ends_with("1") {
+                assert!(host.fenced)
+            } else {
+                assert!(!host.fenced)
+            }
+        }
+
+        let _b = env.start_agent(1);
+        env.failback(1).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("1") {
+                assert_eq!(res.status, "Unknown");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+
+        env.reset_host(1);
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for host in cluster_status.hosts {
+            assert!(!host.fenced)
+        }
+
+        let _b = env.start_agent(1);
+        env.failback(1).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = get_status(&env.socket_path()).unwrap();
+        for res in cluster_status.resources {
+            if res.id.contains("1") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+        for host in cluster_status.hosts {
+            if host.id.ends_with("1") {
+                assert!(host.fenced)
+            } else {
+                assert!(!host.fenced)
+            }
+        }
+    }
+
+    // Fencing - before reset, fence command results in error
+    #[test]
+    fn fence_reset2() {
+        let env = HaEnvironment::new("fence_reset2");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let _b = env.start_agent(1);
+        env.failback(1).unwrap();
+
+        assert!(env.fence(1, false).is_err());
     }
 }
