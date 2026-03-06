@@ -396,8 +396,7 @@ impl Host {
             return None;
         }
 
-        if self.is_fenced() {
-            //Need to include logic, either programmatically or admin intervention to set this flag back to false
+        if self.fenced() {
             warn!("Host {} was already fenced; not fencing again", self.id());
             return None;
         }

@@ -58,7 +58,6 @@ pub struct Host {
     address: HostAddress,
     fence_agent: Option<FenceAgent>,
     failover_partner: OnceLock<Option<Arc<Host>>>,
-    already_fenced: std::sync::Mutex<bool>,
 
     /// The sender, receiver pair is used to send commands to the Host management task.
     sender: mpsc::Sender<HostMessage>,
@@ -71,7 +70,7 @@ pub struct Host {
     /// Host.
     connected: std::sync::Mutex<bool>,
 
-    /// Tells us if a fence of any kind has been activated on this host
+    /// Whether the Host has been fenced. Cleared by the admin after making the Host healthy again.
     fenced: std::sync::Mutex<bool>,
 }
 
@@ -88,7 +87,6 @@ impl Host {
             },
             fence_agent,
             failover_partner: OnceLock::new(),
-            already_fenced: std::sync::Mutex::new(false),
             sender,
             receiver: tokio::sync::Mutex::new(receiver),
             active: std::sync::Mutex::new(true),
@@ -191,10 +189,6 @@ impl Host {
         }
     }
 
-    pub fn fenced(&self) -> bool {
-        *self.already_fenced.lock().unwrap()
-    }
-
     pub fn set_active(&self, active: bool) {
         *self.active.lock().unwrap() = active;
     }
@@ -211,12 +205,12 @@ impl Host {
         *self.connected.lock().unwrap()
     }
 
-    pub fn is_fenced(&self) -> bool {
+    pub fn fenced(&self) -> bool {
         *self.fenced.lock().unwrap()
     }
 
     pub fn set_fenced(&self, fenced: bool) {
-        *self.already_fenced.lock().unwrap() = fenced;
+        *self.fenced.lock().unwrap() = fenced;
     }
 
     async fn get_client(&self) -> io::Result<ocf_resource_agent::Client> {
