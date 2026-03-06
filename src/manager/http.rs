@@ -210,8 +210,7 @@ async fn host_post(
             partner.command(HostCommand::Failback).await;
         }
         "fence" => {
-            //Check if our partner is fenced
-            if partner.is_fenced() && payload.force != Some(true) {
+            if partner.fenced() && payload.force != Some(true) {
                 return Err((StatusCode::CONFLICT, "Partner is already fenced."));
             }
             host.command(HostCommand::Fence).await;
