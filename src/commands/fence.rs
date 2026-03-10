@@ -16,31 +16,21 @@ pub struct FenceArgs {
 }
 
 pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
-    let addr = match &cli.socket {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-
-    do_fence(addr, &args.hostname, args.force)
+    do_fence(cli.socket.as_deref(), &args.hostname, args.force)
 }
 
-pub fn do_fence(addr: &str, hostname: &str, force_fence: bool) -> HandledResult<()> {
+pub fn do_fence(addr: Option<&str>, hostname: &str, force_fence: bool) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "fence".into(),
         force: Some(force_fence),
     };
 
-    let do_request = || -> reqwest::Result<_> {
-        let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(addr)
-            .build()?;
-
-        client
-            .post(format!("http://halo_manager/hosts/{hostname}"))
-            .json(&params)
-            .send()
-    };
-    let response = do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
+    let client = get_http_client(addr)?;
+    let response = client
+        .post(format!("http://halo_manager/hosts/{hostname}"))
+        .json(&params)
+        .send()
+        .handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
 
     match response.status() {
         StatusCode::OK => return Ok(()),

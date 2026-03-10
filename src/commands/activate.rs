@@ -18,28 +18,14 @@ pub struct DeactivateArgs {
 }
 
 pub fn activate(cli: &Cli, args: &ActivateArgs) -> HandledResult<()> {
-    let addr = match &cli.socket {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-
-    let hostname = &args.hostname;
-
-    do_activate(addr, hostname, true)
+    do_activate(cli.socket.as_deref(), &args.hostname, true)
 }
 
 pub fn deactivate(cli: &Cli, args: &DeactivateArgs) -> HandledResult<()> {
-    let addr = match &cli.socket {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-
-    let hostname = &args.hostname;
-
-    do_activate(addr, hostname, false)
+    do_activate(cli.socket.as_deref(), &args.hostname, false)
 }
 
-pub fn do_activate(socket_path: &str, hostname: &str, active: bool) -> HandledResult<()> {
+pub fn do_activate(socket_path: Option<&str>, hostname: &str, active: bool) -> HandledResult<()> {
     let params = http::HostArgs {
         command: if active {
             "activate".to_string()
@@ -49,18 +35,12 @@ pub fn do_activate(socket_path: &str, hostname: &str, active: bool) -> HandledRe
         force: None,
     };
 
-    let do_request = || -> reqwest::Result<_> {
-        let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(socket_path)
-            .build()?;
-
-        client
-            .post(format!("http://halo_manager/hosts/{hostname}"))
-            .json(&params)
-            .send()
-    };
-
-    let response = do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
+    let client = get_http_client(socket_path)?;
+    let response = client
+        .post(format!("http://halo_manager/hosts/{hostname}"))
+        .json(&params)
+        .send()
+        .handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
 
     match response.status() {
         StatusCode::OK => return Ok(()),

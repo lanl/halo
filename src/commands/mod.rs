@@ -107,23 +107,6 @@ pub enum Commands {
     Deactivate(DeactivateArgs),
 }
 
-/// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
-/// A "nodeset" is a string representing shorthand notation for a group of hosts (e.g.,
-/// 'node[00-05]').
-fn merge_nodesets(nodesets: &[String]) -> Result<nodeset::NodeSet, nodeset::NodeSetParseError> {
-    let mut nodeset = nodeset::NodeSet::new();
-    for nodeset_str in nodesets.iter() {
-        let curr_nodeset = &nodeset_str.parse()?;
-        nodeset = nodeset.union(curr_nodeset);
-    }
-    Ok(nodeset)
-}
-
-/// Convert multiple nodesets into a vector of hostname strings.
-fn nodesets2hostnames(nodesets: &[String]) -> Result<Vec<String>, nodeset::NodeSetParseError> {
-    Ok(merge_nodesets(nodesets)?.iter().collect())
-}
-
 pub fn main(cli: &Cli) -> HandledResult<()> {
     match &cli.command {
         Commands::Discover(args) => return discover::discover(args),
@@ -151,4 +134,35 @@ pub fn main(cli: &Cli) -> HandledResult<()> {
             _ => unreachable!(),
         }
     })
+}
+
+/// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
+/// A "nodeset" is a string representing shorthand notation for a group of hosts (e.g.,
+/// 'node[00-05]').
+fn merge_nodesets(nodesets: &[String]) -> Result<nodeset::NodeSet, nodeset::NodeSetParseError> {
+    let mut nodeset = nodeset::NodeSet::new();
+    for nodeset_str in nodesets.iter() {
+        let curr_nodeset = &nodeset_str.parse()?;
+        nodeset = nodeset.union(curr_nodeset);
+    }
+    Ok(nodeset)
+}
+
+/// Convert multiple nodesets into a vector of hostname strings.
+fn nodesets2hostnames(nodesets: &[String]) -> Result<Vec<String>, nodeset::NodeSetParseError> {
+    Ok(merge_nodesets(nodesets)?.iter().collect())
+}
+
+fn get_http_client(socket_path: Option<&str>) -> HandledResult<reqwest::blocking::Client> {
+    let addr = match socket_path {
+        Some(s) => s,
+        None => &crate::default_socket(),
+    };
+
+    let client = reqwest::blocking::ClientBuilder::new()
+        .unix_socket(addr)
+        .build()
+        .handle_err(|e| eprintln!("Could not create HTTP client at {}: {}", addr, e))?;
+
+    Ok(client)
 }

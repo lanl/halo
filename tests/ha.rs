@@ -83,33 +83,46 @@ mod tests {
         }
 
         fn manage_resource(&self, resource_id: &str) {
-            commands::manage::send_command(&Some(self.socket_path()), resource_id, true).unwrap();
+            commands::manage::send_command(Some(&self.socket_path()), resource_id, true).unwrap();
         }
 
         fn unmanage_resource(&self, resource_id: &str) {
-            commands::manage::send_command(&Some(self.socket_path()), resource_id, false).unwrap();
+            commands::manage::send_command(Some(&self.socket_path()), resource_id, false).unwrap();
         }
 
         fn failback(&self, onto: usize) -> HandledResult<()> {
-            commands::failback::do_failback(&self.socket_path(), &self.agent_id(onto))
+            commands::failback::do_failback(Some(&self.socket_path()), &self.agent_id(onto))
         }
 
         fn fence(&self, which_one: usize, force_fence: bool) -> HandledResult<()> {
-            commands::fence::do_fence(&self.socket_path(), &self.agent_id(which_one), force_fence)
+            commands::fence::do_fence(
+                Some(&self.socket_path()),
+                &self.agent_id(which_one),
+                force_fence,
+            )
         }
 
         fn activate_host(&self, which_one: usize) {
-            commands::activate::do_activate(&self.socket_path(), &self.agent_id(which_one), true)
-                .unwrap();
+            commands::activate::do_activate(
+                Some(&self.socket_path()),
+                &self.agent_id(which_one),
+                true,
+            )
+            .unwrap();
         }
 
         fn deactivate_host(&self, which_one: usize) {
-            commands::activate::do_activate(&self.socket_path(), &self.agent_id(which_one), false)
-                .unwrap();
+            commands::activate::do_activate(
+                Some(&self.socket_path()),
+                &self.agent_id(which_one),
+                false,
+            )
+            .unwrap();
         }
 
         fn reset_host(&self, which_one: usize) {
-            commands::reset::do_reset(&self.socket_path(), &self.agent_id(which_one)).unwrap();
+            commands::reset::do_reset(Some(&self.socket_path()), &self.agent_id(which_one))
+                .unwrap();
         }
     }
 

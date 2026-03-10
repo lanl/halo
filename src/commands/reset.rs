@@ -12,34 +12,22 @@ pub struct ResetArgs {
 }
 
 pub fn reset(cli: &Cli, args: &ResetArgs) -> HandledResult<()> {
-    let addr = match &cli.socket {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-
-    let hostname = &args.hostname;
-
-    do_reset(addr, hostname)
+    do_reset(cli.socket.as_deref(), &args.hostname)
 }
 
-pub fn do_reset(socket_path: &str, hostname: &str) -> HandledResult<()> {
+pub fn do_reset(socket_path: Option<&str>, hostname: &str) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "reset".to_string(),
         force: None,
     };
 
-    let do_request = || -> reqwest::Result<_> {
-        let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(socket_path)
-            .build()?;
+    let client = get_http_client(socket_path)?;
 
-        client
-            .post(format!("http://halo_manager/hosts/{hostname}"))
-            .json(&params)
-            .send()
-    };
-
-    let response = do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
+    let response = client
+        .post(format!("http://halo_manager/hosts/{hostname}"))
+        .json(&params)
+        .send()
+        .handle_err(|e| eprintln!("Error sending HTTP request: {e}"))?;
 
     match response.status() {
         StatusCode::OK => return Ok(()),

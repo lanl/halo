@@ -13,34 +13,21 @@ pub struct FailbackArgs {
 }
 
 pub fn failback(cli: &Cli, args: &FailbackArgs) -> HandledResult<()> {
-    let addr = match &cli.socket {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-
-    let hostname = &args.hostname;
-
-    do_failback(addr, hostname)
+    do_failback(cli.socket.as_deref(), &args.hostname)
 }
 
-pub fn do_failback(addr: &str, hostname: &str) -> HandledResult<()> {
+pub fn do_failback(addr: Option<&str>, hostname: &str) -> HandledResult<()> {
     let params = http::HostArgs {
         command: "failback".into(),
         force: None,
     };
 
-    let do_request = || -> reqwest::Result<_> {
-        let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(addr)
-            .build()?;
-
-        client
-            .post(format!("http://halo_manager/hosts/{hostname}"))
-            .json(&params)
-            .send()
-    };
-
-    let response = do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
+    let client = get_http_client(addr)?;
+    let response = client
+        .post(format!("http://halo_manager/hosts/{hostname}"))
+        .json(&params)
+        .send()
+        .handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
 
     match response.status() {
         StatusCode::OK => return Ok(()),

@@ -18,37 +18,23 @@ pub struct UnManageArgs {
 }
 
 pub fn manage(cli: &Cli, args: &ManageArgs) -> HandledResult<()> {
-    send_command(&cli.socket, &args.resource_id, true)
+    send_command(cli.socket.as_deref(), &args.resource_id, true)
 }
 
 pub fn unmanage(cli: &Cli, args: &UnManageArgs) -> HandledResult<()> {
-    send_command(&cli.socket, &args.resource_id, false)
+    send_command(cli.socket.as_deref(), &args.resource_id, false)
 }
 
-pub fn send_command(
-    socket_path: &Option<String>,
-    resource: &str,
-    managed: bool,
-) -> HandledResult<()> {
-    let addr = match socket_path {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-
+pub fn send_command(socket_path: Option<&str>, resource: &str, managed: bool) -> HandledResult<()> {
     let params = http::SetManagedArgs { managed };
 
-    let do_request = || -> reqwest::Result<_> {
-        let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(addr.as_str())
-            .build()?;
+    let client = get_http_client(socket_path)?;
 
-        client
-            .patch(format!("http://halo_manager/resources/{resource}"))
-            .json(&params)
-            .send()
-    };
-
-    let response = do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
+    let response = client
+        .patch(format!("http://halo_manager/resources/{resource}"))
+        .json(&params)
+        .send()
+        .handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
 
     match response.status() {
         StatusCode::OK => Ok(()),
