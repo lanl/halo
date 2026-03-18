@@ -32,7 +32,7 @@ mod tests {
 
         let _agent = env.start_remote_agents(vec![agent]);
 
-        let cluster = env.cluster(None);
+        let cluster = env.cluster();
 
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -69,7 +69,7 @@ mod tests {
             TestAgent::new(8002, Some("oss01".to_string())),
         ]);
 
-        let cluster = env.cluster(None);
+        let cluster = env.cluster();
 
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -101,7 +101,7 @@ mod tests {
     fn fencing() {
         let env = test_env_helper("fencing");
 
-        let cluster = env.cluster(None);
+        let cluster = env.cluster();
         let host = cluster.hosts().next().unwrap();
 
         // First, make sure that the fence agent correctly reports that the remote is NOT yet

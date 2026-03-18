@@ -56,7 +56,7 @@ pub struct ManagerHandle {
 
 impl Drop for ManagerHandle {
     fn drop(&mut self) {
-        let _ = self.handle.kill();
+        self.handle.kill().unwrap();
 
         // Block until manager actually stops...
         let mut counter = 20;
@@ -104,7 +104,7 @@ pub struct TestEnvironment {
 }
 
 impl TestEnvironment {
-    /// Set up an environment for a test named `name`.
+    /// Set up an environment for a test named `test_id`.
     ///
     /// Creates a specific unique subdirectory for the test and sets up the necessary environment
     /// variables for the remote agents.
@@ -158,9 +158,9 @@ impl TestEnvironment {
         format!("{}/halo.state", &self.private_dir_path)
     }
 
-    /// Build a MgrContext for the given test environment. This assumes that the config file for
-    /// the test is in a yaml file named {test_id}.yaml.
-    pub fn manager_args(&self) -> manager::Cli {
+    /// Construct default arguments for a test manager process. This assumes that the config file
+    /// for the test is in a yaml file named {test_id}.yaml.
+    fn manager_args(&self) -> manager::Cli {
         let config_path = test_path(&format!("{}.yaml", self.test_id));
         let statefile_path = self.statefile_path();
         let socket_path = format!("{}/{}", self.private_dir_path, "test.socket");
@@ -177,13 +177,8 @@ impl TestEnvironment {
     }
 
     /// Build a Cluster for the given test environment.
-    ///
-    /// The test can optionally provide a MgrContext -- this would be used when the test wants
-    /// to receive information from the running Manager thread via reading from the buffer in the
-    /// shared MgrContext. If the caller does not provide a MgrContext, then a default context is
-    /// used.
-    pub fn cluster(&self, args: Option<manager::Cli>) -> Cluster {
-        let args = args.unwrap_or(self.manager_args());
+    pub fn cluster(&self) -> Cluster {
+        let args = self.manager_args();
         Cluster::new(args).unwrap()
     }
 

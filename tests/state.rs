@@ -31,7 +31,7 @@ mod tests {
             env!("CARGO_BIN_EXE_halo_remote"),
             env!("CARGO_BIN_EXE_halo_manager"),
         );
-        let cluster = env.cluster(None);
+        let cluster = env.cluster();
 
         let now = Local::now().naive_local();
         let records: Vec<Record> = vec![
@@ -58,7 +58,7 @@ mod tests {
             let _ = cluster.write_record(record);
         }
 
-        let cluster = env.cluster(None);
+        let cluster = env.cluster();
 
         let host = cluster.get_host("127.0.0.1").unwrap();
         assert!(!host.active());
