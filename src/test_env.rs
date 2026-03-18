@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{fs, io, io::Write, net};
+use std::{collections::HashMap, fs, io, io::Write, net, sync::Mutex};
 
-use crate::{cluster::Cluster, config, config::Config, manager, resource::Resource};
+use crate::{
+    cluster::Cluster,
+    commands::{self, HandledResult},
+    config::{self, Config},
+    manager,
+    resource::Resource,
+};
 
 /// Given a relative `path` in the test directory, prepend the
 /// full path to the test directory.
@@ -385,6 +391,186 @@ pub fn agent_expected_line(op: &str, res: &Resource) -> String {
         ),
         _ => unreachable!(),
     }
+}
+
+/// Holds state related to a single HA test.
+pub struct HaEnvironment {
+    env: TestEnvironment,
+    ports: [u16; 2],
+    test_id: String,
+    config: Config,
+}
+
+impl HaEnvironment {
+    pub fn new(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
+        let ports = get_ports();
+        let env = TestEnvironment::new(test_id.clone(), agent_binary_path, manager_binary_path);
+        let config = ha_config(ports, test_id.clone());
+        env.write_out_config(&config);
+        Self {
+            env,
+            test_id,
+            ports,
+            config,
+        }
+    }
+
+    pub fn start_agent(&self, which_one: usize) -> ChildHandle {
+        let agent = TestAgent {
+            port: self.ports[which_one],
+            id: Some(self.agent_id(which_one)),
+        };
+
+        self.env
+            .start_remote_agents(vec![agent])
+            .into_iter()
+            .next()
+            .unwrap()
+    }
+
+    pub fn agent_id(&self, which_one: usize) -> String {
+        format!("{}_{}", self.test_id, which_one)
+    }
+
+    pub fn start_manager(&self, manage_resources: bool) -> ManagerHandle {
+        self.env.start_manager(manage_resources)
+    }
+
+    pub fn socket_path(&self) -> String {
+        self.env.socket_path()
+    }
+
+    pub fn get_resource_by_id(&self, resource_id: &str) -> &config::Resource {
+        for host in &self.config.hosts {
+            if let Some(resource) = host.resources.get(resource_id) {
+                return resource;
+            }
+        }
+
+        panic!("Unable to find resource with id {resource_id}");
+    }
+
+    pub fn start_resource(&self, resource_id: &str, which_agent: usize) {
+        self.env
+            .start_resource(self.get_resource_by_id(resource_id), which_agent);
+    }
+
+    pub fn stop_resource(&self, resource_id: &str, which_agent: usize) {
+        self.env
+            .stop_resource(self.get_resource_by_id(resource_id), which_agent);
+    }
+
+    pub fn manage_resource(&self, resource_id: &str) {
+        commands::manage::send_command(Some(&self.socket_path()), resource_id, true).unwrap();
+    }
+
+    pub fn unmanage_resource(&self, resource_id: &str) {
+        commands::manage::send_command(Some(&self.socket_path()), resource_id, false).unwrap();
+    }
+
+    pub fn failback(&self, onto: usize) -> HandledResult<()> {
+        commands::failback::do_failback(Some(&self.socket_path()), &self.agent_id(onto))
+    }
+
+    pub fn fence(&self, which_one: usize, force_fence: bool) -> HandledResult<()> {
+        commands::fence::do_fence(
+            Some(&self.socket_path()),
+            &self.agent_id(which_one),
+            force_fence,
+        )
+    }
+
+    pub fn activate_host(&self, which_one: usize) {
+        commands::activate::do_activate(Some(&self.socket_path()), &self.agent_id(which_one), true)
+            .unwrap();
+    }
+
+    pub fn deactivate_host(&self, which_one: usize) {
+        commands::activate::do_activate(
+            Some(&self.socket_path()),
+            &self.agent_id(which_one),
+            false,
+        )
+        .unwrap();
+    }
+
+    pub fn reset_host(&self, which_one: usize) {
+        commands::reset::do_reset(Some(&self.socket_path()), &self.agent_id(which_one)).unwrap();
+    }
+}
+
+impl Drop for HaEnvironment {
+    /// When dropping the environment, make sure that no resources were "double-started"--that
+    /// is, started on both hosts in a pair.
+    fn drop(&mut self) {
+        for host in self.config.hosts.iter() {
+            for (id, resource) in host.resources.iter() {
+                if self.env.resource_is_started(resource, 0)
+                    && self.env.resource_is_started(resource, 1)
+                {
+                    panic!("Resource {} was double-started!", id)
+                }
+            }
+        }
+    }
+}
+
+/// Get a pair of ports to use for a test.
+fn get_ports() -> [u16; 2] {
+    static COUNTER: Mutex<u16> = Mutex::new(8100);
+    let mut port = COUNTER.lock().unwrap();
+    let val = *port;
+    *port += 2;
+    [val, val + 1]
+}
+
+/// Creates an HA-pair config for use in the ha tests.
+fn ha_config(ports: [u16; 2], test_id: String) -> Config {
+    let mut config = Config {
+        hosts: Vec::new(),
+        failover_pairs: Some(vec![vec![
+            format!("127.0.0.1:{}", ports[0]),
+            format!("127.0.0.1:{}", ports[1]),
+        ]]),
+    };
+
+    for (i, port) in ports.iter().enumerate() {
+        let zpool_name = || -> String { format!("zpool_{i}") };
+        let lustre_name = || -> String { format!("mdt_{i}") };
+
+        let root_resource = config::Resource {
+            kind: "heartbeat/ZFS".to_string(),
+            parameters: HashMap::from([("pool".to_string(), zpool_name())]),
+            requires: None,
+        };
+
+        let child_resource = config::Resource {
+            kind: "lustre/Lustre".to_string(),
+            parameters: HashMap::from([
+                ("mountpoint".to_string(), lustre_name()),
+                ("target".to_string(), lustre_name()),
+                ("kind".to_string(), "mdt".to_string()),
+            ]),
+            requires: Some(zpool_name()),
+        };
+
+        let host = config::Host {
+            hostname: format!("127.0.0.1:{}", port),
+            resources: HashMap::from([
+                (zpool_name(), root_resource),
+                (lustre_name(), child_resource),
+            ]),
+            fence_agent: Some("fence_test".to_string()),
+            fence_parameters: Some(HashMap::from([
+                ("target".to_string(), format!("{test_id}_{i}")),
+                ("test_id".to_string(), test_id.clone()),
+            ])),
+        };
+
+        config.hosts.push(host);
+    }
+
+    config
 }
 
 /// When a remote agent is running in the test environment, it may need to be fenced. In order to
