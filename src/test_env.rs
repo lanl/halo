@@ -7,7 +7,7 @@ use crate::{
     cluster::Cluster,
     commands::{self, HandledResult},
     config::{self, Config},
-    manager,
+    manager::{self, http},
     resource::Resource,
 };
 
@@ -492,6 +492,10 @@ impl HaEnvironment {
     pub fn reset_host(&self, which_one: usize) {
         commands::reset::do_reset(Some(&self.socket_path()), &self.agent_id(which_one)).unwrap();
     }
+
+    pub fn get_status(&self) -> http::ClusterJson {
+        commands::status::get_status(Some(&self.socket_path())).unwrap()
+    }
 }
 
 impl Drop for HaEnvironment {
@@ -510,7 +514,7 @@ impl Drop for HaEnvironment {
     }
 }
 
-/// Get a pair of ports to use for a test.
+/// Get a pair of ports to use for an HA test.
 fn get_ports() -> [u16; 2] {
     static COUNTER: Mutex<u16> = Mutex::new(8100);
     let mut port = COUNTER.lock().unwrap();
