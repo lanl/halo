@@ -595,7 +595,7 @@ mod tests {
             }
         }
         for host in cluster_status.hosts {
-            if host.id.contains("0") {
+            if host.id.ends_with("0") {
                 assert!(!host.connected)
             } else {
                 assert!(host.connected)
@@ -633,7 +633,7 @@ mod tests {
             }
         }
         for host in cluster_status.hosts {
-            if host.id.contains("0") {
+            if host.id.ends_with("0") {
                 assert!(!host.connected)
             } else {
                 assert!(host.connected)

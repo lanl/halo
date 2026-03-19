@@ -130,7 +130,6 @@ impl Host {
                     }
                 }
                 Err(_e) => {
-                    self.set_connected(false);
                     debug!(
                         "Host {} failed to establish connection to its remote agent.",
                         self.id()
@@ -482,6 +481,7 @@ impl Host {
         };
 
         self.set_fenced(true);
+        self.set_connected(false);
 
         warn!("Host {} has been powered off.", self.id());
 
