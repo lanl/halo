@@ -102,7 +102,7 @@ pub fn get_status(socket: Option<&str>) -> HandledResult<http::ClusterJson> {
     let response = client
         .get("http://halo_manager/status")
         .send()
-        .handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
+        .handle_err(|e| eprintln!("Error making HTTP request: {e:?}"))?;
 
     response
         .json()
