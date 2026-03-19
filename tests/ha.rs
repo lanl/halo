@@ -3,7 +3,7 @@
 
 #[cfg(test)]
 mod tests {
-    use halo_lib::{commands::status::get_status, test_env::*};
+    use halo_lib::test_env::*;
 
     /// Create a TestEnvironment for a test.
     ///
@@ -52,8 +52,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(1));
 
         // Then run the status command to be sure the resources started
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
 
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running");
@@ -71,8 +70,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
 
         for res in cluster_status.resources {
             assert_eq!(res.status, "Error");
@@ -96,8 +94,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
 
         for res in cluster_status.resources {
             if res.id.contains("0") {
@@ -122,8 +119,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
 
         for res in cluster_status.resources {
             if res.id.contains("0") {
@@ -147,8 +143,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
 
         for res in cluster_status.resources {
             assert_eq!(res.status, "Error");
@@ -159,8 +154,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running");
         }
@@ -185,8 +179,7 @@ mod tests {
 
         let _m = env.start_manager(true);
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Error");
         }
@@ -195,7 +188,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -222,8 +215,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
-        eprintln!("{cluster_status:?}");
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -249,7 +241,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -263,7 +255,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
@@ -288,7 +280,7 @@ mod tests {
         let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running (Failed Over)");
         }
@@ -296,7 +288,7 @@ mod tests {
         env.failback(0).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -308,7 +300,7 @@ mod tests {
         env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running");
         }
@@ -329,7 +321,7 @@ mod tests {
         env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running");
         }
@@ -361,7 +353,7 @@ mod tests {
         env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running");
         }
@@ -377,7 +369,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Stopped");
         }
@@ -399,7 +391,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -421,7 +413,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             assert_eq!(res.status, "Running");
         }
@@ -431,7 +423,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -450,7 +442,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
@@ -552,7 +544,7 @@ mod tests {
             env.start_resource("zpool_0", 0);
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id == "mdt_0" {
                 assert_eq!(res.status, "Stopped");
@@ -570,7 +562,7 @@ mod tests {
             env.start_resource("mdt_0", 0);
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if manual_fail_over && res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
@@ -594,7 +586,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
@@ -632,7 +624,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
@@ -674,7 +666,7 @@ mod tests {
         env.manage_resource("zpool_0");
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if start_failed_over == Some(true) && res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
@@ -689,7 +681,7 @@ mod tests {
 
         env.unmanage_resource("zpool_0");
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert!(!res.managed);
@@ -702,7 +694,7 @@ mod tests {
         env.stop_resource("mdt_0", 0);
         env.stop_resource("zpool_0", 0);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Stopped");
@@ -731,7 +723,7 @@ mod tests {
         env.failback(0).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for host in cluster_status.hosts {
             assert!(host.active)
         }
@@ -757,7 +749,7 @@ mod tests {
         drop(_b);
 
         std::thread::sleep(std::time::Duration::from_secs(3));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for host in cluster_status.hosts {
             if host.id.contains("0") {
                 assert!(!host.active);
@@ -775,7 +767,7 @@ mod tests {
         let _b = env.start_agent(1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for host in cluster_status.hosts {
             if host.id.contains("0") {
                 assert!(!host.active);
@@ -825,7 +817,7 @@ mod tests {
         let _b = env.start_agent(1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
@@ -840,7 +832,7 @@ mod tests {
         env.deactivate_host(0);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running (Failed Over)");
@@ -869,7 +861,7 @@ mod tests {
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for host in cluster_status.hosts {
             if host.id.ends_with("1") {
                 assert!(host.fenced)
@@ -884,7 +876,7 @@ mod tests {
 
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("1") {
                 assert_eq!(res.status, "Unknown");
@@ -894,7 +886,7 @@ mod tests {
         }
 
         env.reset_host(1);
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for host in cluster_status.hosts {
             assert!(!host.fenced)
         }
@@ -904,7 +896,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(1));
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = get_status(&env.socket_path()).unwrap();
+        let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("1") {
                 assert_eq!(res.status, "Running (Failed Over)");

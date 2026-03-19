@@ -3,10 +3,7 @@
 
 use clap::Args;
 
-use crate::{
-    commands::{Cli, Handle, HandledResult},
-    manager::http,
-};
+use crate::{commands::*, manager::http};
 
 #[derive(Args, Debug, Clone)]
 pub struct StatusArgs {
@@ -15,12 +12,7 @@ pub struct StatusArgs {
 }
 
 pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
-    let addr = match &cli.socket {
-        Some(s) => s,
-        None => &crate::default_socket(),
-    };
-
-    let cluster = get_status(addr)?;
+    let cluster = get_status(cli.socket.as_deref())?;
 
     for res in cluster.resources {
         if args.exclude_normal && res.status == "Running" {
@@ -104,15 +96,15 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
     Ok(())
 }
 
-pub fn get_status(socket: &str) -> HandledResult<http::ClusterJson> {
-    let do_request = || -> reqwest::Result<http::ClusterJson> {
-        let client = reqwest::blocking::ClientBuilder::new()
-            .unix_socket(socket)
-            .build()?;
+pub fn get_status(socket: Option<&str>) -> HandledResult<http::ClusterJson> {
+    let client = get_http_client(socket)?;
 
-        let response = client.get("http://halo_manager/status").send()?;
-        response.json()
-    };
+    let response = client
+        .get("http://halo_manager/status")
+        .send()
+        .handle_err(|e| eprintln!("Error making HTTP request: {e}"))?;
 
-    do_request().handle_err(|e| eprintln!("Error making HTTP request: {e}"))
+    response
+        .json()
+        .handle_err(|e| eprintln!("Error decoding JSON: {e}"))
 }
