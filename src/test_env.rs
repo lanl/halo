@@ -227,7 +227,12 @@ impl TestEnvironment {
     /// Starts the manager in a new process for
     pub fn start_manager(&self, manage_resources: bool) -> ManagerHandle {
         let log_file = format!("{}/manager_log", &self.private_dir_path);
-        let log_file = std::fs::File::create(log_file).unwrap();
+        let log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .append(true)
+            .open(log_file)
+            .unwrap();
 
         let socket_path = format!("{}/test.socket", &self.private_dir_path);
         let config_path = format!("{}/config.yaml", &self.private_dir_path);
@@ -339,6 +344,7 @@ fn wait_for_service(addr: &str, tcp: bool) {
             match std::os::unix::net::UnixStream::connect(addr) {
                 Ok(_) => return,
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {}
                 Err(e) => {
                     panic!("Unexpected error attempting to connect to manager at {addr}: {e}")
                 }
@@ -429,6 +435,12 @@ impl HaEnvironment {
 
     pub fn start_manager(&self, manage_resources: bool) -> ManagerHandle {
         self.env.start_manager(manage_resources)
+    }
+
+    pub fn restart_manager(&self, old_manager: ManagerHandle) -> ManagerHandle {
+        drop(old_manager);
+
+        self.env.start_manager(true)
     }
 
     pub fn socket_path(&self) -> String {
