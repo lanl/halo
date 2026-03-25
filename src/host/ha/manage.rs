@@ -167,10 +167,6 @@ impl Host {
         cluster: &Arc<Cluster>,
         state: &mut HostState,
     ) {
-        let home_message =
-            "Cannot determine resource status because connection failed to its home host.";
-        let away_message =
-            "Cannot determine resource status because connection failed to its failover host.";
         let failback_message = format!(
             "Warning: Failback command received by host {} but remote is disconnected.",
             self.id()
@@ -178,23 +174,33 @@ impl Host {
 
         loop {
             match self.receive_message().await {
-                HostMessage::Resource(message) => match message.kind {
-                    Message::ManageResourceGroup => {
-                        let rg = cluster.get_resource_group(&message.resource_group.id);
-                        rg.root
-                            .set_status_recursive(ResourceStatus::Error(home_message.to_string()));
-                        state.manage_these_resources.push(message.resource_group);
-                    }
-                    Message::CheckResourceGroup => {
-                        let rg = cluster.get_resource_group(&message.resource_group.id);
-                        rg.root
-                            .set_status_recursive(ResourceStatus::Error(away_message.to_string()));
-                        state.check_these_resources.push(message.resource_group);
-                    }
-                    other => {
-                        panic!("Unexpected message type {other:?} in client disconnected routine.");
-                    }
-                },
+                HostMessage::Resource(message) => {
+                    let check_text = format!("Cannot determine resource status because connection failed to its {} host.",
+                            match &message.resource_group.location {
+                                Location::Home => "home",
+                                Location::Away => "failover",
+                            }
+                    );
+                    match message.kind {
+                        Message::ManageResourceGroup => {
+                            let rg = cluster.get_resource_group(&message.resource_group.id);
+                            rg.root
+                                .set_status_recursive(ResourceStatus::Error(check_text));
+                            state.manage_these_resources.push(message.resource_group);
+                        }
+                        Message::CheckResourceGroup => {
+                            let rg = cluster.get_resource_group(&message.resource_group.id);
+                            rg.root
+                                .set_status_recursive(ResourceStatus::Error(check_text));
+                            state.check_these_resources.push(message.resource_group);
+                        }
+                        other => {
+                            panic!(
+                                "Unexpected message type {other:?} in client disconnected routine."
+                            );
+                        }
+                    };
+                }
                 HostMessage::Command(command) => match command {
                     HostCommand::Failback => warn!("{}", failback_message),
                     HostCommand::Fence => self.do_failover(state, cluster).await,
@@ -667,7 +673,7 @@ impl Host {
                 HostMessage::None
             }
             Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
-            Err(ManagementError::Connection) => todo!(),
+            Err(ManagementError::Connection) => new_message(token, Message::RequestFailover),
         }
     }
 
