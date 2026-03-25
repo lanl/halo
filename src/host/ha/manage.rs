@@ -204,7 +204,6 @@ impl Host {
                 HostMessage::Command(command) => match command {
                     HostCommand::Failback => warn!("{}", failback_message),
                     HostCommand::Fence => self.do_failover(state, cluster).await,
-                    HostCommand::Activate => todo!("activate in disconnected mode"),
                     // Deactivate message: nothing to do because the remote is disconnected. No
                     // ability to stop resources even if they happened to be running on the remote.
                     HostCommand::Deactivate => {}
@@ -256,7 +255,6 @@ impl Host {
                 HostMessage::Command(command) => {
                     match command {
                         HostCommand::Failback => self.do_failback(state, cluster),
-                        HostCommand::Activate => {}
                         HostCommand::Deactivate => self.deactivate(state),
                         HostCommand::Fence => self.admin_fence_request(state),
                     };
