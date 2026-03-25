@@ -702,12 +702,16 @@ impl Host {
                     self.send_message_to_partner(token, Message::ObserveResourceGroup)
                         .await;
                 }
-            }
-            Err(ManagementError::Configuration) => todo!(),
-            Err(ManagementError::Connection) => todo!(),
-        };
 
-        HostMessage::None
+                HostMessage::None
+            }
+            Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
+            Err(ManagementError::Connection) => {
+                self.send_message_to_partner(token, Message::ObserveResourceGroup)
+                    .await;
+                HostMessage::None
+            }
+        }
     }
 
     /// Management of a resource group proceeds by calling the management loop method on
