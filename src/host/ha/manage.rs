@@ -623,7 +623,7 @@ impl Host {
     ) -> (ResourceToken, bool) {
         match is_resource_group_running_here(&token, cluster, client, false).await {
             Ok(is_running_here) => (token, is_running_here),
-            Err(_) => todo!(),
+            Err(_) => (token, false),
         }
     }
 
