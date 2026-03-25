@@ -43,9 +43,6 @@ pub enum HostCommand {
     /// them from the partner and start managing them (if possible).
     Failback,
 
-    /// Activate this Host - it can now begin managing resources.
-    Activate,
-
     /// Deactivate this Host - HALO must not start any resources on this Host while it is
     /// deactivated.
     Deactivate,
@@ -236,12 +233,9 @@ impl Host {
         cluster
             .write_record_nonblocking(Record::new(event, self.id(), None))
             .await?;
-        self.command(if activate {
-            HostCommand::Activate
-        } else {
-            HostCommand::Deactivate
-        })
-        .await;
+        if !activate {
+            self.command(HostCommand::Deactivate).await;
+        }
         Ok(())
     }
 }
