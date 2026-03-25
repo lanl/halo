@@ -105,4 +105,56 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn restart_fence2() {
+        let env = test_env_helper("restart_fence2");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        drop(_m);
+        // While manager is stopped, manually fail back resources...
+        env.stop_resource("mdt_1", 0);
+        env.stop_resource("zpool_1", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _m = env.start_manager(true);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("1") {
+                assert_eq!(res.status, "Error");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+        for host in cluster_status.hosts {
+            if host.id.ends_with("1") {
+                assert!(host.fenced);
+                assert!(!host.connected)
+            } else {
+                assert!(!host.fenced);
+                assert!(host.connected)
+            }
+        }
+
+        // now fence manually:
+        env.fence(1, true).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("1") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+    }
 }

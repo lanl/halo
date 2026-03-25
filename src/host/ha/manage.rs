@@ -145,7 +145,7 @@ impl Host {
     ///
     /// In the meantime, also listen for messages from the partner host task as well as the admin
     /// CLI utility, and handle them.
-    async fn remote_disconnected_loop(&self, cluster: &Cluster, state: &mut HostState) {
+    async fn remote_disconnected_loop(&self, cluster: &Arc<Cluster>, state: &mut HostState) {
         tokio::select! {
             _ = self.remote_liveness_check(cluster) => {}
             _ = self.handle_messages_remote_disconnected(cluster, state) => {}
@@ -162,7 +162,11 @@ impl Host {
         }
     }
 
-    async fn handle_messages_remote_disconnected(&self, cluster: &Cluster, state: &mut HostState) {
+    async fn handle_messages_remote_disconnected(
+        &self,
+        cluster: &Arc<Cluster>,
+        state: &mut HostState,
+    ) {
         let home_message =
             "Cannot determine resource status because connection failed to its home host.";
         let away_message =
@@ -193,7 +197,7 @@ impl Host {
                 },
                 HostMessage::Command(command) => match command {
                     HostCommand::Failback => warn!("{}", failback_message),
-                    HostCommand::Fence => todo!(),
+                    HostCommand::Fence => self.do_failover(state, cluster).await,
                     HostCommand::Activate => todo!("activate in disconnected mode"),
                     // Deactivate message: nothing to do because the remote is disconnected. No
                     // ability to stop resources even if they happened to be running on the remote.
@@ -485,7 +489,12 @@ impl Host {
 
         warn!("Host {} has been powered off.", self.id());
 
-        for token in take(&mut state.resources_in_transit) {
+        let tokens_to_send = take(&mut state.resources_in_transit)
+            .into_iter()
+            .chain(take(&mut state.manage_these_resources).into_iter())
+            .chain(take(&mut state.check_these_resources).into_iter());
+
+        for token in tokens_to_send {
             let rg = cluster.get_resource_group(&token.id);
             // We know resource is stopped if fencing succeeded:
             rg.root.set_status_recursive(ResourceStatus::Stopped);
@@ -494,6 +503,7 @@ impl Host {
                 .await;
         }
     }
+
     fn admin_fence_request(&self, state: &mut HostState) {
         state.admin_requested_fence = true;
         for task in &state.outstanding_resource_tasks {
