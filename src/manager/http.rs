@@ -204,7 +204,7 @@ async fn host_post(
 
         host.set_fenced(false);
         return match cluster
-            .write_record_nonblocking(Record::new(Event::FenceReset, host.id(), None))
+            .write_record_nonblocking(Record::new(Event::FenceReset, host.id(), payload.comment))
             .await
         {
             Ok(()) => Ok(()),
@@ -251,7 +251,10 @@ async fn host_post(
                 ));
             };
 
-            return match host.update_activation_status(true, &cluster).await {
+            return match host
+                .update_activation_status(true, payload.comment, &cluster)
+                .await
+            {
                 Ok(()) => Ok(()),
                 Err(_) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -267,7 +270,10 @@ async fn host_post(
                 ));
             }
 
-            return match host.update_activation_status(false, &cluster).await {
+            return match host
+                .update_activation_status(false, payload.comment, &cluster)
+                .await
+            {
                 Ok(()) => Ok(()),
                 Err(_) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
