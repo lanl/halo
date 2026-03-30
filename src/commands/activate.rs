@@ -9,23 +9,46 @@ use crate::{commands::*, manager::http};
 pub struct ActivateArgs {
     /// Host to activate
     hostname: String,
+
+    /// Reason for deactivating the host.
+    #[arg(long)]
+    reason: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct DeactivateArgs {
     /// Host to deactivate
     hostname: String,
+
+    /// Reason for deactivating the host.
+    #[arg(long)]
+    reason: Option<String>,
 }
 
 pub fn activate(cli: &Cli, args: &ActivateArgs) -> HandledResult<()> {
-    do_activate(cli.socket.as_deref(), &args.hostname, true)
+    do_activate(
+        cli.socket.as_deref(),
+        &args.hostname,
+        args.reason.clone(),
+        true,
+    )
 }
 
 pub fn deactivate(cli: &Cli, args: &DeactivateArgs) -> HandledResult<()> {
-    do_activate(cli.socket.as_deref(), &args.hostname, false)
+    do_activate(
+        cli.socket.as_deref(),
+        &args.hostname,
+        args.reason.clone(),
+        false,
+    )
 }
 
-pub fn do_activate(socket_path: Option<&str>, hostname: &str, active: bool) -> HandledResult<()> {
+pub fn do_activate(
+    socket_path: Option<&str>,
+    hostname: &str,
+    comment: Option<String>,
+    active: bool,
+) -> HandledResult<()> {
     let params = http::HostArgs {
         command: if active {
             "activate".to_string()
@@ -33,6 +56,7 @@ pub fn do_activate(socket_path: Option<&str>, hostname: &str, active: bool) -> H
             "deactivate".to_string()
         },
         force: None,
+        comment,
     };
 
     let client = get_http_client(socket_path)?;

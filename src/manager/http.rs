@@ -183,6 +183,7 @@ async fn set_managed(
 pub struct HostArgs {
     pub command: String,
     pub force: Option<bool>,
+    pub comment: Option<String>,
 }
 
 async fn host_post(

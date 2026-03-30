@@ -9,17 +9,24 @@ use crate::{commands::*, manager::http};
 pub struct FailbackArgs {
     /// Host to failback onto
     #[arg(long = "onto")]
-    hostname: String,
+    pub hostname: String,
+
+    /// Reason for performing failback operation.
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 pub fn failback(cli: &Cli, args: &FailbackArgs) -> HandledResult<()> {
-    do_failback(cli.socket.as_deref(), &args.hostname)
+    do_failback(cli.socket.as_deref(), args)
 }
 
-pub fn do_failback(addr: Option<&str>, hostname: &str) -> HandledResult<()> {
+pub fn do_failback(addr: Option<&str>, args: &FailbackArgs) -> HandledResult<()> {
+    let hostname = args.hostname.clone();
+
     let params = http::HostArgs {
         command: "failback".into(),
         force: None,
+        comment: args.reason.clone(),
     };
 
     let client = get_http_client(addr)?;
