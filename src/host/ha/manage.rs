@@ -479,18 +479,26 @@ impl Host {
     }
 
     async fn do_failover(&self, state: &mut HostState, cluster: &Arc<Cluster>) {
-        self.do_fence_nonblocking(FenceCommand::Off)
-            .await
-            .expect("Fencing failed... TODO: handle this case...");
-
-        // TODO: need to figure out how to determine if manager or admin initiated fence here.
-        match cluster
-            .write_record_nonblocking(Record::new(Event::Fence, self.id(), Some(String::from(""))))
-            .await
-        {
-            Ok(_) => {}
-            Err(_) => todo!(),
+        if self.do_fence_nonblocking(FenceCommand::Off).await.is_err() {
+            self.finish_admin_fence_request(FenceResult::PowerCommandFailed);
+            todo!("Fencing failed... TODO: handle this case...")
         };
+
+        let reason = if self.fence_request_in_progress() {
+            self.fence_reason()
+        } else {
+            Some("Manager service initiated fence action.".to_string())
+        };
+
+        if cluster
+            .write_record_nonblocking(Record::new(Event::Fence, self.id(), reason))
+            .await
+            .is_err()
+        {
+            self.finish_admin_fence_request(FenceResult::WritingStateRecordFailed);
+        } else {
+            self.finish_admin_fence_request(FenceResult::Success);
+        }
 
         self.set_fenced(true);
         self.set_connected(false);
@@ -513,7 +521,7 @@ impl Host {
     }
 
     /// Returns true if there were no resource tasks running -- so remote_connected_loop() should
-    /// break out immediately.
+    /// return immediately.
     fn admin_fence_request(&self, state: &mut HostState) -> bool {
         state.admin_requested_fence = true;
         if state.outstanding_resource_tasks.is_empty() {
