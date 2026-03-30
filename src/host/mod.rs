@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     cluster::Cluster,
@@ -49,6 +49,31 @@ pub enum HostCommand {
     Fence,
 }
 
+#[derive(Debug)]
+struct FenceEvent {
+    /// The reason given by the admin for fencing.
+    reason: Option<String>,
+
+    /// A channel used to communicate the result of the fence back to the server task that
+    /// initiated the request. This in turn allows the result to be communicated back to the CLI
+    /// request.
+    result: oneshot::Sender<FenceResult>,
+}
+
+impl FenceEvent {
+    fn new(reason: Option<String>, result: oneshot::Sender<FenceResult>) -> Self {
+        Self { reason, result }
+    }
+}
+
+#[derive(Debug)]
+pub enum FenceResult {
+    Success,
+    AlreadyInProgress,
+    PowerCommandFailed,
+    WritingStateRecordFailed,
+}
+
 /// A server on which services can run.
 #[derive(Debug)]
 pub struct Host {
@@ -69,6 +94,10 @@ pub struct Host {
 
     /// Whether the Host has been fenced. Cleared by the admin after making the Host healthy again.
     fenced: std::sync::Mutex<bool>,
+
+    /// Information on an in-progress fence event--or None if no admin fence request is
+    /// in-progress.
+    fence_event: std::sync::Mutex<Option<FenceEvent>>,
 }
 
 impl Host {
@@ -89,6 +118,7 @@ impl Host {
             active: std::sync::Mutex::new(true),
             connected: std::sync::Mutex::new(false),
             fenced: std::sync::Mutex::new(false),
+            fence_event: std::sync::Mutex::new(None),
         }
     }
 
@@ -238,6 +268,71 @@ impl Host {
             self.command(HostCommand::Deactivate).await;
         }
         Ok(())
+    }
+
+    /// True if an admin fence request is in progress. This only applies to admin-initiated
+    /// fencing, not automatic manager fencing.
+    pub fn fence_request_in_progress(&self) -> bool {
+        (*self.fence_event.lock().unwrap()).is_some()
+    }
+
+    /// Submit a fence request in response to an admin CLI command, and wait for the request to
+    /// complete.
+    ///
+    /// This creates a tokio oneshot channel that is used to communicate the fence result back to
+    /// this task. Because the fence is performed on different tasks, running concurrently with
+    /// this one, the channel is needed to allow this task to wait until fencing is finished.
+    pub async fn submit_admin_fence_request_and_wait(
+        self: &Arc<Self>,
+        comment: Option<String>,
+    ) -> FenceResult {
+        if self.fence_request_in_progress() {
+            return FenceResult::AlreadyInProgress;
+        }
+
+        // Create a channel for transmitting the result of the fence request back to this task:
+        let (tx, rx) = oneshot::channel::<FenceResult>();
+
+        {
+            let fence_event = FenceEvent::new(comment, tx);
+            *self.fence_event.lock().unwrap() = Some(fence_event);
+        }
+
+        self.command(HostCommand::Fence).await;
+
+        rx.await
+            .expect("Recieving on oneshot channel should not fail.")
+    }
+
+    /// Returns the reason for fencing--if one is available.
+    ///
+    /// Returns None if no admin fence request is currently in progress, and also if there is an
+    /// admin fence request in progress but the admin did not specify a reason. If distinguishing
+    /// these cases is important, the caller must check self.fence_request_in_progress().
+    pub fn fence_reason(&self) -> Option<String> {
+        (*self.fence_event.lock().unwrap())
+            .as_ref()
+            .and_then(|event| event.reason.clone())
+    }
+
+    /// Complete a fence operation by informing the waiting task of the result.
+    ///
+    /// If a fence operation occurred as a result of admin CLI request, there is a task waiting on
+    /// the result of that operation before it can return the result to the CLI program. This
+    /// routine is used to send the result back to that task, if such a task exists.
+    pub fn finish_admin_fence_request(&self, res: FenceResult) {
+        if !self.fence_request_in_progress() {
+            return;
+        }
+
+        let fence_event = (*self.fence_event.lock().unwrap())
+            .take()
+            .expect("Fence event must be set in order for admin fence request to be in progress.");
+
+        fence_event
+            .result
+            .send(res)
+            .expect("Sending on oneshot channel should not fail.");
     }
 }
 

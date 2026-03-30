@@ -42,7 +42,7 @@ pub fn do_fence(addr: Option<&str>, args: &FenceArgs) -> HandledResult<()> {
 
     match response.status() {
         StatusCode::OK => return Ok(()),
-        StatusCode::NOT_FOUND => {
+        StatusCode::NOT_FOUND | StatusCode::INTERNAL_SERVER_ERROR => {
             eprintln!("Could not fence '{hostname}': host not found.");
         }
         StatusCode::BAD_REQUEST | StatusCode::CONFLICT => {

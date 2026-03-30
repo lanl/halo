@@ -16,7 +16,7 @@ use {
 
 use crate::{
     cluster::Cluster,
-    host::{Host, HostCommand},
+    host::{FenceResult, Host, HostCommand},
     resource::{Resource, ResourceStatus},
     state::{Event, Record},
 };
@@ -242,7 +242,24 @@ async fn host_post(
             if host.fenced() && payload.force != Some(true) {
                 return Err((StatusCode::CONFLICT, "Host has already been fenced."));
             }
-            host.command(HostCommand::Fence).await;
+            return match host
+                .submit_admin_fence_request_and_wait(payload.comment)
+                .await
+            {
+                FenceResult::Success => Ok(()),
+                FenceResult::AlreadyInProgress => Err((
+                    StatusCode::CONFLICT,
+                    "Another fence request is already in progress. Wait for it to finish.",
+                )),
+                FenceResult::PowerCommandFailed => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Fence operation failed. The host is not powered off.",
+                )),
+                FenceResult::WritingStateRecordFailed => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Fence operation succeeded, but a record was not appended to the state file.",
+                )),
+            };
         }
         "activate" => {
             let Some(_) = host.failover_partner() else {
@@ -252,15 +269,15 @@ async fn host_post(
                 ));
             };
 
-            return match host
+            if host
                 .update_activation_status(true, payload.comment, &cluster)
                 .await
+                .is_err()
             {
-                Ok(()) => Ok(()),
-                Err(_) => Err((
+                return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to append record to statefile.",
-                )),
+                ));
             };
         }
         "deactivate" => {
@@ -271,15 +288,15 @@ async fn host_post(
                 ));
             }
 
-            return match host
+            if host
                 .update_activation_status(false, payload.comment, &cluster)
                 .await
+                .is_err()
             {
-                Ok(()) => Ok(()),
-                Err(_) => Err((
+                return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to append record to statefile.",
-                )),
+                ));
             };
         }
         _ => return Err((StatusCode::BAD_REQUEST, "Unsupported command.")),
