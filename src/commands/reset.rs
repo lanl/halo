@@ -7,18 +7,25 @@ use crate::{commands::*, manager::http};
 
 #[derive(Args, Debug, Clone)]
 pub struct ResetArgs {
-    /// Host to activate
-    hostname: String,
+    /// Host to reset.
+    pub hostname: String,
+
+    /// Reason for reseting the host's fence status.
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 pub fn reset(cli: &Cli, args: &ResetArgs) -> HandledResult<()> {
-    do_reset(cli.socket.as_deref(), &args.hostname)
+    do_reset(cli.socket.as_deref(), args)
 }
 
-pub fn do_reset(socket_path: Option<&str>, hostname: &str) -> HandledResult<()> {
+pub fn do_reset(socket_path: Option<&str>, args: &ResetArgs) -> HandledResult<()> {
+    let hostname = args.hostname.clone();
+
     let params = http::HostArgs {
         command: "reset".to_string(),
         force: None,
+        comment: args.reason.clone(),
     };
 
     let client = get_http_client(socket_path)?;

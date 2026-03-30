@@ -476,33 +476,55 @@ impl HaEnvironment {
     }
 
     pub fn failback(&self, onto: usize) -> HandledResult<()> {
-        commands::failback::do_failback(Some(&self.socket_path()), &self.agent_id(onto))
+        commands::failback::do_failback(
+            Some(&self.socket_path()),
+            &commands::failback::FailbackArgs {
+                hostname: self.agent_id(onto),
+                reason: Some("failback in test environment".to_string()),
+            },
+        )
     }
 
-    pub fn fence(&self, which_one: usize, force_fence: bool) -> HandledResult<()> {
+    pub fn fence(&self, which_one: usize, force: bool) -> HandledResult<()> {
         commands::fence::do_fence(
             Some(&self.socket_path()),
-            &self.agent_id(which_one),
-            force_fence,
+            &commands::fence::FenceArgs {
+                hostname: self.agent_id(which_one),
+                force,
+                reason: Some("fence in test environment".to_string()),
+            },
         )
     }
 
     pub fn activate_host(&self, which_one: usize) {
-        commands::activate::do_activate(Some(&self.socket_path()), &self.agent_id(which_one), true)
-            .unwrap();
+        commands::activate::do_activate(
+            Some(&self.socket_path()),
+            &self.agent_id(which_one),
+            Some("activate in test environment".to_string()),
+            true,
+        )
+        .unwrap();
     }
 
     pub fn deactivate_host(&self, which_one: usize) {
         commands::activate::do_activate(
             Some(&self.socket_path()),
             &self.agent_id(which_one),
+            Some("deactivate in test environment".to_string()),
             false,
         )
         .unwrap();
     }
 
     pub fn reset_host(&self, which_one: usize) {
-        commands::reset::do_reset(Some(&self.socket_path()), &self.agent_id(which_one)).unwrap();
+        commands::reset::do_reset(
+            Some(&self.socket_path()),
+            &commands::reset::ResetArgs {
+                hostname: self.agent_id(which_one),
+                reason: Some("reset in test environment".to_string()),
+            },
+        )
+        .unwrap();
     }
 
     pub fn get_status(&self) -> http::ClusterJson {

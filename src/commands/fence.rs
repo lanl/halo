@@ -9,20 +9,28 @@ use crate::{commands::*, manager::http};
 pub struct FenceArgs {
     /// Host to fence
     #[arg()]
-    hostname: String,
+    pub hostname: String,
 
+    /// Fence the host even if it was already fenced, without a reset occurring since.
     #[arg(long)]
-    force: bool,
+    pub force: bool,
+
+    /// Reason for fencing the host.
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 pub fn fence(cli: &Cli, args: &FenceArgs) -> HandledResult<()> {
-    do_fence(cli.socket.as_deref(), &args.hostname, args.force)
+    do_fence(cli.socket.as_deref(), args)
 }
 
-pub fn do_fence(addr: Option<&str>, hostname: &str, force_fence: bool) -> HandledResult<()> {
+pub fn do_fence(addr: Option<&str>, args: &FenceArgs) -> HandledResult<()> {
+    let hostname = args.hostname.clone();
+
     let params = http::HostArgs {
         command: "fence".into(),
-        force: Some(force_fence),
+        force: Some(args.force),
+        comment: args.reason.clone(),
     };
 
     let client = get_http_client(addr)?;
@@ -38,7 +46,7 @@ pub fn do_fence(addr: Option<&str>, hostname: &str, force_fence: bool) -> Handle
             eprintln!("Could not fence '{hostname}': host not found.");
         }
         StatusCode::BAD_REQUEST | StatusCode::CONFLICT => {
-            eprint!("Could not fence '{hostname}': ");
+            eprint!("Will not fence '{hostname}': ");
             match response.text() {
                 Ok(text) => eprintln!("{text}"),
                 Err(e) => eprintln!("Error decoding response: {e}"),
