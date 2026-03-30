@@ -617,11 +617,8 @@ mod tests {
         let _b = env.start_agent(1);
         let _m = env.start_manager(true);
 
-        // Sleep for a second to give the manager enough time to start resources...
         std::thread::sleep(std::time::Duration::from_secs(1));
-
         env.fence(0, false).unwrap();
-
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         let cluster_status = env.get_status();
@@ -637,6 +634,42 @@ mod tests {
                 assert!(!host.connected)
             } else {
                 assert!(host.connected)
+            }
+        }
+    }
+
+    /// Fence node that is running no resources at all.
+    #[test]
+    fn admin_fence3() {
+        let env = test_env_helper("admin_fence3");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.fence(1, false).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+        for host in cluster_status.hosts {
+            if host.id.ends_with("0") {
+                assert!(host.connected)
+            } else {
+                assert!(!host.connected);
+                assert!(host.fenced);
             }
         }
     }
