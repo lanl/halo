@@ -7,26 +7,49 @@ use crate::{commands::*, manager::http};
 
 #[derive(Args, Debug, Clone)]
 pub struct ManageArgs {
-    /// Resource to manage
+    /// Resource to manage.
     resource_id: String,
+
+    /// Reason for managing the resource.
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct UnManageArgs {
-    /// Resource to unmanage
+    /// Resource to unmanage.
     resource_id: String,
+
+    /// Reason for unmanaging the resource.
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 pub fn manage(cli: &Cli, args: &ManageArgs) -> HandledResult<()> {
-    send_command(cli.socket.as_deref(), &args.resource_id, true)
+    send_command(
+        cli.socket.as_deref(),
+        &args.resource_id,
+        true,
+        args.reason.clone(),
+    )
 }
 
 pub fn unmanage(cli: &Cli, args: &UnManageArgs) -> HandledResult<()> {
-    send_command(cli.socket.as_deref(), &args.resource_id, false)
+    send_command(
+        cli.socket.as_deref(),
+        &args.resource_id,
+        false,
+        args.reason.clone(),
+    )
 }
 
-pub fn send_command(socket_path: Option<&str>, resource: &str, managed: bool) -> HandledResult<()> {
-    let params = http::SetManagedArgs { managed };
+pub fn send_command(
+    socket_path: Option<&str>,
+    resource: &str,
+    managed: bool,
+    comment: Option<String>,
+) -> HandledResult<()> {
+    let params = http::SetManagedArgs { managed, comment };
 
     let client = get_http_client(socket_path)?;
 

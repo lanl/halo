@@ -143,6 +143,7 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SetManagedArgs {
     pub managed: bool,
+    pub comment: Option<String>,
 }
 
 async fn set_managed(
@@ -164,7 +165,7 @@ async fn set_managed(
                 Event::Unmanage
             };
             return match Arc::clone(&cluster)
-                .write_record_nonblocking(Record::new(event, rg.id().to_string(), None))
+                .write_record_nonblocking(Record::new(event, rg.id().to_string(), payload.comment))
                 .await
             {
                 Ok(()) => Ok(()),

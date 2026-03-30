@@ -7,7 +7,7 @@ use crate::{commands::*, manager::http};
 
 #[derive(Args, Debug, Clone)]
 pub struct FenceArgs {
-    /// Host to fence
+    /// Host to fence.
     #[arg()]
     pub hostname: String,
 
