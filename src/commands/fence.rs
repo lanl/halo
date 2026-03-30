@@ -37,7 +37,7 @@ pub fn do_fence(addr: Option<&str>, hostname: &str, force_fence: bool) -> Handle
         StatusCode::NOT_FOUND => {
             eprintln!("Could not fence '{hostname}': host not found.");
         }
-        StatusCode::BAD_REQUEST => {
+        StatusCode::BAD_REQUEST | StatusCode::CONFLICT => {
             eprint!("Could not fence '{hostname}': ");
             match response.text() {
                 Ok(text) => eprintln!("{text}"),

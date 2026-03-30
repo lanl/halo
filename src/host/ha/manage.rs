@@ -256,7 +256,11 @@ impl Host {
                     match command {
                         HostCommand::Failback => self.do_failback(state, cluster),
                         HostCommand::Deactivate => self.deactivate(state),
-                        HostCommand::Fence => self.admin_fence_request(state),
+                        HostCommand::Fence => {
+                            if self.admin_fence_request(state) {
+                                return;
+                            }
+                        }
                     };
 
                     tasks.push(Box::pin(self.receive_message()));
@@ -353,11 +357,11 @@ impl Host {
         }
     }
 
-    /// Returns whether the failover is done or not.
+    /// Returns true if all resource management tasks have exited and the failover is ready to
+    /// proceed.
     ///
     /// This is needed so that the loop in remote_connected_loop() knows whether to break out to the
     /// "top level" loop in manage_ha().
-    // TODO: can I come up with a cleaner way to do that?
     fn ready_for_failover(&self, state: &mut HostState, rg: ResourceToken) -> bool {
         state.resources_in_transit.push(rg);
 
@@ -508,11 +512,19 @@ impl Host {
         }
     }
 
-    fn admin_fence_request(&self, state: &mut HostState) {
+    /// Returns true if there were no resource tasks running -- so remote_connected_loop() should
+    /// break out immediately.
+    fn admin_fence_request(&self, state: &mut HostState) -> bool {
         state.admin_requested_fence = true;
+        if state.outstanding_resource_tasks.is_empty() {
+            return true;
+        }
+
         for task in &state.outstanding_resource_tasks {
             task.lost_connection.notify_one();
         }
+
+        false
     }
 
     fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
