@@ -222,6 +222,7 @@ impl Host {
     pub async fn update_activation_status(
         self: &Arc<Self>,
         activate: bool,
+        comment: Option<String>,
         cluster: &Arc<Cluster>,
     ) -> HandledResult<()> {
         self.set_active(activate);
@@ -231,7 +232,7 @@ impl Host {
             Event::Deactivate
         };
         cluster
-            .write_record_nonblocking(Record::new(event, self.id(), None))
+            .write_record_nonblocking(Record::new(event, self.id(), comment))
             .await?;
         if !activate {
             self.command(HostCommand::Deactivate).await;
