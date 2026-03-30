@@ -468,11 +468,12 @@ impl HaEnvironment {
     }
 
     pub fn manage_resource(&self, resource_id: &str) {
-        commands::manage::send_command(Some(&self.socket_path()), resource_id, true).unwrap();
+        commands::manage::send_command(Some(&self.socket_path()), resource_id, true, None).unwrap();
     }
 
     pub fn unmanage_resource(&self, resource_id: &str) {
-        commands::manage::send_command(Some(&self.socket_path()), resource_id, false).unwrap();
+        commands::manage::send_command(Some(&self.socket_path()), resource_id, false, None)
+            .unwrap();
     }
 
     pub fn failback(&self, onto: usize) -> HandledResult<()> {
