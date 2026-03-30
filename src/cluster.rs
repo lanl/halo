@@ -384,13 +384,11 @@ impl Cluster {
         self.state.as_ref().unwrap().write_record(record)
     }
 
-    pub async fn write_record_nonblocking(self: Arc<Self>, record: Record) -> HandledResult<()> {
-        tokio::task::spawn_blocking(move || {
-            let cluster = &self;
-            cluster.write_record(record)
-        })
-        .await
-        .unwrap()
+    pub async fn write_record_nonblocking(self: &Arc<Self>, record: Record) -> HandledResult<()> {
+        let cluster = Arc::clone(self);
+        tokio::task::spawn_blocking(move || cluster.write_record(record))
+            .await
+            .unwrap()
     }
 
     /// Print out a summary of the cluster to stdout. Mainly intended for debugging purposes.

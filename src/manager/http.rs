@@ -202,7 +202,16 @@ async fn host_post(
         }
 
         host.set_fenced(false);
-        return Ok(());
+        return match cluster
+            .write_record_nonblocking(Record::new(Event::FenceReset, host.id(), None))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(_) => Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to append record to statefile.",
+            )),
+        };
     }
 
     // The rest of the commands are only valid for hosts that have a partner:
@@ -241,10 +250,7 @@ async fn host_post(
                 ));
             };
 
-            return match Arc::clone(host)
-                .update_activation_status(true, cluster)
-                .await
-            {
+            return match host.update_activation_status(true, &cluster).await {
                 Ok(()) => Ok(()),
                 Err(_) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -260,10 +266,7 @@ async fn host_post(
                 ));
             }
 
-            return match Arc::clone(host)
-                .update_activation_status(false, cluster)
-                .await
-            {
+            return match host.update_activation_status(false, &cluster).await {
                 Ok(()) => Ok(()),
                 Err(_) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,

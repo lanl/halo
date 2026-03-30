@@ -220,9 +220,9 @@ impl Host {
     }
 
     pub async fn update_activation_status(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         activate: bool,
-        cluster: Arc<Cluster>,
+        cluster: &Arc<Cluster>,
     ) -> HandledResult<()> {
         self.set_active(activate);
         let event = if activate {
