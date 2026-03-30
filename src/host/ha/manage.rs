@@ -480,7 +480,7 @@ impl Host {
             .expect("Fencing failed... TODO: handle this case...");
 
         // TODO: need to figure out how to determine if manager or admin initiated fence here.
-        match Arc::clone(cluster)
+        match cluster
             .write_record_nonblocking(Record::new(Event::Fence, self.id(), Some(String::from(""))))
             .await
         {
