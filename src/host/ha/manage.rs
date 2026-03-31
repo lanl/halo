@@ -479,10 +479,27 @@ impl Host {
     }
 
     async fn do_failover(&self, state: &mut HostState, cluster: &Arc<Cluster>) {
+        let tokens_to_send = take(&mut state.resources_in_transit)
+            .into_iter()
+            .chain(take(&mut state.manage_these_resources).into_iter())
+            .chain(take(&mut state.check_these_resources).into_iter());
+
         if self.do_fence_nonblocking(FenceCommand::Off).await.is_err() {
+            // Fencing failed: cannot do anything further with these resources :(
             self.finish_admin_fence_request(FenceResult::PowerCommandFailed);
-            todo!("Fencing failed... TODO: handle this case...")
+
+            for token in tokens_to_send {
+                let rg = cluster.get_resource_group(&token.id);
+                rg.root.set_status_recursive(ResourceStatus::Error(
+                    "Fencing this reource's host failed. Management cannot proceed.".to_string(),
+                ));
+                state.resources_with_errors.push(token);
+            }
+
+            return;
         };
+
+        // Fencing succeeded:
 
         let reason = if self.fence_request_in_progress() {
             self.fence_reason()
@@ -504,11 +521,6 @@ impl Host {
         self.set_connected(false);
 
         warn!("Host {} has been powered off.", self.id());
-
-        let tokens_to_send = take(&mut state.resources_in_transit)
-            .into_iter()
-            .chain(take(&mut state.manage_these_resources).into_iter())
-            .chain(take(&mut state.check_these_resources).into_iter());
 
         for token in tokens_to_send {
             let rg = cluster.get_resource_group(&token.id);
