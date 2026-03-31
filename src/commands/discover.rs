@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{collections::HashMap, io, process::Command};
+use std::{collections::HashMap, process::Command};
 
 use clap::Args;
 
@@ -28,7 +28,7 @@ pub fn discover(args: &DiscoverArgs) -> HandledResult<()> {
         .handle_err(|e| eprintln!("nodeset syntax error: {e}"))?;
 
     for hostname in hostnames {
-        let host = discover_one_host(&hostname, args.verbose).unwrap();
+        let host = discover_one_host(&hostname, args.verbose)?;
         config.hosts.push(host);
     }
     println!("{}", serde_yaml::to_string(&config).unwrap());
@@ -37,14 +37,14 @@ pub fn discover(args: &DiscoverArgs) -> HandledResult<()> {
 
 /// Attempt to discover all of the resources (zpools and lustre targerts) running on `hostname`,
 /// and construct them into a config::Host object that owns those resources.
-fn discover_one_host(hostname: &str, verbose: bool) -> io::Result<config::Host> {
+fn discover_one_host(hostname: &str, verbose: bool) -> HandledResult<config::Host> {
     let zpool_output = get_zpool_output(hostname, verbose)?;
 
     let mut resources = parse_zpool_output(zpool_output);
 
     let lustre_output = get_lustre_output(hostname, verbose)?;
 
-    let lustre_resources = parse_lustre_output(lustre_output);
+    let lustre_resources = parse_lustre_output(lustre_output)?;
 
     resources.extend(lustre_resources);
 
@@ -56,21 +56,21 @@ fn discover_one_host(hostname: &str, verbose: bool) -> io::Result<config::Host> 
     })
 }
 
-fn parse_lustre_output(output: String) -> HashMap<String, config::Resource> {
+fn parse_lustre_output(output: String) -> HandledResult<HashMap<String, config::Resource>> {
     let mut resources = HashMap::new();
 
     for line in output.lines() {
-        let res = config::Resource::new_lustre(line);
+        let res = config::Resource::new_lustre(line)?;
 
         let target = res.parameters.get("target").unwrap();
 
         resources.insert(target.to_string(), res);
     }
 
-    resources
+    Ok(resources)
 }
 
-fn get_lustre_output(hostname: &str, verbose: bool) -> io::Result<String> {
+fn get_lustre_output(hostname: &str, verbose: bool) -> HandledResult<String> {
     // Get Targets and parse both Zpools and Lustre targets
     if verbose {
         eprintln!("Discovering lustre targets for host={hostname}");
@@ -78,7 +78,8 @@ fn get_lustre_output(hostname: &str, verbose: bool) -> io::Result<String> {
     }
     let output = Command::new("ssh")
         .args([hostname, "mount", "-t", "lustre"])
-        .output()?;
+        .output()
+        .handle_err(|e| eprintln!("Could not run mount -t lustre command: {e}"))?;
     if verbose {
         eprintln!(
             "stdout: {}",
@@ -99,7 +100,7 @@ fn parse_zpool_output(output: String) -> HashMap<String, config::Resource> {
     }))
 }
 
-fn get_zpool_output(hostname: &str, verbose: bool) -> io::Result<String> {
+fn get_zpool_output(hostname: &str, verbose: bool) -> HandledResult<String> {
     // Get Zpools
     if verbose {
         eprintln!("\nDiscovering zpools for host={hostname}");
@@ -107,7 +108,8 @@ fn get_zpool_output(hostname: &str, verbose: bool) -> io::Result<String> {
     }
     let output = Command::new("ssh")
         .args([hostname, "zpool", "list", "-H", "-o", "name"])
-        .output()?;
+        .output()
+        .handle_err(|e| eprintln!("Could not run zpool command: {e}"))?;
     if verbose {
         eprintln!(
             "stdout: {}",
@@ -151,7 +153,7 @@ mod tests {
         let output = concat!("oss01e0/ost2 on /mnt/ost2 type lustre (ro,svname=test-OST0002,mgsnode=10.0.0.1@tcp:10.0.0.2@tcp,osd=osd-zfs)\n",
                              "oss01e1/ost3 on /mnt/ost3 type lustre (ro,svname=test-OST0003,mgsnode=10.0.0.1@tcp:10.0.0.2@tcp,osd=osd-zfs)");
 
-        let resources = parse_lustre_output(output.to_string());
+        let resources = parse_lustre_output(output.to_string()).unwrap();
         assert_eq!(resources.len(), 2);
 
         let goal_1 = Resource {
