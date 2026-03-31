@@ -388,7 +388,6 @@ impl Host {
     /// failover is required.
     ///
     ///   - is the already_fenced flag set on this Host -- or its partner?
-    ///     (TODO: implement this flag... ;)
     ///
     ///   - is the issue temporary? can a connection be re-established?
     ///
@@ -478,6 +477,16 @@ impl Host {
         None
     }
 
+    /// Perform a failover operation.
+    ///
+    /// - Fence this host, powering it off.
+    ///   - If that fails, there's nothing furhter to do other than note the error. The manager
+    ///     process cannot do anything to further manage the resources until an admin intervenes.
+    ///
+    /// - Take all of the resources that were either being managed on this host, or might have been
+    ///   managed on this host. That is the resuorces in the categories manage_these_resources,
+    ///   check_these_resources, and resources_in_transit.
+    /// - Those resources are sent to the partner host for management there.
     async fn do_failover(&self, state: &mut HostState, cluster: &Arc<Cluster>) {
         let tokens_to_send = take(&mut state.resources_in_transit)
             .into_iter()
@@ -501,6 +510,8 @@ impl Host {
 
         // Fencing succeeded:
 
+        // If this was an admin-initiated fence request, get the admin's reason. Otherwise, the
+        // reason indicates that the manager service did this autonomously.
         let reason = if self.fence_request_in_progress() {
             self.fence_reason()
         } else {
