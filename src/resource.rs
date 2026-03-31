@@ -207,7 +207,7 @@ impl ResourceGroup {
     /// The overall status becomes the "worst" status of any member. For example, if most members
     /// are started but one member is stopped, the overall status is stopped.
     fn update_overall_status(&self) {
-        let statuses = self.resources().map(|r| r.get_status());
+        let statuses = self.resources().map(|r| r.status());
 
         let overall_status = ResourceStatus::get_worst(statuses.into_iter());
 
@@ -295,13 +295,13 @@ pub struct Resource {
     /// The resources which depend on this resource.
     /// For example, Lustre targets depend on their containing zpool, so the Zpool resource's
     /// dependents would be the Lustre resources that it hosts.
-    pub dependents: Vec<Resource>,
+    dependents: Vec<Resource>,
 
     /// Unique identifier for the resource.
     pub id: String,
 
     // TODO: better privacy here
-    pub status: Mutex<ResourceStatus>,
+    status: Mutex<ResourceStatus>,
     pub home_node: Arc<Host>,
     pub failover_node: Option<Arc<Host>>,
 
@@ -519,26 +519,26 @@ impl Resource {
             .await
     }
 
-    pub fn get_status(&self) -> ResourceStatus {
+    pub fn status(&self) -> ResourceStatus {
         self.status.lock().unwrap().clone()
     }
 
-    pub fn set_status(&self, status: ResourceStatus) {
-        let mut old_status = self.status.lock().unwrap();
-        let old_status_copy = old_status.clone();
-        *old_status = status.clone();
-        std::mem::drop(old_status);
-        if old_status_copy != status {
+    pub fn set_status(&self, new_status: ResourceStatus) {
+        let mut status = self.status.lock().unwrap();
+        let old_status_copy = status.clone();
+        *status = new_status.clone();
+        std::mem::drop(status);
+        if old_status_copy != new_status {
             warn!(
                 "Updating status of resource {} from {:?} to {:?}",
-                self.id, old_status_copy, status
+                self.id, old_status_copy, new_status
             )
         }
     }
 
     fn is_running(&self) -> bool {
         matches!(
-            self.get_status(),
+            self.status(),
             ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway
         )
     }

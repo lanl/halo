@@ -75,7 +75,7 @@ impl ResourceJson {
     fn build(res: &Resource, managed: bool) -> Self {
         let mut comment = None;
 
-        let status = match *res.status.lock().unwrap() {
+        let status = match res.status() {
             ResourceStatus::Unknown(ref reason) => {
                 comment = Some(reason.clone());
                 "Unknown"
