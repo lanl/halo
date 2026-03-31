@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::{handled_error, HandledResult};
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub hosts: Vec<Host>,
@@ -48,9 +50,7 @@ impl Resource {
     }
 
     /// Given a line of output from the `mount` command, parses it into a Lustre Resource.
-    ///
-    /// TODO: make this return a result instead of panicking?
-    pub fn new_lustre(mount_output: &str) -> Self {
+    pub fn new_lustre(mount_output: &str) -> HandledResult<Self> {
         let mut tokens = mount_output.split_whitespace();
 
         let device = tokens.next().unwrap();
@@ -72,9 +72,10 @@ impl Resource {
             }
         }
         let Some(kind) = kind else {
-            panic!("could not parse lustre mount line")
+            eprintln!("could not parse lustre mount line: '{mount_output}'");
+            return handled_error();
         };
-        Self {
+        Ok(Self {
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
                 ("mountpoint".to_string(), mountpoint.to_string()),
@@ -82,6 +83,6 @@ impl Resource {
                 ("kind".to_string(), kind.to_string()),
             ]),
             requires: Some(zpool.to_string()),
-        }
+        })
     }
 }
