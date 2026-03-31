@@ -9,7 +9,6 @@ use crate::{cluster::Cluster, resource::Location};
 
 use super::*;
 
-#[allow(clippy::await_holding_refcell_ref)]
 impl Host {
     pub async fn observe(&self, cluster: &Cluster) {
         loop {
