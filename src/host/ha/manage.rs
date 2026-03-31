@@ -63,9 +63,6 @@ impl HostState {
 
     /// When a ResourceGroup task exits, it needs to remove its ResourceTaskCancel object from
     /// outsanding_resource_tasks.
-    // TODO: is this method even necessary? Check the callers, in some / all cases, the resource
-    // tasks have already been removed from outstanding_resource_tasks *before* the task itself
-    // exits.
     fn resource_task_exited(&mut self, id: &str) {
         let still_running = take(&mut self.outstanding_resource_tasks)
             .into_iter()
