@@ -380,7 +380,6 @@ impl Cluster {
 
     /// Write a Record entry into the Cluster's statefile.
     pub fn write_record(&self, record: Record) -> HandledResult<()> {
-        // TODO: The failure of this method should probably be handled in some intelligent way.
         self.state.as_ref().unwrap().write_record(record)
     }
 
