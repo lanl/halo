@@ -122,22 +122,3 @@ The daemon can be configured via environment variables defined in `/etc/sysconfi
 - `HALO_NET` -- defines the network that the daemon listens on (default `192.168.1.0/24`).
 
 When using TLS, HALO additionally will check `HALO_{CLIENT,SERVER}_{CERT,KEY}`.
-
-## Code Layout
-
-- `src/lib.rs`: defines a few helper functions, the default values for the config file, socket, etc., and is the root for the code shared by the binaries.
-
-- `src/halo_capnp.rs`: the generated capnp RPC code is imported here.
-  This module also defines helper functions to make RPC calls to reduce boilerplate for users of the RPC interface.
-
-- `src/config.rs`: holds the config object which is used for the cluster configuration file.
-
-- `src/cluster.rs`: holds the data structure that represents a cluster's in-memory state.
-  `Cluster::main_loop()` is the main entrypoint for the cluster management server.
-
-- `src/resource.rs`: holds the data structures that represent resources: `ResourceGroup` represents a dependency tree of `Resource`s.
-   The lifecycle of a resource group is started in `ResourceGroup::main_loop()`.
-
-- `src/host.rs`: holds the data structures for representing a host's state. Also includes the fencing / power management implementation.
-
-- `src/manager.rs`: the code for the manager server (which kicks off the resource lifecycle code), and the CLI server, which responds to requests from the command line.
