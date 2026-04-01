@@ -36,7 +36,7 @@ impl Host {
         let err = rg
             .observe_loop(client, false, Location::Home)
             .await
-            .unwrap_err();
+            .expect_err("observe_loop() should not exit until an error occurs in this usage.");
         error!("{err:?}");
     }
 }
