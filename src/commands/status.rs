@@ -51,6 +51,7 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
         println!();
     }
 
+    let mut abnormal = false;
     let mut connected_activated = String::new();
     let mut connected_deactivated = String::new();
     let mut disconnected_activated = String::new();
@@ -61,11 +62,13 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
             if host.connected {
                 connected_activated.push_str(&node);
             } else {
+                abnormal = true;
                 disconnected_activated.push_str(&node);
             }
         } else if host.connected {
             connected_deactivated.push_str(&node);
         } else {
+            abnormal = true;
             disconnected_deactivated.push_str(&node);
         }
     }
@@ -83,18 +86,22 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
         .parse()
         .expect("Unable to parse nodeset from hostnames.");
 
-    print!("Connected hosts:\t{}", ca);
-    if connected_deactivated.is_empty() {
-        println!();
-    } else {
-        println!(", {} (deactivated)", cd);
+    if !args.exclude_normal {
+        print!("Connected hosts:\t{}", ca);
+        if connected_deactivated.is_empty() {
+            println!();
+        } else {
+            println!(", {} (deactivated)", cd);
+        }
     }
 
-    print!("Disconnected hosts:\t{}", da);
-    if disconnected_deactivated.is_empty() {
-        println!();
-    } else {
-        println!(", {} (deactivated)", dd);
+    if !args.exclude_normal || abnormal {
+        print!("Disconnected hosts:\t{}", da);
+        if disconnected_deactivated.is_empty() {
+            println!();
+        } else {
+            println!(", {} (deactivated)", dd);
+        }
     }
     if !args.exclude_normal {
         print!("Events: ");
