@@ -19,7 +19,7 @@ pub mod power;
 pub use power::{FenceAgent, FenceCommand, RedfishArgs};
 
 mod ha;
-mod observe;
+mod non_ha;
 
 use ha::HostMessage;
 
