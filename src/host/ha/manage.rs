@@ -149,16 +149,6 @@ impl Host {
         }
     }
 
-    async fn remote_liveness_check(&self, cluster: &Cluster) {
-        loop {
-            if self.get_client().await.is_ok() {
-                return;
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time)).await;
-        }
-    }
-
     async fn handle_messages_remote_disconnected(
         &self,
         cluster: &Arc<Cluster>,
@@ -314,7 +304,7 @@ impl Host {
                             state.resource_task_exited(id);
                             let rg = cluster.get_resource_group(id);
                             rg.root.set_status_recursive(ResourceStatus::Unknown(
-                                "Connection lost; currently unmanaged.".to_string(),
+                                "Connection to remote host lost.".to_string(),
                             ));
                             if self.ready_for_failover(state, event.resource_group) {
                                 return;
@@ -362,23 +352,17 @@ impl Host {
     fn ready_for_failover(&self, state: &mut HostState, rg: ResourceToken) -> bool {
         state.resources_in_transit.push(rg);
 
-        if state.outstanding_resource_tasks.is_empty() {
-            // If every resource management task has been cancelled, fencing should proceed:
-            true
-        } else {
-            // If there are outstanding resource group tasks, they need to be notified to exit.
-            // However, they must only be notified once, so only do this if this is the first task
-            // to request failover.
-            for revoke in &state.outstanding_resource_tasks {
-                debug!(
-                    "request failover: notifiying task for resource '{}'",
-                    revoke.id
-                );
-                revoke.lost_connection.notify_one();
-            }
-
-            false
+        // If there are outstanding resource group tasks, they need to be notified to exit.
+        for revoke in &state.outstanding_resource_tasks {
+            debug!(
+                "request failover: notifiying task for resource '{}'",
+                revoke.id
+            );
+            revoke.lost_connection.notify_one();
         }
+
+        // If every resource management task has been cancelled, fencing should proceed:
+        state.outstanding_resource_tasks.is_empty()
     }
 
     /// When a connection has been lost to the remote agent, the Host task evaluates whether
