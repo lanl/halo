@@ -10,8 +10,13 @@ pub struct StatusArgs {
     #[arg(short = 'x')]
     exclude_normal: bool,
 
+    /// Have event out as the struct debug output.
     #[arg(short = 'd')]
     event_debug_output: bool,
+
+    /// Number of event entries to output, 10 by default, pass -1 to get all event entries.
+    #[arg(short = 'e', default_value_t = 10)]
+    event_count: usize
 }
 
 pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
@@ -97,11 +102,14 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
     }
 
     print!("Events: ");
-    if cluster.events.len() == 0 {
+    if cluster.events.is_empty(){
         println!("NULL");
     } else {
         println!();
-        for e in cluster.events {
+        for (i, e) in cluster.events.iter().enumerate() {
+            if i == args.event_count{
+                break
+            }
             if args.event_debug_output {
                 println!("{:?}", e)
             } else {
@@ -109,7 +117,6 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
             }
         }
     }
-
     Ok(())
 }
 
