@@ -10,8 +10,8 @@ pub struct StatusArgs {
     #[arg(short = 'x')]
     exclude_normal: bool,
 
-    #[arg(short = 's')]
-    syslog_output: bool,
+    #[arg(short = 'd')]
+    event_debug_output: bool,
 }
 
 pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
@@ -102,10 +102,10 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
     } else {
         println!();
         for e in cluster.events {
-            if args.syslog_output {
-                println!("{}", e.syslog_print())
-            } else {
+            if args.event_debug_output {
                 println!("{:?}", e)
+            } else {
+                println!("{}", e.syslog_print())
             }
         }
     }
