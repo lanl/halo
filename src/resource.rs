@@ -61,7 +61,6 @@ fn get_worst_error(
 #[derive(Debug)]
 pub struct ResourceGroup {
     pub root: Resource,
-    overall_status: Mutex<ResourceStatus>,
     managed: Mutex<bool>,
     args: manager::Cli,
 }
@@ -71,9 +70,6 @@ impl ResourceGroup {
         assert!(root.kind == "heartbeat/ZFS");
         Self {
             root,
-            overall_status: Mutex::new(ResourceStatus::Unknown(
-                "Manager is starting up".to_string(),
-            )),
             managed: Mutex::new(true),
             args,
         }
@@ -173,7 +169,6 @@ impl ResourceGroup {
                 Err(e) => res = Err(e),
             }
         }
-        self.update_overall_status();
         res
     }
 
@@ -195,23 +190,9 @@ impl ResourceGroup {
     }
 
     fn get_overall_status(&self) -> ResourceStatus {
-        self.overall_status.lock().unwrap().clone()
-    }
-
-    fn set_overall_status(&self, new_status: ResourceStatus) {
-        *self.overall_status.lock().unwrap() = new_status;
-    }
-
-    /// Update the ResourceGroup's overall status based on the collected statuses of its members.
-    ///
-    /// The overall status becomes the "worst" status of any member. For example, if most members
-    /// are started but one member is stopped, the overall status is stopped.
-    fn update_overall_status(&self) {
         let statuses = self.resources().map(|r| r.status());
 
-        let overall_status = ResourceStatus::get_worst(statuses.into_iter());
-
-        self.set_overall_status(overall_status);
+        ResourceStatus::get_worst(statuses.into_iter())
     }
 
     pub fn resources(&self) -> ResourceIterator<'_> {
