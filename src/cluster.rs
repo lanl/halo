@@ -412,6 +412,12 @@ impl Cluster {
             println!("\tfence agent: {:?}", host.fence_agent());
         }
     }
+
+    /// Gatcher our cluster events to output to user via status command
+    pub fn get_cluster_events(&self) -> Vec<Record>{
+        let Some(ref state) = self.state else {return Vec::new()};
+        state.records.lock().unwrap().clone()
+    }
 }
 
 /// Given a list `pairs` of failover pairs, and a hostname `name`, return its partner, if one

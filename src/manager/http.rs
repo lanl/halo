@@ -57,6 +57,7 @@ pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluste
 pub struct ClusterJson {
     pub resources: Vec<ResourceJson>,
     pub hosts: Vec<HostJson>,
+    pub events: Vec<EventJson>,
 }
 
 /// The representation of Resource state that is communicated back to the admin using the status
@@ -101,6 +102,30 @@ impl ResourceJson {
     }
 }
 
+/// Holds manager and admin issued events
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EventJson {
+    pub timestamp: String,
+    pub event: String,
+    pub obj_id: String,
+    pub comment: Option<String>,
+}
+
+impl EventJson{
+    fn build(rec: Record) -> Self {
+        EventJson {
+            timestamp: rec.timestamp.to_string(),
+            event: rec.event.to_string(),
+            obj_id: rec.obj_id,
+            comment: rec.comment,
+        }
+    }
+
+    pub fn syslog_print(&self) -> String{
+        format!("{} event={} object={} comment=\"{}\"", self.timestamp, self.event, self.obj_id, self.comment.clone().unwrap_or("none".to_string()))
+    }
+}
+
 /// The representation of Host state that is communicated back to the admin using the status
 /// command.
 #[derive(Serialize, Deserialize, Debug)]
@@ -135,6 +160,7 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
             .collect(),
 
         hosts: cluster.hosts().map(|host| HostJson::build(host)).collect(),
+        events: cluster.get_cluster_events().into_iter().map(|event| EventJson::build(event)).collect()
     };
 
     Json(status)

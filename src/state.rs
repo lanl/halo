@@ -35,12 +35,12 @@ impl Delta {
     }
 
     /// Create a new Delta given a file containing lines representing Record entries.
-    pub fn new_from_file(file: &File) -> HandledResult<Self> {
+    pub fn new_from_file(file: &File) -> HandledResult<(Self, Vec<Record>)> {
         let records = Record::get_all_from_file(file)?;
 
         let mut state_delta = Self::new();
 
-        for record in records {
+        for record in &records {
             match record.event {
                 Event::Manage => {
                     Self::add_or_overwrite_entry(
@@ -86,7 +86,7 @@ impl Delta {
                 }
             }
         }
-        Ok(state_delta)
+        Ok((state_delta, records))
     }
 
     /// Get a Vec of deduplicated hosts that this Delta applies to.
@@ -122,6 +122,8 @@ pub struct State {
     file: Mutex<File>,
     /// Delta of state from the statefile.
     pub delta: Delta,
+    /// Events/Records for state of cluster
+    pub records: Mutex<Vec<Record>>
 }
 
 impl State {
@@ -134,28 +136,31 @@ impl State {
             .handle_err(|e| {
                 eprintln!("could not open statefile path '{path}': '{e}'");
             })?;
-        let delta = Delta::new_from_file(&file)?;
+        let (delta, records) = Delta::new_from_file(&file)?;
         Ok(Self {
             file: Mutex::new(file),
             delta,
-        })
+            records: Mutex::new(records),
+        })        
     }
 
     /// Writes a single record to the statefile.
     pub fn write_record(&self, record: Record) -> HandledResult<()> {
         use std::io::Write;
-        self.file
+        let result = self.file
             .lock()
             .unwrap()
             .write_all(&[record.as_string().as_bytes(), b"\n"].concat())
             .handle_err(|e| {
                 error!("failed to write to statefile '{:?}': '{e}'", self.file);
-            })
+            });
+        self.records.lock().unwrap().push(record);
+        result
     }
 }
 
 /// An single record of an event that is tracked in the statefile.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Record {
     pub timestamp: NaiveDateTime,
     pub event: Event,
@@ -240,7 +245,7 @@ impl Record {
 }
 
 /// All possible events that can be represented in the statefile.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Event {
     /// Resource is managed.
     Manage,
