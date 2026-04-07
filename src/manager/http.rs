@@ -111,7 +111,7 @@ pub struct EventJson {
     pub comment: Option<String>,
 }
 
-impl EventJson{
+impl EventJson {
     fn build(rec: Record) -> Self {
         EventJson {
             timestamp: rec.timestamp.to_string(),
@@ -121,8 +121,14 @@ impl EventJson{
         }
     }
 
-    pub fn syslog_print(&self) -> String{
-        format!("{} event={} object={} comment=\"{}\"", self.timestamp, self.event, self.obj_id, self.comment.clone().unwrap_or("none".to_string()))
+    pub fn syslog_print(&self) -> String {
+        format!(
+            "{} event={} object={} comment=\"{}\"",
+            self.timestamp,
+            self.event,
+            self.obj_id,
+            self.comment.clone().unwrap_or("none".to_string())
+        )
     }
 }
 
@@ -160,7 +166,11 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
             .collect(),
 
         hosts: cluster.hosts().map(|host| HostJson::build(host)).collect(),
-        events: cluster.get_cluster_events().into_iter().map(|event| EventJson::build(event)).collect()
+        events: cluster
+            .get_cluster_events()
+            .into_iter()
+            .map(|event| EventJson::build(event))
+            .collect(),
     };
 
     Json(status)

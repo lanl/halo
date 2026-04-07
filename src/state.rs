@@ -123,7 +123,7 @@ pub struct State {
     /// Delta of state from the statefile.
     pub delta: Delta,
     /// Events/Records for state of cluster
-    pub records: Mutex<Vec<Record>>
+    pub records: Mutex<Vec<Record>>,
 }
 
 impl State {
@@ -141,13 +141,14 @@ impl State {
             file: Mutex::new(file),
             delta,
             records: Mutex::new(records),
-        })        
+        })
     }
 
     /// Writes a single record to the statefile.
     pub fn write_record(&self, record: Record) -> HandledResult<()> {
         use std::io::Write;
-        let result = self.file
+        let result = self
+            .file
             .lock()
             .unwrap()
             .write_all(&[record.as_string().as_bytes(), b"\n"].concat())
