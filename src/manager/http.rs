@@ -169,7 +169,7 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
         events: cluster
             .get_cluster_events()
             .into_iter()
-            .map(|event| EventJson::build(event))
+            .map(EventJson::build)
             .collect(),
     };
 
