@@ -413,7 +413,7 @@ impl Cluster {
         }
     }
 
-    /// Gatcher our cluster events to output to user via status command
+    /// Gather our cluster events
     pub fn get_cluster_events(&self) -> Vec<Record> {
         let Some(ref state) = self.state else {
             return Vec::new();
