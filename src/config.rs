@@ -80,7 +80,7 @@ impl Resource {
             parameters: HashMap::from([
                 ("mountpoint".to_string(), mountpoint.to_string()),
                 ("target".to_string(), device.to_string()),
-                ("kind".to_string(), kind.to_string()),
+                ("type".to_string(), kind.to_string()),
             ]),
             requires: Some(zpool.to_string()),
         })
