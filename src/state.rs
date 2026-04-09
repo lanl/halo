@@ -134,7 +134,7 @@ impl State {
             .create(true)
             .open(path)
             .handle_err(|e| {
-                eprintln!("could not open statefile path '{path}': '{e}'");
+                eprintln!("Could not open statefile path '{path}': '{e}'");
             })?;
         let (delta, records) = Delta::new_from_file(&file)?;
         Ok(Self {
