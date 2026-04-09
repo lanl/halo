@@ -49,6 +49,8 @@ mod tests {
                 &good_config_path,
                 "--socket",
                 invalid_socket,
+                "--statefile",
+                "halo.state",
             ])
             .output()
             .unwrap();
@@ -56,6 +58,31 @@ mod tests {
         assert!(!result.status.success());
         let err_message = String::from_utf8(result.stderr).unwrap();
         assert!(err_message.contains(invalid_socket));
+    }
+
+    #[test]
+    fn manager_statefile() {
+        let good_config_path = format!(
+            "{}/{}",
+            std::env::var("CARGO_MANIFEST_DIR").unwrap(),
+            "tests/simple.yaml"
+        );
+        let invalid_statefile = "bad_dir/statefile";
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo_manager"))
+            .args(vec![
+                "--config",
+                &good_config_path,
+                "--socket",
+                "halo.socket",
+                "--statefile",
+                invalid_statefile,
+            ])
+            .output()
+            .unwrap();
+
+        assert!(!result.status.success());
+        let err_message = String::from_utf8(result.stderr).unwrap();
+        assert!(err_message.contains(invalid_statefile));
     }
 
     #[test]

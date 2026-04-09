@@ -7,7 +7,17 @@ use halo_lib::{self, cluster, manager};
 
 /// The halo_manager binary runs the management daemon.
 fn main() {
-    let args = manager::Cli::parse();
+    let mut args = manager::Cli::parse();
+
+    // If no statefile argument was passed, use the default statefile path.
+    // This is done because it's not permitted to start the manager without a statefile.
+    //
+    // However, the constructor Cluster::new() cannot interpret None as "use the default statefile
+    // path" because some callers of Cluster::new() do not start the manager process and therefore
+    // have no need of a statefile. So this has to be done here.
+    if args.statefile.is_none() {
+        args.statefile = Some(halo_lib::default_statefile_path());
+    }
 
     let default_log_level = if args.verbose { "debug" } else { "warn" };
     env_logger::Builder::from_env(

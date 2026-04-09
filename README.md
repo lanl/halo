@@ -34,7 +34,7 @@ cargo run --bin halo_remote -- --network 127.0.0.0/24 --port 8000  --test-id tes
 2. Start the manager service, using `--manage-resources` to tell it to actively manage resources:
 
 ```bash
-cargo run --bin halo_manager -- --config tests/simple.yaml --socket halo.socket  --manage-resources
+cargo run --bin halo_manager -- --config tests/simple.yaml --socket halo.socket  --statefile halo.state --manage-resources
 ```
 
 You should see it output information about updating the state of resources.
