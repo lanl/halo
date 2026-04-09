@@ -195,8 +195,8 @@ impl Host {
                     // ability to stop resources even if they happened to be running on the remote.
                     HostCommand::Deactivate => {}
                 },
-                HostMessage::None => {
-                    panic!("Unexpected message type 'None' in client disconnected routine.")
+                HostMessage::None(id) => {
+                    panic!("Unexpected message type 'None({id})' in client disconnected routine.")
                 }
             }
         }
@@ -324,7 +324,7 @@ impl Host {
                         }
                     };
                 }
-                HostMessage::None => {}
+                HostMessage::None(id) => state.resource_task_exited(&id),
             }
         }
 
@@ -569,7 +569,8 @@ impl Host {
         client: &ocf_resource_agent::Client,
         cluster: &Cluster,
     ) -> HostMessage {
-        let rg = cluster.get_resource_group(&token.id);
+        let id = token.id.clone();
+        let rg = cluster.get_resource_group(&id);
 
         match rg.stop_resources(client).await {
             Ok(()) => {}
@@ -586,7 +587,7 @@ impl Host {
         self.send_message_to_partner(token, Message::ManageResourceGroup)
             .await;
 
-        HostMessage::None
+        HostMessage::None(id)
     }
 
     /// The purpose of this procedure is to perform startup logic to discover the existing state of
@@ -677,6 +678,7 @@ impl Host {
     ) -> HostMessage {
         match is_resource_group_running_here(&token, cluster, client, true).await {
             Ok(is_running_here) => {
+                let id = token.id.clone();
                 if is_running_here {
                     self.send_message_to_self(token, Message::ManageResourceGroup)
                         .await;
@@ -693,7 +695,7 @@ impl Host {
                     }
                 };
 
-                HostMessage::None
+                HostMessage::None(id)
             }
             Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
             Err(ManagementError::Connection) => new_message(token, Message::RequestFailover),
@@ -711,7 +713,8 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> HostMessage {
-        let rg = cluster.get_resource_group(&token.id);
+        let id = token.id.clone();
+        let rg = cluster.get_resource_group(&id);
 
         match is_resource_group_running_here(&token, cluster, client, true).await {
             Ok(is_running_here) => {
@@ -728,13 +731,13 @@ impl Host {
                         .await;
                 }
 
-                HostMessage::None
+                HostMessage::None(id)
             }
             Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
             Err(ManagementError::Connection) => {
                 self.send_message_to_partner(token, Message::ObserveResourceGroup)
                     .await;
-                HostMessage::None
+                HostMessage::None(id)
             }
         }
     }
@@ -779,9 +782,10 @@ impl Host {
                     // Resource was stopped, and it is no longer supposed to be managed.
                     // Enter "Observe" mode, starting with a check on the partner host.
                     Ok(()) => {
+                        let id = token.id.clone();
                         self.send_message_to_partner(token, Message::ObserveResourceGroup)
                             .await;
-                        HostMessage::None
+                        HostMessage::None(id)
                     }
                     Err(ManagementError::Connection) => {
                         debug!("{}: broken connection while managing {}", self.id(), token.id);

@@ -525,6 +525,53 @@ mod tests {
         unmanage_then_stop_and_remanage(env, Some(false));
     }
 
+    /// A resource is unmanaged and then manually failed over.
+    /// Then, then node it was on is fenced.
+    /// Everything should start up on the failover node.
+    #[test]
+    fn unmanage6() {
+        let env = test_env_helper("unmanage6");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        // Start host 1's resourcs failed over
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        env.unmanage_resource("zpool_0");
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        // Manually fail over the resources:
+        env.stop_resource("mdt_0", 0);
+        env.stop_resource("zpool_0", 0);
+        env.start_resource("zpool_0", 1);
+        env.start_resource("mdt_0", 1);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running (Failed Over)");
+        }
+
+        drop(_a);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running (Failed Over)");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+    }
+
     fn unmanage_then_stop_and_start(env: HaEnvironment, manual_fail_over: bool) {
         env.start_resource("zpool_0", 0);
         env.start_resource("mdt_0", 0);
