@@ -165,9 +165,9 @@ impl Host {
                 }
                 HostMessage::Resource(event) => {
                     let id = &event.resource_group.id;
+                    state.resource_task_exited(id);
                     match event.kind {
                         Message::RequestFailover => {
-                            state.resource_task_exited(id);
                             let rg = cluster.get_resource_group(id);
                             rg.root.set_status_recursive(ResourceStatus::Unknown(
                                 "Connection to remote host lost.".to_string(),

@@ -319,6 +319,7 @@ impl Host {
                             )));
                         }
                         Message::ResourceError => {
+                            state.resource_task_exited(id);
                             state.resources_with_errors.push(event.resource_group);
                         }
                     };
