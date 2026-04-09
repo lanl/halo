@@ -7,11 +7,12 @@ use crate::{commands::*, manager::http};
 
 #[derive(Args, Debug, Clone)]
 pub struct StatusArgs {
+    /// Only print abnormal results (resources that are stopped / failed over, etc.)
     #[arg(short = 'x')]
     exclude_normal: bool,
 
-    /// Number of event entries to output, 10 by default, pass -1 to get all event entries.
-    #[arg(short = 'e', default_value_t = 10)]
+    /// Maximum number of event entries to output.
+    #[arg(short = 'e', long, default_value_t = 10)]
     event_count: usize,
 }
 
