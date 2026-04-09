@@ -115,8 +115,8 @@ impl Host {
                 HostMessage::Command(command) => {
                     warn!("Unexpected to receive command '{command:?}' in non-HA mode.")
                 }
-                HostMessage::None => {
-                    panic!("Unexpected to receive message 'None' in non-HA mode.")
+                HostMessage::None(id) => {
+                    panic!("Unexpected to receive message 'None({id})' in non-HA mode.")
                 }
             }
         }
@@ -184,7 +184,9 @@ impl Host {
                         }
                     };
                 }
-                HostMessage::None => panic!("Unexpected to receive message 'None' in non-HA mode."),
+                HostMessage::None(id) => {
+                    panic!("Unexpected to receive message 'None({id})' in non-HA mode.")
+                }
             }
         }
     }
