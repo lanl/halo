@@ -396,7 +396,7 @@ enum HostMessage {
     /// Normally this would be because the child task passed the ResourceToken over to the partner
     /// host. (If it hadn't passed on the ResourceToken, then the ResourceToken would need to be
     /// returned in a HostMessage::Resource.)
-    None,
+    None(String),
 }
 
 #[derive(Debug)]

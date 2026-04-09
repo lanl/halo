@@ -161,7 +161,7 @@ mod tests {
             parameters: HashMap::from([
                 ("mountpoint".to_string(), "/mnt/ost2".to_string()),
                 ("target".to_string(), "oss01e0/ost2".to_string()),
-                ("kind".to_string(), "ost".to_string()),
+                ("type".to_string(), "ost".to_string()),
             ]),
             requires: Some("oss01e0".to_string()),
         };
@@ -170,7 +170,7 @@ mod tests {
             parameters: HashMap::from([
                 ("mountpoint".to_string(), "/mnt/ost3".to_string()),
                 ("target".to_string(), "oss01e1/ost3".to_string()),
-                ("kind".to_string(), "ost".to_string()),
+                ("type".to_string(), "ost".to_string()),
             ]),
             requires: Some("oss01e1".to_string()),
         };

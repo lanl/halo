@@ -90,7 +90,7 @@ impl Host {
                     Message::SwitchHost => todo!(),
                     Message::ResourceError => todo!(),
                 },
-                HostMessage::None => {}
+                HostMessage::None(_id) => {}
             }
         }
     }
@@ -102,6 +102,8 @@ impl Host {
         client: &ocf_resource_agent::Client,
         update_status_if_stopped: bool,
     ) -> HostMessage {
+        let id = token.id.clone();
+
         match is_resource_group_running_here(&token, cluster, client, update_status_if_stopped)
             .await
         {
@@ -110,14 +112,14 @@ impl Host {
                     self.send_message_to_self(token, Message::ObserveResourceGroup)
                         .await;
 
-                    HostMessage::None
+                    HostMessage::None(id)
                 } else {
                     tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
                     self.send_message_to_partner(token, Message::CheckResourceGroup)
                         .await;
 
-                    HostMessage::None
+                    HostMessage::None(id)
                 }
             }
             Err(ManagementError::Configuration) => todo!(),
@@ -131,7 +133,8 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> HostMessage {
-        let rg = cluster.get_resource_group(&token.id);
+        let id = token.id.clone();
+        let rg = cluster.get_resource_group(&id);
         match rg.observe_loop(client, true, token.location).await {
             // Resource stopped: need to see if it started running on partner.
             Ok(()) => {
@@ -140,7 +143,7 @@ impl Host {
                 self.send_message_to_partner(token, Message::CheckResourceGroup)
                     .await;
 
-                HostMessage::None
+                HostMessage::None(id)
             }
             Err(ManagementError::Configuration) => todo!(),
             Err(ManagementError::Connection) => todo!(),
