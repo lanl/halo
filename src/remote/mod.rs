@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{error::Error, net::Ipv4Addr, str::FromStr};
+use std::{net::Ipv4Addr, str::FromStr};
 
 use {
     capnp::capability::Promise,
     capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem},
     clap::Parser,
     futures::AsyncReadExt,
-    log::{info, trace},
+    log::{info, trace, warn},
     nix::ifaddrs,
 };
 
-use crate::{halo_capnp::ocf_resource_agent, tls::get_acceptor};
+use crate::{
+    commands::{handled_error, Handle, HandledResult},
+    halo_capnp::ocf_resource_agent,
+    tls::get_acceptor,
+};
 
 pub mod ocf;
 
@@ -49,7 +53,7 @@ pub struct Cli {
 }
 
 /// Launches the remote agent, which listens on an IP address in `network` using `port`.
-pub fn agent_main(args: Cli) -> Result<(), Box<dyn Error>> {
+pub fn agent_main(args: Cli) -> HandledResult<()> {
     crate::test_env::maybe_identify_agent_for_test_fence(&args);
 
     let network = args.network.clone().unwrap_or(crate::default_network());
@@ -60,15 +64,14 @@ pub fn agent_main(args: Cli) -> Result<(), Box<dyn Error>> {
         None => {
             eprintln!("Could not find address matching {} to listen on.", network);
             eprintln!("Try specifying management network in environment as HALO_NET=$net.");
-            return Err(From::from(std::io::Error::from(
-                std::io::ErrorKind::AddrNotAvailable,
-            )));
+            return handled_error();
         }
     };
 
     let addr = format!("{addr}:{}", port);
 
-    let rt = tokio::runtime::Runtime::new().expect("Failed to launch runtime.");
+    let rt = tokio::runtime::Runtime::new()
+        .handle_err(|e| eprintln!("Could not launch remote runtime: {e}"))?;
     rt.block_on(async { __agent_main(args, &addr).await })?;
 
     Ok(())
@@ -91,13 +94,13 @@ fn get_listening_address(network: cidr::Ipv4Cidr) -> Option<Ipv4Addr> {
     None
 }
 
-async fn __agent_main(args: Cli, addr: &str) -> Result<(), Box<dyn Error>> {
+async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
     let mtls = args.mtls;
     tokio::task::LocalSet::new()
         .run_until(async move {
             let listener = tokio::net::TcpListener::bind(addr)
                 .await
-                .inspect_err(|e| eprintln!("Could not listen on address \"{addr}\": {e}"))?;
+                .handle_err(|e| eprintln!("Could not listen on address \"{addr}\": {e}"))?;
 
             info!("Listening on {addr}");
 
@@ -105,18 +108,22 @@ async fn __agent_main(args: Cli, addr: &str) -> Result<(), Box<dyn Error>> {
                 capnp_rpc::new_client(OcfResourceAgentImpl { cli: args });
 
             loop {
-                let (stream, _) = listener.accept().await?;
-                stream.set_nodelay(true)?;
+                let Ok((stream, _)) = listener.accept().await else {
+                    warn!("Error accepting connection. Dropping connection.");
+                    continue;
+                };
+                let Ok(_) = stream.set_nodelay(true) else {
+                    warn!("Error setting nodelay on connection. Dropping connection.");
+                    continue;
+                };
                 if mtls {
-                    //Create mtls acceptor
+                    // Create mtls acceptor
                     let mtls_acceptor = get_acceptor();
 
-                    //mTLS handshake
-                    let mtls_stream = match mtls_acceptor.accept(stream).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            return Err(format!("mTLS accept error: {}", e).into());
-                        }
+                    // mTLS handshake
+                    let Ok(mtls_stream) = mtls_acceptor.accept(stream).await else {
+                        warn!("Error performing TLS handshake. Dropping connection.");
+                        continue;
                     };
                     __agent_rpc_main(mtls_stream, agent_client.clone());
                 } else {
