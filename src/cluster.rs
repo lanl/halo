@@ -136,7 +136,7 @@ impl Cluster {
 
     pub fn lustre_resources_no_mgs(&self) -> impl Iterator<Item = &Resource> {
         self.lustre_resources()
-            .filter(|res| res.parameters.get("kind").unwrap() != "mgs")
+            .filter(|res| res.parameters.get("type").unwrap() != "mgs")
     }
 
     pub fn host_home_resource_groups<'a>(
@@ -157,7 +157,7 @@ impl Cluster {
 
     pub fn get_mgs(&self) -> Option<&Resource> {
         self.lustre_resources()
-            .find(|res| res.parameters.get("kind").unwrap() == "mgs")
+            .find(|res| res.parameters.get("type").unwrap() == "mgs")
     }
 
     pub fn hosts(&self) -> impl Iterator<Item = &Arc<Host>> {
