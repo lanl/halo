@@ -246,8 +246,8 @@ impl Host {
         *self.fenced.lock().unwrap() = fenced;
     }
 
-    async fn get_client(&self) -> io::Result<ocf_resource_agent::Client> {
-        let client = halo_capnp::get_client(&self.address()).await;
+    async fn get_client(&self, cluster: &Cluster) -> io::Result<ocf_resource_agent::Client> {
+        let client = halo_capnp::get_client(&self.address(), cluster.tls_connector.as_ref()).await;
         match client {
             Ok(_) => self.set_connected(true),
             Err(_) => self.set_connected(false),
@@ -343,7 +343,7 @@ impl Host {
 
     async fn remote_liveness_check(&self, cluster: &Cluster) {
         loop {
-            if self.get_client().await.is_ok() {
+            if self.get_client(cluster).await.is_ok() {
                 return;
             }
 

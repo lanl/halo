@@ -52,7 +52,10 @@ impl HostState {
 impl Host {
     pub async fn observe(&self, cluster: &Cluster) {
         loop {
-            let client = self.get_client().await.expect("TODO: handle error here.");
+            let client = self
+                .get_client(cluster)
+                .await
+                .expect("TODO: handle error here.");
 
             let futures: Vec<_> = cluster
                 .host_home_resource_groups(self)
@@ -72,7 +75,7 @@ impl Host {
         state.resources_to_manage = self.mint_resource_tokens(cluster);
 
         loop {
-            match self.get_client().await {
+            match self.get_client(cluster).await {
                 Ok(client) => {
                     debug!(
                         "Host {} established connection to its remote agent.",
