@@ -25,8 +25,6 @@ use crate::{
 /// This model is slightly more convenient for performing cluster operations.
 pub struct Cluster {
     resource_groups: Vec<ResourceGroup>,
-    num_zpools: u32,
-    num_targets: u32,
 
     /// The hosts in the Cluster are mapped by their ID, a unique identifier which is the hostname
     /// normally. However, in the test environment, it is a test-defined identifier since the
@@ -116,14 +114,6 @@ impl Cluster {
         };
     }
 
-    pub fn num_zpools(&self) -> u32 {
-        self.num_zpools
-    }
-
-    pub fn num_targets(&self) -> u32 {
-        self.num_targets
-    }
-
     pub fn resource_groups(&self) -> impl Iterator<Item = &ResourceGroup> {
         self.resource_groups.iter()
     }
@@ -132,19 +122,6 @@ impl Cluster {
         self.resource_groups
             .iter()
             .flat_map(|group| group.resources())
-    }
-
-    pub fn zpool_resources(&self) -> impl Iterator<Item = &Resource> {
-        self.resources().filter(|res| res.kind == "heartbeat/ZFS")
-    }
-
-    pub fn lustre_resources(&self) -> impl Iterator<Item = &Resource> {
-        self.resources().filter(|res| res.kind == "lustre/Lustre")
-    }
-
-    pub fn lustre_resources_no_mgs(&self) -> impl Iterator<Item = &Resource> {
-        self.lustre_resources()
-            .filter(|res| res.parameters.get("type").unwrap() != "mgs")
     }
 
     pub fn host_home_resource_groups<'a>(
@@ -161,11 +138,6 @@ impl Cluster {
             .iter()
             .find(|rg| rg.id() == id)
             .unwrap()
-    }
-
-    pub fn get_mgs(&self) -> Option<&Resource> {
-        self.lustre_resources()
-            .find(|res| res.parameters.get("type").unwrap() == "mgs")
     }
 
     pub fn hosts(&self) -> impl Iterator<Item = &Arc<Host>> {
@@ -220,8 +192,6 @@ impl Cluster {
         let mut new = Cluster {
             resource_groups: Vec::new(),
             hosts: HashMap::new(),
-            num_zpools: 0,
-            num_targets: 0,
             args: args.clone(),
             failover: false,
             state,
