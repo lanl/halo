@@ -8,9 +8,7 @@ pub mod fence;
 pub mod manage;
 pub mod power;
 pub mod reset;
-pub mod start;
 pub mod status;
-pub mod stop;
 pub mod validate;
 
 use {
@@ -25,8 +23,6 @@ use {
 };
 
 use clap::{Parser, Subcommand};
-
-use crate::cluster::Cluster;
 
 /// A `HandledError` represents an error that has already been handled. When you call a function
 /// that returns a `HandledError` or `HandledResult`, you don't need to do anything with that error,
@@ -93,8 +89,6 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     Status(StatusArgs),
-    Start,
-    Stop,
     Discover(DiscoverArgs),
     Failback(FailbackArgs),
     Fence(FenceArgs),
@@ -109,31 +103,18 @@ pub enum Commands {
 
 pub fn main(cli: &Cli) -> HandledResult<()> {
     match &cli.command {
-        Commands::Discover(args) => return discover::discover(args),
-        Commands::Failback(args) => return failback::failback(cli, args),
-        Commands::Fence(args) => return fence::fence(cli, args),
-        Commands::Power(args) => return power::power(cli, args),
-        Commands::Validate => return validate::validate(cli),
-        Commands::Status(args) => return status::status(cli, args),
-        Commands::Manage(args) => return manage::manage(cli, args),
-        Commands::Unmanage(args) => return manage::unmanage(cli, args),
-        Commands::Activate(args) => return activate::activate(cli, args),
-        Commands::Deactivate(args) => return activate::deactivate(cli, args),
-        Commands::Reset(args) => return reset::reset(cli, args),
-        _ => {}
+        Commands::Discover(args) => discover::discover(args),
+        Commands::Failback(args) => failback::failback(cli, args),
+        Commands::Fence(args) => fence::fence(cli, args),
+        Commands::Power(args) => power::power(cli, args),
+        Commands::Validate => validate::validate(cli),
+        Commands::Status(args) => status::status(cli, args),
+        Commands::Manage(args) => manage::manage(cli, args),
+        Commands::Unmanage(args) => manage::unmanage(cli, args),
+        Commands::Activate(args) => activate::activate(cli, args),
+        Commands::Deactivate(args) => activate::deactivate(cli, args),
+        Commands::Reset(args) => reset::reset(cli, args),
     }
-
-    let rt = tokio::runtime::Runtime::new()
-        .handle_err(|e| eprintln!("Error launching tokio runtime: {e}"))?;
-
-    rt.block_on(async {
-        let cluster = Cluster::from_config(cli.config.clone())?;
-        match &cli.command {
-            Commands::Start => start::start(cluster).await,
-            Commands::Stop => stop::stop(cluster).await,
-            _ => unreachable!(),
-        }
-    })
 }
 
 /// Convert multiple nodeset strings into a single, deduplicated NodeSet object.
