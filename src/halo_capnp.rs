@@ -3,9 +3,10 @@
 
 use std::{env, io};
 
-use {futures::AsyncReadExt, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
+use {futures::AsyncReadExt, rustls::pki_types::ServerName};
 
 use crate::{
+    cluster,
     remote::ocf,
     resource::{Location, Resource},
     tls::get_connector,
@@ -188,20 +189,18 @@ fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource
 
 pub async fn get_client(
     address: &str,
-    tls_connector: Option<&TlsConnector>,
+    tls_args: Option<&cluster::TlsArgs>,
 ) -> io::Result<ocf_resource_agent::Client> {
     let stream = tokio::net::TcpStream::connect(address).await?;
     stream.set_nodelay(true).expect("setting nodelay failed.");
 
-    match tls_connector {
-        Some(c) => {
-            let domain = ServerName::try_from(
-                env::var("HALO_SERVER_DOMAIN_NAME").expect("HALO_SERVER_DOMAIN_NAME not set."),
-            )
-            .unwrap();
-
+    match tls_args {
+        Some(args) => {
             // Perform mtls handshake
-            let mtls_stream = c.connect(domain, stream).await?;
+            let mtls_stream = args
+                .tls_connector
+                .connect(args.domain.clone(), stream)
+                .await?;
 
             let (reader, writer) =
                 tokio_util::compat::TokioAsyncReadCompatExt::compat(mtls_stream).split();
