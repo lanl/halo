@@ -102,7 +102,7 @@ impl Host {
         state.manage_these_resources = self.startup(cluster, my_resources).await;
 
         loop {
-            match self.get_client().await {
+            match self.get_client(cluster).await {
                 Ok(mut client) => {
                     debug!(
                         "Host {} established connection to its remote agent.",
@@ -401,7 +401,7 @@ impl Host {
                 "Trying to reconnect to remote agent at {}, attempt {tries}",
                 self.id()
             );
-            match self.get_client().await {
+            match self.get_client(cluster).await {
                 // If we were able to re-establish connection to the client, then return and let
                 // the manager try again to manage the resources that were running on this Host.
                 Ok(client) => {
@@ -610,7 +610,7 @@ impl Host {
         my_resources: Vec<ResourceToken>,
     ) -> Vec<ResourceToken> {
         let (manage_these, send_these): (Vec<ResourceToken>, Vec<ResourceToken>) =
-            match self.get_client().await {
+            match self.get_client(cluster).await {
                 Ok(client) => {
                     let mut manage_these = Vec::new();
                     let mut send_these = Vec::new();

@@ -3,7 +3,7 @@
 
 use std::{env, io};
 
-use {futures::AsyncReadExt, rustls::pki_types::ServerName};
+use {futures::AsyncReadExt, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
 
 use crate::{
     remote::ocf,
@@ -186,22 +186,55 @@ fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource
     }
 }
 
-pub async fn get_client(address: &str) -> io::Result<ocf_resource_agent::Client> {
+pub async fn get_client(
+    address: &str,
+    tls_connector: Option<&TlsConnector>,
+) -> io::Result<ocf_resource_agent::Client> {
     let stream = tokio::net::TcpStream::connect(address).await?;
     stream.set_nodelay(true).expect("setting nodelay failed.");
 
-    let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+    match tls_connector {
+        Some(c) => {
+            let domain = ServerName::try_from(
+                env::var("HALO_SERVER_DOMAIN_NAME").expect("HALO_SERVER_DOMAIN_NAME not set."),
+            )
+            .unwrap();
 
-    let rpc_network = Box::new(twoparty::VatNetwork::new(
-        futures::io::BufReader::new(reader),
-        futures::io::BufWriter::new(writer),
-        rpc_twoparty_capnp::Side::Client,
-        Default::default(),
-    ));
-    let mut rpc_system = RpcSystem::new(rpc_network, None);
-    let client: ocf_resource_agent::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+            // Perform mtls handshake
+            let mtls_stream = c.connect(domain, stream).await?;
 
-    tokio::task::spawn_local(rpc_system);
+            let (reader, writer) =
+                tokio_util::compat::TokioAsyncReadCompatExt::compat(mtls_stream).split();
+            let rpc_network = Box::new(twoparty::VatNetwork::new(
+                futures::io::BufReader::new(reader),
+                futures::io::BufWriter::new(writer),
+                rpc_twoparty_capnp::Side::Client,
+                Default::default(),
+            ));
+            let mut rpc_system = RpcSystem::new(rpc_network, None);
+            let client: ocf_resource_agent::Client =
+                rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
 
-    Ok(client)
+            tokio::task::spawn_local(rpc_system);
+
+            Ok(client)
+        }
+        None => {
+            let (reader, writer) =
+                tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+            let rpc_network = Box::new(twoparty::VatNetwork::new(
+                futures::io::BufReader::new(reader),
+                futures::io::BufWriter::new(writer),
+                rpc_twoparty_capnp::Side::Client,
+                Default::default(),
+            ));
+            let mut rpc_system = RpcSystem::new(rpc_network, None);
+            let client: ocf_resource_agent::Client =
+                rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+
+            tokio::task::spawn_local(rpc_system);
+
+            Ok(client)
+        }
+    }
 }

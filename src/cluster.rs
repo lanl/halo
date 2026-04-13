@@ -41,7 +41,7 @@ pub struct Cluster {
     /// state must be considered; otherwise, this does not need to be specified.
     state: Option<State>,
 
-    tls_connector: Option<TlsConnector>,
+    pub tls_connector: Option<TlsConnector>,
 }
 
 impl Cluster {

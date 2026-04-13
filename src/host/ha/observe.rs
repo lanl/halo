@@ -20,7 +20,7 @@ impl Host {
         debug!("host {}: resources: {my_resources:?}", self.id());
 
         loop {
-            match self.get_client().await {
+            match self.get_client(cluster).await {
                 Ok(client) => {
                     debug!(
                         "Host {} established connection to its remote agent.",
