@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use futures::future;
+use {futures::future, tokio_rustls::TlsConnector};
 
 use crate::{
     commands::{Handle, HandledResult},
@@ -22,7 +22,6 @@ use crate::{
 /// targets), and services know which nodes they expect to run on.
 ///
 /// This model is slightly more convenient for performing cluster operations.
-#[derive(Debug)]
 pub struct Cluster {
     resource_groups: Vec<ResourceGroup>,
     num_zpools: u32,
@@ -41,6 +40,8 @@ pub struct Cluster {
     /// File to use to store/load cluster state. This must be specified on the manager side where
     /// state must be considered; otherwise, this does not need to be specified.
     state: Option<State>,
+
+    tls_connector: Option<TlsConnector>,
 }
 
 impl Cluster {
@@ -197,6 +198,12 @@ impl Cluster {
             None => None,
         };
 
+        let tls_connector = if args.mtls {
+            Some(crate::tls::get_connector())
+        } else {
+            None
+        };
+
         let mut new = Cluster {
             resource_groups: Vec::new(),
             hosts: HashMap::new(),
@@ -205,6 +212,7 @@ impl Cluster {
             args: args.clone(),
             failover: false,
             state,
+            tls_connector,
         };
 
         let hosts: HashMap<String, Arc<Host>> = config
