@@ -5,11 +5,7 @@
 mod tests {
     use std::sync::Arc;
 
-    use tokio::runtime::Runtime;
-
-    use halo_lib::{
-        halo_capnp::AgentReply, host::FenceCommand, remote::ocf, resource::Location, test_env::*,
-    };
+    use halo_lib::{host::FenceCommand, test_env::*};
 
     /// Create a TestEnvironment for a test.
     ///
@@ -22,79 +18,6 @@ mod tests {
             env!("CARGO_BIN_EXE_halo_remote"),
             env!("CARGO_BIN_EXE_halo_manager"),
         )
-    }
-
-    #[test]
-    fn simple() {
-        let mut env = test_env_helper("simple");
-
-        let agent = TestAgent::new(halo_lib::remote_port(), None);
-
-        let _agent = env.start_remote_agents(vec![agent]);
-
-        let cluster = env.cluster();
-
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            for res in cluster.resources() {
-                assert!(matches!(
-                    res.start(Location::Home).await,
-                    Ok(AgentReply::Success(ocf::Status::Success))
-                ));
-
-                env.assert_agent_next_line(&agent_expected_line("start", res));
-
-                assert!(matches!(
-                    res.monitor(Location::Home).await,
-                    Ok(AgentReply::Success(ocf::Status::Success))
-                ));
-
-                env.assert_agent_next_line(&agent_expected_line("monitor", res));
-
-                assert!(matches!(
-                    res.stop().await,
-                    Ok(AgentReply::Success(ocf::Status::Success))
-                ));
-                env.assert_agent_next_line(&agent_expected_line("stop", res));
-            }
-        });
-    }
-
-    #[test]
-    fn multi_agent() {
-        let mut env = test_env_helper("multiagent");
-
-        let _agents = env.start_remote_agents(vec![
-            TestAgent::new(8001, Some("mds01".to_string())),
-            TestAgent::new(8002, Some("oss01".to_string())),
-        ]);
-
-        let cluster = env.cluster();
-
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            for res in cluster.resources() {
-                assert!(matches!(
-                    res.start(Location::Home).await,
-                    Ok(AgentReply::Success(ocf::Status::Success))
-                ));
-
-                env.assert_agent_next_line(&agent_expected_line("start", res));
-
-                assert!(matches!(
-                    res.monitor(Location::Home).await,
-                    Ok(AgentReply::Success(ocf::Status::Success))
-                ));
-
-                env.assert_agent_next_line(&agent_expected_line("monitor", res));
-
-                assert!(matches!(
-                    res.stop().await,
-                    Ok(AgentReply::Success(ocf::Status::Success))
-                ));
-                env.assert_agent_next_line(&agent_expected_line("stop", res));
-            }
-        });
     }
 
     #[test]

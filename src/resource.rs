@@ -472,34 +472,6 @@ impl Resource {
         remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Stop).await
     }
 
-    /// Perform a monitor RPC for this resource.
-    pub async fn monitor(&self, loc: Location) -> Result<AgentReply, AgentError> {
-        tokio::task::LocalSet::new()
-            .run_until(async {
-                remote_ocf_operation(self, loc, ocf_resource_agent::Operation::Monitor).await
-            })
-            .await
-    }
-
-    /// Perform a start RPC for this resource.
-    pub async fn start(&self, loc: Location) -> Result<AgentReply, AgentError> {
-        tokio::task::LocalSet::new()
-            .run_until(async {
-                remote_ocf_operation(self, loc, ocf_resource_agent::Operation::Start).await
-            })
-            .await
-    }
-
-    /// Perform a stop RPC for this resource.
-    pub async fn stop(&self) -> Result<AgentReply, AgentError> {
-        tokio::task::LocalSet::new()
-            .run_until(async {
-                remote_ocf_operation(self, Location::Home, ocf_resource_agent::Operation::Stop)
-                    .await
-            })
-            .await
-    }
-
     pub fn status(&self) -> ResourceStatus {
         self.status.lock().unwrap().clone()
     }
