@@ -207,11 +207,11 @@ impl Cluster {
 
         let tls_args = if args.mtls {
             Some(TlsArgs {
-                tls_connector: crate::tls::get_connector(),
+                tls_connector: crate::tls::get_connector()?,
                 domain: ServerName::try_from(
                     env::var("HALO_SERVER_DOMAIN_NAME").expect("HALO_SERVER_DOMAIN_NAME not set."),
                 )
-                .unwrap(),
+                .handle_err(|e| eprintln!("Could not create server domain name: {e}"))?,
             })
         } else {
             None

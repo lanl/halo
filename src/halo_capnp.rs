@@ -132,7 +132,7 @@ async fn get_ocf_request(
 
     if res.args.mtls {
         // Create mtls connector
-        let mtls_connector = get_connector();
+        let mtls_connector = get_connector().expect("TODO: handle error here");
 
         // Set domain/hostname of server we intend to connect to
         let domain = ServerName::try_from(
