@@ -15,23 +15,28 @@ pub mod http;
 #[derive(Parser, Debug, Default, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
+    /// Location of the config file.
     #[arg(long)]
     pub config: Option<String>,
 
+    /// Location of the socket used for communicating with the CLI program.
     #[arg(long)]
     pub socket: Option<String>,
 
+    /// Location of the file used to store the persistent event log.
     #[arg(long)]
     pub statefile: Option<String>,
 
+    /// Whether to use TLS to communicate with the remote daemons.
     #[arg(long)]
     pub mtls: bool,
 
+    /// Increases log level to "Debug" (default level is "Warn").
     #[arg(long)]
     pub verbose: bool,
 
     /// Whether to run in Observe mode (Default, only check on resource status, don't actively
-    /// start/stop resources), or Manage mode (actively manage resource state)
+    /// start/stop resources), or Manage mode (actively manage resource state).
     #[arg(long)]
     pub manage_resources: bool,
 
