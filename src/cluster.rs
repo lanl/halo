@@ -3,10 +3,11 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    env,
     sync::Arc,
 };
 
-use {futures::future, tokio_rustls::TlsConnector};
+use {futures::future, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
 
 use crate::{
     commands::{Handle, HandledResult},
@@ -41,7 +42,13 @@ pub struct Cluster {
     /// state must be considered; otherwise, this does not need to be specified.
     state: Option<State>,
 
-    pub tls_connector: Option<TlsConnector>,
+    pub tls_args: Option<TlsArgs>,
+}
+
+pub struct TlsArgs {
+    pub tls_connector: TlsConnector,
+
+    pub domain: ServerName<'static>,
 }
 
 impl Cluster {
@@ -198,8 +205,14 @@ impl Cluster {
             None => None,
         };
 
-        let tls_connector = if args.mtls {
-            Some(crate::tls::get_connector())
+        let tls_args = if args.mtls {
+            Some(TlsArgs {
+                tls_connector: crate::tls::get_connector(),
+                domain: ServerName::try_from(
+                    env::var("HALO_SERVER_DOMAIN_NAME").expect("HALO_SERVER_DOMAIN_NAME not set."),
+                )
+                .unwrap(),
+            })
         } else {
             None
         };
@@ -212,7 +225,7 @@ impl Cluster {
             args: args.clone(),
             failover: false,
             state,
-            tls_connector,
+            tls_args,
         };
 
         let hosts: HashMap<String, Arc<Host>> = config
