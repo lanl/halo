@@ -118,7 +118,7 @@ async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
                 };
                 if mtls {
                     // Create mtls acceptor
-                    let mtls_acceptor = get_acceptor();
+                    let mtls_acceptor = get_acceptor().expect("TODO: handle error herre");
 
                     // mTLS handshake
                     let Ok(mtls_stream) = mtls_acceptor.accept(stream).await else {
