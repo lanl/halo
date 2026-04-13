@@ -95,7 +95,12 @@ fn get_listening_address(network: cidr::Ipv4Cidr) -> Option<Ipv4Addr> {
 }
 
 async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
-    let mtls = args.mtls;
+    let mtls_acceptor = if args.mtls {
+        Some(get_acceptor()?)
+    } else {
+        None
+    };
+
     tokio::task::LocalSet::new()
         .run_until(async move {
             let listener = tokio::net::TcpListener::bind(addr)
@@ -116,18 +121,18 @@ async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
                     warn!("Error setting nodelay on connection. Dropping connection.");
                     continue;
                 };
-                if mtls {
-                    // Create mtls acceptor
-                    let mtls_acceptor = get_acceptor().expect("TODO: handle error herre");
 
-                    // mTLS handshake
-                    let Ok(mtls_stream) = mtls_acceptor.accept(stream).await else {
-                        warn!("Error performing TLS handshake. Dropping connection.");
-                        continue;
-                    };
-                    __agent_rpc_main(mtls_stream, agent_client.clone());
-                } else {
-                    __agent_rpc_main(stream, agent_client.clone());
+                match mtls_acceptor {
+                    Some(ref a) => {
+                        let Ok(mtls_stream) = a.accept(stream).await else {
+                            warn!("Error performing TLS handshake. Dropping connection.");
+                            continue;
+                        };
+                        __agent_rpc_main(mtls_stream, agent_client.clone());
+                    }
+                    None => {
+                        __agent_rpc_main(stream, agent_client.clone());
+                    }
                 }
             }
         })
