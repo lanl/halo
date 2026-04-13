@@ -319,7 +319,7 @@ impl Resource {
         loc: Location,
         update_status_if_stopped: bool,
     ) -> Result<bool, ManagementError> {
-        match self.monitor_client(client).await {
+        match self.monitor(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
                 self.set_running_on_loc(loc);
                 Ok(true)
@@ -364,7 +364,7 @@ impl Resource {
                     Location::Away => "its failover node",
                 }
             );
-            match self.start_client(client).await {
+            match self.start(client).await {
                 // Agent replies that the resource was started succesfully.
                 Ok(AgentReply::Success(ocf::Status::Success)) => self.set_running_on_loc(loc),
                 // Agent replies that it could not start the resource. This is likely due to a
@@ -413,7 +413,7 @@ impl Resource {
 
         get_worst_error(future::join_all(results).await.into_iter())?;
 
-        match self.stop_client(client).await {
+        match self.stop(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
                 self.set_status(ResourceStatus::Stopped);
                 Ok(())
@@ -448,7 +448,7 @@ impl Resource {
     }
 
     /// Perform a monitor RPC for this resource given a client.
-    pub async fn monitor_client(
+    async fn monitor(
         &self,
         client: &ocf_resource_agent::Client,
     ) -> Result<AgentReply, capnp::Error> {
@@ -457,18 +457,12 @@ impl Resource {
     }
 
     /// Perform a start RPC for this resource given a client.
-    pub async fn start_client(
-        &self,
-        client: &ocf_resource_agent::Client,
-    ) -> Result<AgentReply, capnp::Error> {
+    async fn start(&self, client: &ocf_resource_agent::Client) -> Result<AgentReply, capnp::Error> {
         remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Start).await
     }
 
     /// Perform a stop RPC for this resource given a client.
-    pub async fn stop_client(
-        &self,
-        client: &ocf_resource_agent::Client,
-    ) -> Result<AgentReply, capnp::Error> {
+    async fn stop(&self, client: &ocf_resource_agent::Client) -> Result<AgentReply, capnp::Error> {
         remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Stop).await
     }
 
