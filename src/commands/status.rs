@@ -35,12 +35,6 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
             ),
             _ => {}
         };
-        /*
-        print!("{}: ", res.status);
-        print!("{}\t", res.kind);
-
-        print!("{}\t", res.id);
-        */
 
         if cli.verbose {
             print!(" [");
