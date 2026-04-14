@@ -70,6 +70,8 @@ pub struct ResourceJson {
     pub status: String,
     pub comment: Option<String>,
     pub managed: bool,
+    pub home_host: String,
+    pub failover_host: Option<String>,
 }
 
 impl ResourceJson {
@@ -98,6 +100,8 @@ impl ResourceJson {
             status,
             comment,
             managed,
+            home_host: res.home_node.id(),
+            failover_host: res.failover_node.as_ref().map(|h| h.id()),
         }
     }
 }
