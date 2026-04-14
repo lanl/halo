@@ -24,10 +24,23 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
             continue;
         }
 
+        print!("{}\t", res.id);
+        print!("({}):\t", res.kind);
+        print!("{}", res.status);
+        match res.status.as_str() {
+            "Running" => print!(" on {}", res.home_host),
+            "Running (Failed Over)" => print!(
+                " on {}",
+                res.failover_host.expect("Failover host must be set here.")
+            ),
+            _ => {}
+        };
+        /*
         print!("{}: ", res.status);
         print!("{}\t", res.kind);
 
         print!("{}\t", res.id);
+        */
 
         if cli.verbose {
             print!(" [");
