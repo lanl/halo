@@ -438,7 +438,7 @@ impl Resource {
             // reset. Management cannot proceed in a such a case, so return an error.
             Err(e) => {
                 error!(
-                    "Error: '{e:?}' when attempting to start resource '{}'.",
+                    "Error: '{e:?}' when attempting to stop resource '{}'.",
                     self.id
                 );
                 self.set_status(ResourceStatus::Unknown(format!("{e}")));
