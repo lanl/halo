@@ -472,8 +472,8 @@ impl Host {
     async fn do_failover(&self, state: &mut HostState, cluster: &Arc<Cluster>) {
         let tokens_to_send = take(&mut state.resources_in_transit)
             .into_iter()
-            .chain(take(&mut state.manage_these_resources).into_iter())
-            .chain(take(&mut state.check_these_resources).into_iter());
+            .chain(take(&mut state.manage_these_resources))
+            .chain(take(&mut state.check_these_resources));
 
         if self.do_fence_nonblocking(FenceCommand::Off).await.is_err() {
             // Fencing failed: cannot do anything further with these resources :(
