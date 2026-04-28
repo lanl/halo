@@ -31,13 +31,11 @@ The `halo_remote` daemon performs actions on cluster nodes on behalf of the mana
 It never acts on its own--it only takes action when directed to do so by the management service.
 The remote daemon uses existing OCF resource agent programs to perform management actions.
 
-The `halo_manager` management daemon communicates with the `halo_remote` daemons over TCP using a capnproto RPC protocol.
-The daemon commands the remote agents to start, stop, and monitor resources as needed.
-The management service also has the ability to fence cluster nodes by powering them off.
+The `halo_manager` management daemon controls the state of the cluster by commanding the remote agents to start, stop, and monitor resources as needed.
+It also has the ability to fence cluster nodes by powering them off, and communicates with the `halo_remote` daemons over TCP using a capnproto RPC protocol.
 
 The `halo` CLI utility allows the admin to query status and perform actions on the cluster.
-It communicates with the management service using an HTTP API.
-Communication occurs over a unix domain socket.
+It communicates with the management service using an HTTP API, which occurs over a unix domain socket.
 The utility supports commands like `status` to display the cluster state,
 and `fence` to fence a cluster node.
 
@@ -85,11 +83,11 @@ and never interferes with the availability of the managed filesystem.
 = Configuration File
 
 The HALO management daemon expects a configuration file in YAML format.
-The config file can be specified as a CLI argument:
+This config file can be specified as a CLI argument:
 ```bash
 halo_manager --config cluster.yaml
 ```
-or, if it is not specified on the command line, a default location
+Alternatively, if the config file not specified on the command line, a default location
 of `/etc/halo/halo.conf` is used.
 
 == Automatically generating a config file
@@ -161,7 +159,7 @@ and `fence_parameters` needs to include `username` and `password` fields.
 === Resources
 
 Resources are logically structured as trees based on resource dependencies.
-Typically it is common for one resource, like a zpool,
+It is common for one resource, like a zpool,
 to have resources that depend on it, like a lustre mgt and mdt service.
 Those dependencies are specified using the `requires` field,
 in which a "child" resource specifies the name of its "parent" resource.
@@ -224,7 +222,7 @@ It is typically managed as a systemd service called `halo.service` on the cluste
 == Manage versus Observe Mode
 
 The management daemon can run in two modes:
-*manage* mode in which it actively starts and stops resources, and fences nodes when needed;
+*manage* mode in which it actively starts and stops resources, fencing nodes when needed;
 and *observe* mode in which it monitors the state of the cluster but never takes action.
 
 Currently, observe mode is the default. Manage mode must be requested using the `--manage-resources` option.
