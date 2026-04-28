@@ -155,7 +155,7 @@ HALO supports a set of common fence agents, for example, `fence_powerman` and `f
 If `fence_powerman` is used, `fence_agent` should be set to the string `"powerman"`,
 and `fence_parameters` can be `null`.
 
-If `fence_redish` is used, `fence_agent` should be set to `"redfish"`,
+If `fence_redfish` is used, `fence_agent` should be set to `"redfish"`,
 and `fence_parameters` needs to include `username` and `password` fields.
 
 === Resources
@@ -267,7 +267,7 @@ The `status` command is used to print out a summary of the cluster status.
 
 === failback
 
-The `failback` command is used to gracefully return failed-over resourcs to their home node.
+The `failback` command is used to gracefully return failed-over resources to their home node.
 It gracefully stops the resources on their current (failover) node
 and starts them on their home node once they are confirmed to be stopped.
 
