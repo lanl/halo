@@ -361,6 +361,105 @@ cluster. While a collection of multiple processes running on one host is not a p
 distributed cluster, the behavior can be similar enough to suitably test the HALO functionality. And
 it has the benefit of making automated tests much simpler to implement and run.
 
+== How to Test Failover by Hand
+
+To test fencing by hand, use the failover config at `tests/failover.yaml`. This config defines two
+hosts that are in a failover pair, and which use the test fence agent.
+
+1. Launch one or both of the test agents:
+
+#codeblock[
+```bash
+$ HALO_TEST_DIRECTORY=tests/test_output/failover OCF_ROOT=tests/ocf_resources/ ./target/debug/halo_remote --network 127.0.0.0/24 --port 8005  --test-id fence_mds00
+$ HALO_TEST_DIRECTORY=tests/test_output/failover OCF_ROOT=tests/ocf_resources/ ./target/debug/halo_remote --network 127.0.0.0/24 --port 8006  --test-id fence_mds01
+```
+]
+
+(Note that `HALO_TEST_DIRECTORY` must be defined as shown above for fencing to work, because the
+test fence agent at `tests/fence_test` is hardcoded to assume that the remote PID file is under
+`tests/test_output/{test_id}`.)
+
+2. Run the manager service:
+
+#codeblock[
+```bash
+cargo run --bin halo_manager -- --config tests/failover.yaml --socket halo.socket --verbose --sleep-time 2000 --manage-resources --fence-on-connection-close --statefile halo.state
+```
+]
+
+There are a few arguments here that are used for the test environment, but not in production:
+- `--fence-on-connection-close`: In the test environment, it is more convenient to use "Connection Reset"
+  or "Connection Refused" errors to indicate a condition in which the remote agent process should be fenced.
+  This doesn't make sense for production; in production, the only network error that should trigger fencing
+  is "Connection Timed Out".
+- `--sleep-time 2000`: Normally, the manager process only checks each resource every 5 seconds. When testing the
+  manager locally, it is convenient for it to check on resources more frequently so that you don't have to wait
+  a long time for state to change after stopping a resource, for example. The sleep time is in milliseconds so this
+  argument makes the manager check on every resource's status every 2 seconds.
+
+3. Run `power status` to confirm that the fence agent is able to check the status of each remote:
+
+#codeblock[
+```bash
+cargo run --bin halo --config tests/failover.yaml power status
+```
+]
+
+4. Run `power off` to try killing a remote agent, and see how the manager responds:
+
+#codeblock[
+```bash
+cargo run --bin halo --config tests/failover.yaml power off fence_mds01
+```
+]
+
+5. Run the `status` command to see what changed:
+#codeblock[
+```bash
+$ cargo run --bin halo -- status --socket halo.socket
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running `target/debug/halo status --socket halo.socket`
+test_zpool_00   (heartbeat/ZFS):        Running on fence_mds00
+test_mgt        (lustre/Lustre):        Running on fence_mds00
+test_zpool_01   (heartbeat/ZFS):        Running (Failed Over) on fence_mds00
+test_mdt        (lustre/Lustre):        Running (Failed Over) on fence_mds00
+Connected hosts:        fence_mds00
+Disconnected hosts:     fence_mds01
+Events:
+2026-04-28 12:54:34.337109 event=fence object=fence_mds01 comment="Manager service initiated fence action."
+```
+]
+
+== How to Run and Interpret a Test
+
+Run the entire test suite with `cargo test.`
+You can run a single test by specifying its name, like `cargo test failover1`.
+
+When the HA tests run, the remote agents and manager log their output to files so that they can be reviewed later.
+The output is available in `tests/test_output/<test_name>`.
+
+=== Test Output
+
+For example:
+
+#codeblock[
+```
+$ ls tests/test_output/failover1/
+agent_failover1_0_log           # remote agent 0 log
+agent_failover1_1_log           # remote agent 1 log
+config.yaml                     # test's specific manager config file
+failover1_0.lustre.mdt_0        # state file indicating that mdt0 was running on remote agent 0 when the test stopped
+failover1_0.lustre.mdt_1        # ...
+failover1_0.pid                 # PID of remote agent 0
+failover1_0.zfs.zpool_0         # ...
+failover1_0.zfs.zpool_1         # state file indicating that zpool_1 was running on remote agent 0 when the test stopped
+halo.state                      # manager's persistent log of events that occurred
+manager_log                     # manager's log message stdout/stderr is stored here
+test_log
+test.socket
+```
+]
+
 == Resource State Files
 
 In order to emulate the starting and stopping of resources, test agents create and remove a file
@@ -432,43 +531,3 @@ unique agent ID.
 
 Being able to "power on" a test agent requires storing the new PID somewhere so that it can be known
 when it next needs to be fenced.
-
-== Manager
-
-Some tests don't use the manager at all and directly call the methods on `Resource` to start, stop,
-and monitor resources. Other tests launch the manager as a separate thread in the test process.
-
-
-== How to Test Fencing by Hand
-
-To test fencing by hand, use the failover config at `tests/failover.yaml`. This config defines two
-hosts that are in a failover pair, and which use the test fence agent.
-
-1. Launch one or both of the test agents:
-
-```bash
-$ HALO_TEST_DIRECTORY=tests/test_output/failover OCF_ROOT=tests/ocf_resources/ ./target/debug/halo_remote --network 127.0.0.0/24 --port 8005  --test-id fence_mds00
-$ HALO_TEST_DIRECTORY=tests/test_output/failover OCF_ROOT=tests/ocf_resources/ ./target/debug/halo_remote --network 127.0.0.0/24 --port 8006  --test-id fence_mds01
-```
-
-(Note that `HALO_TEST_DIRECTORY` must be defined as shown above for fencing to work, because the
-test fence agent at `tests/fence_test` is hardcoded to assume that the remote PID file is under
-`tests/test_output/{test_id}`.)
-
-2. Run the manager service:
-
-```bash
-./target/debug/halo_manager --config tests/failover.yaml --socket halo.socket  --manage-resources --verbose
-```
-
-3. Run `power status` to confirm that the fence agent is able to check the status of each remote:
-
-```bash
-./target/debug/halo --config tests/failover.yaml  power status
-```
-
-4. Run `power off` to try killing a remote agent, and see how the manager responds:
-
-```bash
-./target/debug/halo --config tests/failover.yaml  power off fence_mds00
-```
