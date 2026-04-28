@@ -52,7 +52,7 @@ the requested op.
 HALO uses an HTTP API to communicate between the admin CLI utility and the manager service.
 The client side implementation uses the
 #link("https://docs.rs/reqwest/latest/reqwest/")[reqwest]
-library, and the serve side uses the
+library, and the server side uses the
 #link("https://docs.rs/axum/latest/axum/")[axum]
 library.
 
@@ -175,7 +175,7 @@ and `Resource`--must be `Send + Sync`.
 
 The practical takeaway of this is that anywhere that interior mutability is
 required in any of those objects, a `Mutex` must be used, even though
-it would seem like a a `RefCell` should be sufficient.
+it would seem like a `RefCell` should be sufficient.
 Similarly, anywhere that multiple ownership is needed, an `Arc` must be used
 even though an `Rc` would seem sufficient.
 
