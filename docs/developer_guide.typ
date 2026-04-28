@@ -231,7 +231,7 @@ This code is in `src/host/ha/manage.rs`.
 
 Since this is the most complex part of HALO, and since any bugs in this code
 could result in service outages or double-started resources,
-I will attempt to explain how it works in detail in this section.
+this section makes a significant effort to explain how it works in detail.
 
 == Mutable state
 
@@ -248,7 +248,7 @@ a given time, and also that no resource is "forgotten about", never being manage
 When the HALO manager starts up, a single `ResourceToken` is created for each resource group
 in the cluster.
 (The name `ResourceToken` is slightly misleading because tokens correspond to `ResourceGroup`
-and not `Resource`, but I thought `ResourceGroupToken` would be too long....)
+and not `Resource`, but the name `ResourceGroupToken` would be too long....)
 This occurs in `Host::mint_resource_tokens()`.
 
 `ResourceToken`s can never be destroyed once created.
