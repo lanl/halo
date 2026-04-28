@@ -168,7 +168,7 @@ This requirement holds even though we use `axum` within a single-threaded contex
 so the objects passed to `axum::serve()` will never actually be accessed
 from multiple threads.
 
-Thus, any of the objects in `HALO` that are reachable from the arguments passed
+Thus, any of the objects in HALO that are reachable from the arguments passed
 to `axum::serve()` must be thread-safe.
 Specifically `Cluster`, and the objects reachable from it--`Host`, `ResourceGroup`,
 and `Resource`--must be `Send + Sync`.
@@ -511,7 +511,7 @@ live in `tests/test_output/simple/`.
 When a test runs multiple agents (because the test is simulating a cluster with multiple nodes), the
 test ID is not suitable to uniquely identify the agents. A new unique identifier for the agents is
 needed for operations like fencing. When a test launches the agents, it can specify an optional
-unique ID per-agent. This agent ID is encoded in the path to the resource state files managed
+unique per-agent ID. This agent ID is encoded in the path to the resource state files managed
 by that agent, so that the test environment can tell which agent "owns" a given resource at a
 particular moment.
 
