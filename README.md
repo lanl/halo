@@ -1,6 +1,6 @@
 # HALO
 
-HALO, or High Availability Low Overhead, is a cluster management system designed for managing Lustre HA and similar use cases.
+HALO is a cluster management system designed for managing Lustre HA and similar use cases.
 HALO was previously known as GoLustre, and only supported Lustre HA, but now it can manage other cluster types.
 
 LANL software release number: O4905.
@@ -23,7 +23,15 @@ details on how to install typst.
 
 The source for the halo man pages are in `docs/man`.
 
-## Quick Start using an example config:
+## Quick Start - Simulating a Cluster Locally
+
+HALO normally runs on a cluster of filesystem servers, but it is possible to run it locally on a laptop or VM to test it out.
+Rather than running each server process on a separate node, all processes can run on the same node, communicating with each other over the localhost interface.
+
+The instructions below simulate a simple single-node file server without failover. I recommend running each process in a separate tmux pane.
+
+See the [Test Environment](docs/developer_guide.typ#L357) section in the developer guide for more detailed
+information on how to simulate a more complicated cluster with failover.
 
 1. Start the remote service, giving it an ID of `test_agent` (the test ID is used to control its resources in the test environment):
 
@@ -47,8 +55,16 @@ Look in the halo directory for files named `test_agent.*` -- these are created w
 ```bash
 cargo run --bin halo -- status --socket halo.socket
 ```
+This outputs information on the state of the resources at the current moment:
 
-This outputs information on the state of the resources at the current moment.
+```
+test_zpool      (heartbeat/ZFS):        Running on 127.0.0.1
+test_ost        (lustre/Lustre):        Running on 127.0.0.1
+test_mgt        (lustre/Lustre):        Running on 127.0.0.1
+test_mdt        (lustre/Lustre):        Running on 127.0.0.1
+Connected hosts:        127.0.0.1
+Disconnected hosts:
+```
 
 4. Try "stopping" a resource by removing its state file:
 
@@ -64,12 +80,6 @@ Run the test suite with:
 
 ```bash
 cargo test
-```
-
-By default, slow tests are skipped. In order to run the full test suite, including slow tests, run:
-
-```bash
-cargo test --features slow_tests
 ```
 
 ## Architecture
@@ -115,7 +125,9 @@ To install and start the remote server:
 
 ## Configuration
 
-The daemon can be configured via environment variables defined in `/etc/sysconfig/halo`. HALO recognizes the following variables:
+Besides using command-line arguments,
+the daemons can be configured via environment variables defined in `/etc/sysconfig/halo`.
+HALO recognizes the following variables:
 
 - `HALO_CONFIG` -- defines the location to search for the configuration file (default: `/etc/halo/halo.conf`).
 - `HALO_PORT` -- defines port for the daemon to listen on (default `8000`).
