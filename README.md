@@ -118,7 +118,7 @@ To install and start the management server:
 
 To install and start the remote server:
 ```bash
-# clush -g mds,oss --copy systemd/halo_remote.service --dest /lib/systemd/system/
+# clush -g mds,oss --copy systemd/halo-remote.service --dest /lib/systemd/system/
 # clush -g mds,oss --copy target/debug/halo_remote --dest /usr/local/sbin/
 # systemctl start halo-remote.service
 ```
