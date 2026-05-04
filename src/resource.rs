@@ -67,7 +67,6 @@ pub struct ResourceGroup {
 
 impl ResourceGroup {
     pub fn new(root: Resource, args: manager::Cli) -> Self {
-        assert!(root.kind == "heartbeat/ZFS");
         Self {
             root,
             managed: Mutex::new(true),
