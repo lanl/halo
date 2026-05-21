@@ -276,3 +276,25 @@ While the management daemon is running in Manage mode,
 it may be desirable to prevent it from managing some specific resources.
 When a resource is unmanaged using `halo unmanage <resource_id>`,
 HALO will still attempt to monitor the resource status but will not take any actions on that resource.
+
+= Troubleshooting
+
+== Why doesn't HALO see a resource as started?
+
+If a resource is started but HALO doesn't see it as started, it's not always
+obvious why just from the output of the `halo status` command.
+One way to get visibility into the root cause is to look at the logs of the remote agent.
+
+The remote agent determines resource status by running an OCF Resource Agent script.
+You can see the status code as well as stdout and stderr of the OCF script if you
+run the remote agent in verbose mode:
+
+```bash
+HALO_LOG=debug halo_remote
+```
+or
+```bash
+halo_remote --verbose
+```
+
+(the two methods are equivalent).
