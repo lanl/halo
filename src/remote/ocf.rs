@@ -154,7 +154,7 @@ pub fn do_operation(
         }
     };
 
-    if exit_code != 0 && cli_args.verbose {
+    if exit_code != 0 {
         debug!(
             "OCF resource agent script returned code: {exit_code}; output: {:?}",
             output
