@@ -208,11 +208,32 @@ It is not enabled by default because HALO is designed to be run on a secure mana
 Normally, the remote agent only listens on a private management IP address.
 However, if additional security is desired, the `--mtls` option can be passed.
 
-== OCF Resource Agents
+= OCF Resource Agents
 
 The remote agent relies on OCF Resource Agent scripts to perform management actions.
 It looks for these scripts in the default location `/usr/lib/ocf/`.
 If the OCF scripts are installed in a different location, the `--ocf-root` option can be used to indicate that.
+
+== Installing ZFS and Lustre OCF Resource Agent Scripts
+
+If you don't already have the OCF resource agent scripts installed in your environment,
+you'll have to get (or write) scripts for the resource types that HALO will manage.
+
+- ZFS
+  - The ZFS resource agent script isn't typically packaged in any distribution package.
+    You can get it directly from the `resource-agents` github repo at
+    https://github.com/ClusterLabs/resource-agents/blob/main/heartbeat/ZFS
+    and then copy it to `/usr/lib/ocf/resource.d/heartbeat/ZFS`.
+
+- Lustre
+  - The Lustre resource agent script is packaged in the `lustre-resource-agents` RPM.
+    If you installed Lustre via RPMs, you should just be able to do
+    ```bash
+    dnf install lustre-resource-agents
+    ```
+    If you installed Lustre from some other means, you can get the script
+    from the Lustre source tree, at `lustre/conf/resource/Lustre` and then copy
+    it to `/usr/lib/ocf/resource.d/lustre/Lustre`.
 
 = Management Daemon
 
