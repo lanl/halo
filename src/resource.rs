@@ -188,7 +188,7 @@ impl ResourceGroup {
         self.root.stop_recursive(client).await
     }
 
-    fn get_overall_status(&self) -> ResourceStatus {
+    pub fn get_overall_status(&self) -> ResourceStatus {
         let statuses = self.resources().map(|r| r.status());
 
         ResourceStatus::get_worst(statuses.into_iter())
