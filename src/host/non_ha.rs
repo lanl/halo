@@ -52,6 +52,16 @@ impl HostState {
 impl Host {
     pub async fn observe(&self, cluster: &Cluster) {
         loop {
+            let resource_groups_to_observe: Vec<_> = cluster
+                .host_home_resource_groups(self)
+                .filter(|rg| !matches!(rg.get_overall_status(), ResourceStatus::Error(_)))
+                .collect();
+
+            if resource_groups_to_observe.is_empty() {
+                warn!("Host {} cannot observe any of its resource groups because they all have configuration errors.", self.id());
+                return;
+            }
+
             let Ok(client) = self.get_client(cluster).await else {
                 tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                     .await;
@@ -63,8 +73,8 @@ impl Host {
                 self.id()
             );
 
-            let futures: Vec<_> = cluster
-                .host_home_resource_groups(self)
+            let futures: Vec<_> = resource_groups_to_observe
+                .iter()
                 .map(|rg| self.observe_resource_group(cluster, rg.id(), &client))
                 .collect();
 
@@ -225,7 +235,10 @@ impl Host {
             ManagementError::Connection => {
                 debug!("{}: broken connection while managing {rg_name}", self.id())
             }
-            ManagementError::Configuration => todo!("Handle configuration error here."),
+            ManagementError::Configuration => debug!(
+                "host {} got a configuration error when managing resource group {rg_name}",
+                self.id()
+            ),
         };
     }
 
