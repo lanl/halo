@@ -7,7 +7,7 @@ use std::mem::take;
 
 use {
     futures::{future, stream::FuturesUnordered, StreamExt},
-    log::{debug, error, warn},
+    log::{debug, warn},
 };
 
 use crate::{
@@ -52,10 +52,16 @@ impl HostState {
 impl Host {
     pub async fn observe(&self, cluster: &Cluster) {
         loop {
-            let client = self
-                .get_client(cluster)
-                .await
-                .expect("TODO: handle error here.");
+            let Ok(client) = self.get_client(cluster).await else {
+                tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
+                    .await;
+                continue;
+            };
+
+            debug!(
+                "Host {} established connection to its remote agent.",
+                self.id()
+            );
 
             let futures: Vec<_> = cluster
                 .host_home_resource_groups(self)
@@ -207,15 +213,20 @@ impl Host {
     async fn observe_resource_group(
         &self,
         cluster: &Cluster,
-        rg: &str,
+        rg_name: &str,
         client: &ocf_resource_agent::Client,
     ) {
-        let rg = cluster.get_resource_group(rg);
-        let err = rg
+        let rg = cluster.get_resource_group(rg_name);
+        match rg
             .observe_loop(client, false, Location::Home)
             .await
-            .expect_err("observe_loop() should not exit until an error occurs in this usage.");
-        error!("{err:?}");
+            .expect_err("observe_loop() should not exit until an error occurs in this usage.")
+        {
+            ManagementError::Connection => {
+                debug!("{}: broken connection while managing {rg_name}", self.id())
+            }
+            ManagementError::Configuration => todo!("Handle configuration error here."),
+        };
     }
 
     async fn manage_resource_group_non_ha(
