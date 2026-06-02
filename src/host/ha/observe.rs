@@ -14,10 +14,28 @@ use crate::cluster::Cluster;
 
 use super::*;
 
+struct HostState {
+    resources_to_observe: Vec<ResourceToken>,
+    resources_with_errors: Vec<ResourceToken>,
+}
+
+impl HostState {
+    fn new() -> Self {
+        Self {
+            resources_to_observe: Vec::new(),
+            resources_with_errors: Vec::new(),
+        }
+    }
+}
+
 impl Host {
     pub async fn observe_ha(&self, cluster: &Cluster) {
-        let mut my_resources = self.mint_resource_tokens(cluster);
+        let my_resources = self.mint_resource_tokens(cluster);
         debug!("host {}: resources: {my_resources:?}", self.id());
+
+        let mut state = HostState::new();
+
+        state.resources_to_observe = my_resources;
 
         loop {
             match self.get_client(cluster).await {
@@ -26,7 +44,7 @@ impl Host {
                         "Host {} established connection to its remote agent.",
                         self.id()
                     );
-                    self.remote_connected_loop_observe(take(&mut my_resources), cluster, &client)
+                    self.remote_connected_loop_observe(&mut state, cluster, &client)
                         .await
                 }
                 Err(_) => {
@@ -43,7 +61,7 @@ impl Host {
 
     async fn remote_connected_loop_observe(
         &self,
-        resources_to_check: Vec<ResourceToken>,
+        state: &mut HostState,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) {
@@ -52,7 +70,7 @@ impl Host {
 
         tasks.push(Box::pin(self.receive_message()));
 
-        for token in resources_to_check {
+        for token in take(&mut state.resources_to_observe) {
             tasks.push(Box::pin(
                 self.check_resource_group(token, cluster, client, false),
             ));
@@ -80,15 +98,18 @@ impl Host {
                         )));
                         tasks.push(Box::pin(self.receive_message()));
                     }
-                    Message::ManageResourceGroup | Message::RequestFailover => {
+                    Message::ManageResourceGroup
+                    | Message::RequestFailover
+                    | Message::SwitchHost => {
                         panic!(
                             "Unexpected to receive a {:?} event in observe mode.",
                             event.kind
                         )
                     }
                     Message::TaskCanceled => todo!(),
-                    Message::SwitchHost => todo!(),
-                    Message::ResourceError => todo!(),
+                    Message::ResourceError => {
+                        state.resources_with_errors.push(event.resource_group)
+                    }
                 },
                 HostMessage::None(_id) => {}
             }
@@ -122,8 +143,24 @@ impl Host {
                     HostMessage::None(id)
                 }
             }
-            Err(ManagementError::Configuration) => todo!(),
-            Err(ManagementError::Connection) => todo!(),
+            Err(ManagementError::Connection) => {
+                debug!(
+                    "{}: broken connection while checking {}",
+                    self.id(),
+                    token.id
+                );
+                self.send_message_to_partner(token, Message::CheckResourceGroup)
+                    .await;
+                HostMessage::None(id)
+            }
+            Err(ManagementError::Configuration) => {
+                debug!(
+                    "host {} got a configuration error when managing resource group {}",
+                    self.id(),
+                    token.id
+                );
+                new_message(token, Message::ResourceError)
+            }
         }
     }
 
@@ -145,8 +182,24 @@ impl Host {
 
                 HostMessage::None(id)
             }
-            Err(ManagementError::Configuration) => todo!(),
-            Err(ManagementError::Connection) => todo!(),
+            Err(ManagementError::Connection) => {
+                debug!(
+                    "{}: broken connection while observing {}",
+                    self.id(),
+                    token.id
+                );
+                self.send_message_to_partner(token, Message::CheckResourceGroup)
+                    .await;
+                HostMessage::None(id)
+            }
+            Err(ManagementError::Configuration) => {
+                debug!(
+                    "host {} got a configuration error when managing resource group {}",
+                    self.id(),
+                    token.id
+                );
+                new_message(token, Message::ResourceError)
+            }
         }
     }
 }
