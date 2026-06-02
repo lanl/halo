@@ -53,8 +53,56 @@ impl Host {
                         self.id()
                     );
 
-                    todo!()
+                    self.remote_disconnected_loop_observe(cluster).await
                 }
+            }
+        }
+    }
+
+    async fn remote_disconnected_loop_observe(&self, cluster: &Cluster) {
+        tokio::select! {
+            _ = self.remote_liveness_check(cluster) => {}
+            _ = self.handle_messages_remote_disconnected_observe() => {}
+        }
+    }
+
+    async fn handle_messages_remote_disconnected_observe(&self) {
+        loop {
+            match self.receive_message().await {
+                HostMessage::Command(command) => {
+                    todo!("Handle command {command:?} in ha observe mode.")
+                }
+                HostMessage::Resource(event) => {
+                    match event.kind {
+                        Message::ManageResourceGroup
+                        | Message::RequestFailover
+                        | Message::SwitchHost
+                        | Message::TaskCanceled => {
+                            panic!(
+                                "Unexpected to receive a {:?} event in observe mode.",
+                                event.kind
+                            );
+                        }
+                        Message::ResourceError => {
+                            panic!("Unexpected to receive a resource error message in disconnected mode.");
+                        }
+                        Message::CheckResourceGroup => {
+                            self.send_message_to_partner(
+                                event.resource_group,
+                                Message::ObserveResourceGroup,
+                            )
+                            .await;
+                        }
+                        Message::ObserveResourceGroup => {
+                            self.send_message_to_partner(
+                                event.resource_group,
+                                Message::ObserveResourceGroup,
+                            )
+                            .await;
+                        }
+                    }
+                }
+                HostMessage::None(_) => {}
             }
         }
     }
@@ -79,9 +127,24 @@ impl Host {
         while let Some(event) = tasks.next().await {
             trace!("Host {} got event: {event:?}", self.id());
             match event {
-                HostMessage::Command(_) => todo!(),
+                HostMessage::Command(command) => {
+                    todo!("Handle command {command:?} in ha observe mode.")
+                }
                 HostMessage::Resource(event) => match event.kind {
+                    Message::ManageResourceGroup
+                    | Message::RequestFailover
+                    | Message::SwitchHost
+                    | Message::TaskCanceled => {
+                        panic!(
+                            "Unexpected to receive a {:?} event in observe mode.",
+                            event.kind
+                        )
+                    }
                     Message::CheckResourceGroup => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            cluster.args.sleep_time,
+                        ))
+                        .await;
                         tasks.push(Box::pin(self.check_resource_group(
                             event.resource_group,
                             cluster,
@@ -91,6 +154,10 @@ impl Host {
                         tasks.push(Box::pin(self.receive_message()));
                     }
                     Message::ObserveResourceGroup => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            cluster.args.sleep_time,
+                        ))
+                        .await;
                         tasks.push(Box::pin(self.observe_resource_group_ha(
                             event.resource_group,
                             cluster,
@@ -98,15 +165,6 @@ impl Host {
                         )));
                         tasks.push(Box::pin(self.receive_message()));
                     }
-                    Message::ManageResourceGroup
-                    | Message::RequestFailover
-                    | Message::SwitchHost => {
-                        panic!(
-                            "Unexpected to receive a {:?} event in observe mode.",
-                            event.kind
-                        )
-                    }
-                    Message::TaskCanceled => todo!(),
                     Message::ResourceError => {
                         state.resources_with_errors.push(event.resource_group)
                     }
