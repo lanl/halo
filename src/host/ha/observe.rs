@@ -74,10 +74,7 @@ impl Host {
                 }
                 HostMessage::Resource(event) => {
                     match event.kind {
-                        Message::ManageResourceGroup
-                        | Message::RequestFailover
-                        | Message::SwitchHost
-                        | Message::TaskCanceled => {
+                        Message::RequestFailover | Message::SwitchHost | Message::TaskCanceled => {
                             panic!(
                                 "Unexpected to receive a {:?} event in observe mode.",
                                 event.kind
@@ -85,6 +82,13 @@ impl Host {
                         }
                         Message::ResourceError => {
                             panic!("Unexpected to receive a resource error message in disconnected mode.");
+                        }
+                        Message::ManageResourceGroup => {
+                            self.send_message_to_partner(
+                                event.resource_group,
+                                Message::ObserveResourceGroup,
+                            )
+                            .await;
                         }
                         Message::CheckResourceGroup => {
                             self.send_message_to_partner(
@@ -131,14 +135,28 @@ impl Host {
                     todo!("Handle command {command:?} in ha observe mode.")
                 }
                 HostMessage::Resource(event) => match event.kind {
-                    Message::ManageResourceGroup
-                    | Message::RequestFailover
-                    | Message::SwitchHost
-                    | Message::TaskCanceled => {
+                    Message::RequestFailover | Message::SwitchHost | Message::TaskCanceled => {
                         panic!(
                             "Unexpected to receive a {:?} event in observe mode.",
                             event.kind
                         )
+                    }
+                    // Although this is "observe-only" mode, the Manage message is used to indicate
+                    // that the resource is known to be stopped on the partner - meaning if it is
+                    // stopped here as well, the status should be updated to "stopped" instead of
+                    // being left at "unknown".
+                    Message::ManageResourceGroup => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            cluster.args.sleep_time,
+                        ))
+                        .await;
+                        tasks.push(Box::pin(self.check_resource_group(
+                            event.resource_group,
+                            cluster,
+                            client,
+                            true,
+                        )));
+                        tasks.push(Box::pin(self.receive_message()));
                     }
                     Message::CheckResourceGroup => {
                         tokio::time::sleep(tokio::time::Duration::from_millis(
@@ -149,7 +167,7 @@ impl Host {
                             event.resource_group,
                             cluster,
                             client,
-                            true,
+                            false,
                         )));
                         tasks.push(Box::pin(self.receive_message()));
                     }
@@ -195,7 +213,7 @@ impl Host {
                 } else {
                     tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
-                    self.send_message_to_partner(token, Message::CheckResourceGroup)
+                    self.send_message_to_partner(token, Message::ManageResourceGroup)
                         .await;
 
                     HostMessage::None(id)
@@ -235,7 +253,7 @@ impl Host {
             Ok(()) => {
                 tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                     .await;
-                self.send_message_to_partner(token, Message::CheckResourceGroup)
+                self.send_message_to_partner(token, Message::ManageResourceGroup)
                     .await;
 
                 HostMessage::None(id)
