@@ -41,6 +41,29 @@ impl Host {
             .await
             .unwrap();
     }
+
+    async fn send_message_to_partner_delayed(
+        &self,
+        mut token: ResourceToken,
+        message: Message,
+        dur: u64,
+    ) {
+        match token.location {
+            Location::Home => token.location = Location::Away,
+            Location::Away => token.location = Location::Home,
+        };
+
+        let partner = Arc::clone(self.ha_failover_partner());
+
+        tokio::task::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(dur)).await;
+            partner
+                .sender
+                .send(new_message(token, message))
+                .await
+                .unwrap()
+        });
+    }
 }
 
 /// Determine if a resource is running on the system connected in the given client.

@@ -85,11 +85,11 @@ impl Host {
     async fn remote_disconnected_loop_observe(&self, cluster: &Cluster) {
         tokio::select! {
             _ = self.remote_liveness_check(cluster) => {}
-            _ = self.handle_messages_remote_disconnected_observe() => {}
+            _ = self.handle_messages_remote_disconnected_observe(cluster) => {}
         }
     }
 
-    async fn handle_messages_remote_disconnected_observe(&self) {
+    async fn handle_messages_remote_disconnected_observe(&self, cluster: &Cluster) {
         loop {
             match self.receive_message().await {
                 HostMessage::Command(command) => {
@@ -107,23 +107,26 @@ impl Host {
                             panic!("Unexpected to receive a resource error message in disconnected mode.");
                         }
                         Message::ManageResourceGroup => {
-                            self.send_message_to_partner(
+                            self.send_message_to_partner_delayed(
                                 event.resource_group,
                                 Message::CheckResourceGroup,
+                                cluster.args.sleep_time,
                             )
                             .await;
                         }
                         Message::CheckResourceGroup => {
-                            self.send_message_to_partner(
+                            self.send_message_to_partner_delayed(
                                 event.resource_group,
                                 Message::CheckResourceGroup,
+                                cluster.args.sleep_time,
                             )
                             .await;
                         }
                         Message::ObserveResourceGroup => {
-                            self.send_message_to_partner(
+                            self.send_message_to_partner_delayed(
                                 event.resource_group,
                                 Message::CheckResourceGroup,
+                                cluster.args.sleep_time,
                             )
                             .await;
                         }
@@ -175,11 +178,6 @@ impl Host {
                     // stopped here as well, the status should be updated to "stopped" instead of
                     // being left at "unknown".
                     Message::ManageResourceGroup => {
-                        // TODO: this sleep needs to be removed (as well as the one below)
-                        tokio::time::sleep(tokio::time::Duration::from_millis(
-                            cluster.args.sleep_time,
-                        ))
-                        .await;
                         self.launch_task(
                             &mut tasks,
                             state,
@@ -190,10 +188,6 @@ impl Host {
                         );
                     }
                     Message::CheckResourceGroup => {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(
-                            cluster.args.sleep_time,
-                        ))
-                        .await;
                         self.launch_task(
                             &mut tasks,
                             state,
@@ -204,10 +198,6 @@ impl Host {
                         );
                     }
                     Message::ObserveResourceGroup => {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(
-                            cluster.args.sleep_time,
-                        ))
-                        .await;
                         self.launch_task(
                             &mut tasks,
                             state,
