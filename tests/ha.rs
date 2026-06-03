@@ -473,6 +473,208 @@ mod tests {
         observe_start_and_stop(env, true);
     }
 
+    /// Observe mode - test that when an agent is missing, but its resources are failed over, the
+    /// manager realizes that.
+    #[test]
+    fn observe_missing_agent1() {
+        let env = test_env_helper("observe_missing_agent1");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _m = env.start_manager(false);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+    }
+
+    /// Observe mode - test that when an agent is missing, and its resources are not running on the
+    /// partner, status is reported as Unknown.
+    ///
+    /// When the resources are started on the failover partner, the manager should learn that.
+    #[test]
+    fn observe_missing_agent2() {
+        let env = test_env_helper("observe_missing_agent2");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+
+        let _a = env.start_agent(0);
+        let _m = env.start_manager(false);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Unknown");
+            }
+        }
+
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+    }
+
+    /// Observe mode - test that when an agent is missing, and its resources are not running on the
+    /// partner, status is reported as Unknown.
+    ///
+    /// When the agent is started, the manager should learn the resources are running there.
+    #[test]
+    fn observe_missing_agent3() {
+        let env = test_env_helper("observe_missing_agent3");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _m = env.start_manager(false);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Unknown");
+            }
+        }
+
+        let _b = env.start_agent(1);
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+    }
+
+    /// Observe mode - test that when an agent goes missing, the resource status switches to
+    /// unknown.
+    ///
+    /// When the resources are manually started on the partner, it should switch to known.
+    #[test]
+    fn observe_missing_agent4() {
+        let env = test_env_helper("observe_missing_agent4");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(false);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Unknown");
+            }
+        }
+
+        env.stop_resource("zpool_1", 1);
+        env.stop_resource("mdt_1", 1);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+    }
+
+    /// Observe mode - test that when both agents go missing, resource status switches to unknown.
+    /// When the agents come back, resource status should go back to known.
+    #[test]
+    fn observe_missing_agent5() {
+        let env = test_env_helper("observe_missing_agent5");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(false);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+
+        drop(_a);
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Unknown");
+        }
+
+        let _b = env.start_agent(1);
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Unknown");
+            } else {
+                assert_eq!(res.status, "Running");
+            }
+        }
+
+        let _a = env.start_agent(0);
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+    }
+
     /// A resource is unmanaged, then manually stopped - status should correctly report that it is
     /// stopped.
     ///
