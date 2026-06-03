@@ -198,6 +198,9 @@ impl Host {
                 HostMessage::None(id) => {
                     panic!("Unexpected message type 'None({id})' in client disconnected routine.")
                 }
+                HostMessage::ExitRequested(id) => {
+                    panic!("Unexpected to receive message 'ExitRequested({id})' in this context.")
+                }
             }
         }
     }
@@ -325,6 +328,9 @@ impl Host {
                     };
                 }
                 HostMessage::None(id) => state.resource_task_exited(&id),
+                HostMessage::ExitRequested(_) => {
+                    panic!("Unexpected to receive ExitRequested message in this context")
+                }
             }
         }
 

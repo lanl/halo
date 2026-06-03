@@ -137,6 +137,9 @@ impl Host {
                 HostMessage::None(id) => {
                     panic!("Unexpected to receive message 'None({id})' in non-HA mode.")
                 }
+                HostMessage::ExitRequested(id) => {
+                    panic!("Unexpected to receive message 'ExitRequested({id})' in non-HA mode.")
+                }
             }
         }
     }
@@ -205,6 +208,9 @@ impl Host {
                 }
                 HostMessage::None(id) => {
                     panic!("Unexpected to receive message 'None({id})' in non-HA mode.")
+                }
+                HostMessage::ExitRequested(id) => {
+                    panic!("Unexpected to receive message 'ExitRequested({id})' in non-HA mode.")
                 }
             }
         }

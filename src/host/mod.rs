@@ -397,6 +397,8 @@ enum HostMessage {
     /// host. (If it hadn't passed on the ResourceToken, then the ResourceToken would need to be
     /// returned in a HostMessage::Resource.)
     None(String),
+
+    ExitRequested(String),
 }
 
 #[derive(Debug)]

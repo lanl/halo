@@ -10,13 +10,14 @@ use {
     log::{debug, trace},
 };
 
-use crate::cluster::Cluster;
+use crate::{cluster::Cluster, resource::ResourceStatus};
 
 use super::*;
 
 struct HostState {
     resources_to_observe: Vec<ResourceToken>,
     resources_with_errors: Vec<ResourceToken>,
+    outstanding_resource_tasks: Vec<ResourceTaskCancel>,
 }
 
 impl HostState {
@@ -24,7 +25,24 @@ impl HostState {
         Self {
             resources_to_observe: Vec::new(),
             resources_with_errors: Vec::new(),
+            outstanding_resource_tasks: Vec::new(),
         }
+    }
+
+    fn resource_task_exited(&mut self, id: &str) {
+        let still_running = take(&mut self.outstanding_resource_tasks)
+            .into_iter()
+            .filter(|task| task.id != id)
+            .collect();
+
+        self.outstanding_resource_tasks = still_running;
+    }
+    fn ready_to_exit(&self) -> bool {
+        for revoke in &self.outstanding_resource_tasks {
+            revoke.lost_connection.notify_one();
+        }
+
+        self.outstanding_resource_tasks.is_empty()
     }
 }
 
@@ -45,7 +63,7 @@ impl Host {
                         self.id()
                     );
                     self.remote_connected_loop_observe(&mut state, cluster, &client)
-                        .await
+                        .await;
                 }
                 Err(_) => {
                     debug!(
@@ -53,7 +71,12 @@ impl Host {
                         self.id()
                     );
 
-                    self.remote_disconnected_loop_observe(cluster).await
+                    for token in take(&mut state.resources_to_observe) {
+                        self.send_message_to_partner(token, Message::CheckResourceGroup)
+                            .await;
+                    }
+
+                    self.remote_disconnected_loop_observe(cluster).await;
                 }
             }
         }
@@ -86,27 +109,28 @@ impl Host {
                         Message::ManageResourceGroup => {
                             self.send_message_to_partner(
                                 event.resource_group,
-                                Message::ObserveResourceGroup,
+                                Message::CheckResourceGroup,
                             )
                             .await;
                         }
                         Message::CheckResourceGroup => {
                             self.send_message_to_partner(
                                 event.resource_group,
-                                Message::ObserveResourceGroup,
+                                Message::CheckResourceGroup,
                             )
                             .await;
                         }
                         Message::ObserveResourceGroup => {
                             self.send_message_to_partner(
                                 event.resource_group,
-                                Message::ObserveResourceGroup,
+                                Message::CheckResourceGroup,
                             )
                             .await;
                         }
                     }
                 }
                 HostMessage::None(_) => {}
+                HostMessage::ExitRequested(_) => {}
             }
         }
     }
@@ -123,9 +147,14 @@ impl Host {
         tasks.push(Box::pin(self.receive_message()));
 
         for token in take(&mut state.resources_to_observe) {
-            tasks.push(Box::pin(
-                self.check_resource_group(token, cluster, client, false),
-            ));
+            self.launch_task(
+                &mut tasks,
+                state,
+                cluster,
+                token,
+                client,
+                Task::CheckPartnerUnknown,
+            );
         }
 
         while let Some(event) = tasks.next().await {
@@ -135,7 +164,7 @@ impl Host {
                     todo!("Handle command {command:?} in ha observe mode.")
                 }
                 HostMessage::Resource(event) => match event.kind {
-                    Message::RequestFailover | Message::SwitchHost | Message::TaskCanceled => {
+                    Message::RequestFailover | Message::SwitchHost => {
                         panic!(
                             "Unexpected to receive a {:?} event in observe mode.",
                             event.kind
@@ -146,77 +175,93 @@ impl Host {
                     // stopped here as well, the status should be updated to "stopped" instead of
                     // being left at "unknown".
                     Message::ManageResourceGroup => {
+                        // TODO: this sleep needs to be removed (as well as the one below)
                         tokio::time::sleep(tokio::time::Duration::from_millis(
                             cluster.args.sleep_time,
                         ))
                         .await;
-                        tasks.push(Box::pin(self.check_resource_group(
-                            event.resource_group,
+                        self.launch_task(
+                            &mut tasks,
+                            state,
                             cluster,
+                            event.resource_group,
                             client,
-                            true,
-                        )));
-                        tasks.push(Box::pin(self.receive_message()));
+                            Task::CheckPartnerKnownStopped,
+                        );
                     }
                     Message::CheckResourceGroup => {
                         tokio::time::sleep(tokio::time::Duration::from_millis(
                             cluster.args.sleep_time,
                         ))
                         .await;
-                        tasks.push(Box::pin(self.check_resource_group(
-                            event.resource_group,
+                        self.launch_task(
+                            &mut tasks,
+                            state,
                             cluster,
+                            event.resource_group,
                             client,
-                            false,
-                        )));
-                        tasks.push(Box::pin(self.receive_message()));
+                            Task::CheckPartnerUnknown,
+                        );
                     }
                     Message::ObserveResourceGroup => {
                         tokio::time::sleep(tokio::time::Duration::from_millis(
                             cluster.args.sleep_time,
                         ))
                         .await;
-                        tasks.push(Box::pin(self.observe_resource_group_ha(
-                            event.resource_group,
+                        self.launch_task(
+                            &mut tasks,
+                            state,
                             cluster,
+                            event.resource_group,
                             client,
-                        )));
-                        tasks.push(Box::pin(self.receive_message()));
+                            Task::Observe,
+                        );
                     }
                     Message::ResourceError => {
+                        let id = &event.resource_group.id;
+                        state.resource_task_exited(id);
                         state.resources_with_errors.push(event.resource_group)
                     }
+                    Message::TaskCanceled => {
+                        let id = &event.resource_group.id;
+                        state.resource_task_exited(id);
+                        cluster.get_resource_group(id).root.set_status_recursive(
+                            ResourceStatus::Unknown("Connection to remote host lost.".to_string()),
+                        );
+                        state.resources_to_observe.push(event.resource_group);
+                        if state.ready_to_exit() {
+                            return;
+                        }
+                    }
                 },
-                HostMessage::None(_id) => {}
+                HostMessage::None(id) => state.resource_task_exited(&id),
+                HostMessage::ExitRequested(id) => {
+                    state.resource_task_exited(&id);
+                    if state.outstanding_resource_tasks.is_empty() {
+                        return;
+                    }
+                }
             }
         }
     }
 
+    // Returns (true, _) if a network error occurred, (false, _) otherwise.
     async fn check_resource_group(
         &self,
-        token: ResourceToken,
+        token: &ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
         update_status_if_stopped: bool,
-    ) -> HostMessage {
-        let id = token.id.clone();
-
-        match is_resource_group_running_here(&token, cluster, client, update_status_if_stopped)
-            .await
+    ) -> (bool, Message) {
+        match is_resource_group_running_here(token, cluster, client, update_status_if_stopped).await
         {
             Ok(is_running_here) => {
                 if is_running_here {
-                    self.send_message_to_self(token, Message::ObserveResourceGroup)
-                        .await;
-
-                    HostMessage::None(id)
+                    (false, Message::ObserveResourceGroup)
                 } else {
                     tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
-                    self.send_message_to_partner(token, Message::ManageResourceGroup)
-                        .await;
-
-                    HostMessage::None(id)
+                    (false, Message::ManageResourceGroup)
                 }
             }
             Err(ManagementError::Connection) => {
@@ -225,9 +270,7 @@ impl Host {
                     self.id(),
                     token.id
                 );
-                self.send_message_to_partner(token, Message::CheckResourceGroup)
-                    .await;
-                HostMessage::None(id)
+                (true, Message::CheckResourceGroup)
             }
             Err(ManagementError::Configuration) => {
                 debug!(
@@ -235,47 +278,116 @@ impl Host {
                     self.id(),
                     token.id
                 );
-                new_message(token, Message::ResourceError)
+                (false, Message::ResourceError)
             }
         }
     }
 
+    // Returns (true, _) if a network error occurred, (false, _) otherwise.
     async fn observe_resource_group_ha(
         &self,
-        token: ResourceToken,
+        token: &ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
-    ) -> HostMessage {
-        let id = token.id.clone();
-        let rg = cluster.get_resource_group(&id);
+    ) -> (bool, Message) {
+        let id = &token.id;
+        let rg = cluster.get_resource_group(id);
         match rg.observe_loop(client, true, token.location).await {
             // Resource stopped: need to see if it started running on partner.
             Ok(()) => {
                 tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                     .await;
-                self.send_message_to_partner(token, Message::ManageResourceGroup)
-                    .await;
-
-                HostMessage::None(id)
+                (false, Message::ManageResourceGroup)
             }
             Err(ManagementError::Connection) => {
-                debug!(
-                    "{}: broken connection while observing {}",
-                    self.id(),
-                    token.id
-                );
-                self.send_message_to_partner(token, Message::CheckResourceGroup)
-                    .await;
-                HostMessage::None(id)
+                debug!("{}: broken connection while observing {}", self.id(), id);
+                (true, Message::CheckResourceGroup)
             }
             Err(ManagementError::Configuration) => {
                 debug!(
                     "host {} got a configuration error when managing resource group {}",
                     self.id(),
-                    token.id
+                    id
                 );
-                new_message(token, Message::ResourceError)
+                (false, Message::ResourceError)
             }
         }
     }
+
+    fn launch_task<'a>(
+        &'a self,
+        tasks: &mut ManagementTasks<'a>,
+        state: &mut HostState,
+        cluster: &'a Cluster,
+        token: ResourceToken,
+        client: &'a ocf_resource_agent::Client,
+        task: Task,
+    ) {
+        let revoke = ResourceTaskCancel::new(token.id.clone());
+        state.outstanding_resource_tasks.push(revoke.clone());
+        tasks.push(Box::pin(
+            self.run_task_with_cancellation(cluster, client, token, revoke, task),
+        ));
+        tasks.push(Box::pin(self.receive_message()));
+    }
+
+    async fn run_task_with_cancellation(
+        &self,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+        token: ResourceToken,
+        revoke: ResourceTaskCancel,
+        task: Task,
+    ) -> HostMessage {
+        tokio::select! {
+            biased;
+            _ = revoke.lost_connection.notified() => new_message(token, Message::TaskCanceled),
+            _ = revoke.switch_host.notified() => panic!("Unexpected to receive switch_host notification in this context"),
+            (network_error_occured, msg) = self.run_task(cluster, client, &token, task) => {
+                let id = token.id.clone();
+                match msg {
+                    Message::ResourceError => return new_message(token, Message::ResourceError),
+                    Message::ManageResourceGroup | Message::CheckResourceGroup => {
+                        self.send_message_to_partner(token, msg).await;
+                    }
+                    Message::ObserveResourceGroup => {
+                        self.send_message_to_self(token, Message::ObserveResourceGroup).await;
+                    }
+
+                    other => panic!("Unexpected message type: {other:?}"),
+                };
+                if network_error_occured {
+                    HostMessage::ExitRequested(id)
+                } else {
+                    HostMessage::None(id)
+                }
+            }
+        }
+    }
+
+    async fn run_task(
+        &self,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+        token: &ResourceToken,
+        task: Task,
+    ) -> (bool, Message) {
+        match task {
+            Task::Observe => self.observe_resource_group_ha(token, cluster, client).await,
+            Task::CheckPartnerUnknown => {
+                self.check_resource_group(token, cluster, client, false)
+                    .await
+            }
+            Task::CheckPartnerKnownStopped => {
+                self.check_resource_group(token, cluster, client, true)
+                    .await
+            }
+        }
+    }
+}
+
+enum Task {
+    Observe,
+    CheckPartnerUnknown,
+    CheckPartnerKnownStopped,
 }
