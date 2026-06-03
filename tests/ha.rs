@@ -380,14 +380,15 @@ mod tests {
     #[test]
     fn observe2() {
         let env = test_env_helper("observe2");
-        let _a = env.start_agent(0);
-        let _b = env.start_agent(1);
-        let _m = env.start_manager(false);
 
         env.start_resource("zpool_0", 0);
         env.start_resource("mdt_0", 0);
         env.start_resource("zpool_1", 0);
         env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(false);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
