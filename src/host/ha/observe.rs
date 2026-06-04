@@ -106,23 +106,19 @@ impl Host {
                         Message::ResourceError => {
                             panic!("Unexpected to receive a resource error message in disconnected mode.");
                         }
-                        Message::ManageResourceGroup => {
-                            self.send_message_to_partner_delayed(
-                                event.resource_group,
-                                Message::CheckResourceGroup,
-                                cluster.args.sleep_time,
-                            )
-                            .await;
-                        }
-                        Message::CheckResourceGroup => {
-                            self.send_message_to_partner_delayed(
-                                event.resource_group,
-                                Message::CheckResourceGroup,
-                                cluster.args.sleep_time,
-                            )
-                            .await;
-                        }
-                        Message::ObserveResourceGroup => {
+                        Message::ManageResourceGroup
+                        | Message::CheckResourceGroup
+                        | Message::ObserveResourceGroup => {
+                            // If we received one of these messages, it means the resource is not
+                            // running on the partner. But we don't know if it's running here since
+                            // we can't reach the remote, so we have to update the status to
+                            // unknown.
+                            cluster
+                                .get_resource_group(&event.resource_group.id)
+                                .root
+                                .set_status_recursive(ResourceStatus::Unknown(
+                                    "Connection to remote host lost.".to_string(),
+                                ));
                             self.send_message_to_partner_delayed(
                                 event.resource_group,
                                 Message::CheckResourceGroup,
@@ -227,7 +223,7 @@ impl Host {
                 HostMessage::None(id) => state.resource_task_exited(&id),
                 HostMessage::ExitRequested(id) => {
                     state.resource_task_exited(&id);
-                    if state.outstanding_resource_tasks.is_empty() {
+                    if state.ready_to_exit() {
                         return;
                     }
                 }

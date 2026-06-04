@@ -675,6 +675,49 @@ mod tests {
         }
     }
 
+    /// Observe mode - test that when a resource stops on host A, and the agent for host B
+    /// is disconnected, the status switches to unknown.
+    ///
+    /// When the resources are manually started on the partner, it should switch to known.
+    #[test]
+    fn observe_missing_agent6() {
+        let env = test_env_helper("observe_missing_agent6");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(false);
+
+        drop(_a);
+        env.stop_resource("zpool_1", 1);
+        env.stop_resource("mdt_1", 1);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Unknown");
+        }
+
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Running (Failed Over)");
+            }
+        }
+    }
+
     /// A resource is unmanaged, then manually stopped - status should correctly report that it is
     /// stopped.
     ///
