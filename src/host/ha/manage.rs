@@ -221,15 +221,7 @@ impl Host {
 
         // Create a task to manage each resource group that should run on this host.
         for token in take(&mut state.manage_these_resources) {
-            let id = token.id.clone();
-            let revoke = ResourceTaskCancel::new(id);
-            tasks.push(Box::pin(self.manage_resource_group(
-                cluster,
-                token,
-                client,
-                revoke.clone(),
-            )));
-            state.outstanding_resource_tasks.push(revoke);
+            self.launch_task(&mut tasks, state, cluster, token, client);
         }
 
         // Create a task to check on each resource group that wasn't running on the partner host.
@@ -274,14 +266,13 @@ impl Host {
                         }
                         // Partner Host told this Host to begin managing this resource group.
                         Message::ManageResourceGroup => {
-                            let revoke = ResourceTaskCancel::new(id.clone());
-                            tasks.push(Box::pin(self.manage_resource_group(
+                            self.launch_task(
+                                &mut tasks,
+                                state,
                                 cluster,
                                 event.resource_group,
                                 client,
-                                revoke.clone(),
-                            )));
-                            state.outstanding_resource_tasks.push(revoke);
+                            );
                             tasks.push(Box::pin(self.receive_message()));
                         }
                         Message::ObserveResourceGroup => {
@@ -754,19 +745,72 @@ impl Host {
     async fn manage_resource_group(
         &self,
         cluster: &Cluster,
-        token: ResourceToken,
+        token: &ResourceToken,
         client: &ocf_resource_agent::Client,
-        revoke: ResourceTaskCancel,
-    ) -> HostMessage {
+    ) -> Message {
         let rg = cluster.get_resource_group(&token.id);
 
         if !self.active() {
             warn!("Host {} asked to manage resource group {}, but it is inactive. Requesting partner manage it.", self.id(), token.id);
-            return new_message(token, Message::SwitchHost);
+            return Message::SwitchHost;
         }
 
         debug!("Host {} is managing resource group {}", self.id(), token.id);
 
+        // If the resource management loop returns, it is either because an error was observed,
+        // or because the "managed" flag is set to false and the resource was stopped.
+        let res = rg.manage_loop(client, token.location).await;
+        match res {
+            // Resource was stopped, and it is no longer supposed to be managed.
+            // Enter "Observe" mode, starting with a check on the partner host.
+            Ok(()) => {
+                // let id = token.id.clone();
+                // self.send_message_to_partner(token, Message::ObserveResourceGroup)
+                // .await;
+                // HostMessage::None(id)
+                Message::ObserveResourceGroup
+            }
+            Err(ManagementError::Connection) => {
+                debug!(
+                    "{}: broken connection while managing {}",
+                    self.id(),
+                    token.id
+                );
+                Message::RequestFailover
+            }
+            Err(ManagementError::Configuration) => {
+                debug!(
+                    "host {} got a configuration error when managing resource group {}",
+                    self.id(),
+                    token.id
+                );
+                Message::ResourceError
+            }
+        }
+    }
+
+    fn launch_task<'a>(
+        &'a self,
+        tasks: &mut ManagementTasks<'a>,
+        state: &mut HostState,
+        cluster: &'a Cluster,
+        token: ResourceToken,
+        client: &'a ocf_resource_agent::Client,
+    ) {
+        let revoke = ResourceTaskCancel::new(token.id.clone());
+        state.outstanding_resource_tasks.push(revoke.clone());
+        tasks.push(Box::pin(
+            self.run_manage_task_with_cancellation(cluster, client, token, revoke),
+        ));
+    }
+
+    async fn run_manage_task_with_cancellation(
+        &self,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+        token: ResourceToken,
+        revoke: ResourceTaskCancel,
+    ) -> HostMessage {
         tokio::select! {
             // Biased because if a task has been cancelled, it should exit ASAP and not bother
             // trying to do any more work.
@@ -781,28 +825,30 @@ impl Host {
                 new_message(token, Message::SwitchHost)
             }
 
-            // If the resource management loop returns, it is either because an error was observed,
-            // or because the "managed" flag is set to false and the resource was stopped.
-            res = rg.manage_loop(client, token.location) => {
-                match res {
-                    // Resource was stopped, and it is no longer supposed to be managed.
-                    // Enter "Observe" mode, starting with a check on the partner host.
-                    Ok(()) => {
-                        let id = token.id.clone();
-                        self.send_message_to_partner(token, Message::ObserveResourceGroup)
-                            .await;
+            msg = self.run_manage_task(cluster, client, &token) => {
+                let id = token.id.clone();
+                match msg {
+                    Message::SwitchHost => new_message(token, Message::SwitchHost),
+                    Message::ObserveResourceGroup => {
+                        self.send_message_to_partner(token, msg).await;
                         HostMessage::None(id)
                     }
-                    Err(ManagementError::Connection) => {
-                        debug!("{}: broken connection while managing {}", self.id(), token.id);
-                        new_message(token, Message::RequestFailover)
-                    }
-                    Err(ManagementError::Configuration) => {
-                        debug!("host {} got a configuration error when managing resource group {}", self.id(), token.id);
-                        new_message(token, Message::ResourceError)
-                    }
+                    Message::RequestFailover => new_message(token, Message::RequestFailover),
+                    Message::ResourceError => new_message(token, Message::ResourceError),
+                    other => todo!("handle message type {other:?}"),
                 }
+
+                // HostMessage::None(id)
             }
         }
+    }
+
+    async fn run_manage_task(
+        &self,
+        cluster: &Cluster,
+        client: &ocf_resource_agent::Client,
+        token: &ResourceToken,
+    ) -> Message {
+        self.manage_resource_group(cluster, token, client).await
     }
 }
