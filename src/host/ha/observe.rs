@@ -146,7 +146,7 @@ impl Host {
         tasks.push(Box::pin(self.receive_message()));
 
         for token in take(&mut state.resources_to_observe) {
-            self.launch_task(
+            self.launch_observe_task(
                 &mut tasks,
                 state,
                 cluster,
@@ -174,7 +174,7 @@ impl Host {
                     // stopped here as well, the status should be updated to "stopped" instead of
                     // being left at "unknown".
                     Message::ManageResourceGroup => {
-                        self.launch_task(
+                        self.launch_observe_task(
                             &mut tasks,
                             state,
                             cluster,
@@ -184,7 +184,7 @@ impl Host {
                         );
                     }
                     Message::CheckResourceGroup => {
-                        self.launch_task(
+                        self.launch_observe_task(
                             &mut tasks,
                             state,
                             cluster,
@@ -194,7 +194,7 @@ impl Host {
                         );
                     }
                     Message::ObserveResourceGroup => {
-                        self.launch_task(
+                        self.launch_observe_task(
                             &mut tasks,
                             state,
                             cluster,
@@ -300,7 +300,7 @@ impl Host {
         }
     }
 
-    fn launch_task<'a>(
+    fn launch_observe_task<'a>(
         &'a self,
         tasks: &mut ManagementTasks<'a>,
         state: &mut HostState,
@@ -327,8 +327,11 @@ impl Host {
     ) -> HostMessage {
         tokio::select! {
             biased;
+
             _ = revoke.lost_connection.notified() => new_message(token, Message::TaskCanceled),
+
             _ = revoke.switch_host.notified() => panic!("Unexpected to receive switch_host notification in this context"),
+
             (network_error_occured, msg) = self.run_task(cluster, client, &token, task) => {
                 let id = token.id.clone();
                 match msg {
