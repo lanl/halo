@@ -226,9 +226,7 @@ impl Host {
 
         // Create a task to check on each resource group that wasn't running on the partner host.
         for token in take(&mut state.check_these_resources) {
-            tasks.push(Box::pin(
-                self.check_resource_group_managed(token, cluster, client),
-            ));
+            self.launch_task(&mut tasks, state, cluster, token, client, Task::Check);
         }
 
         while let Some(event) = tasks.next().await {
@@ -254,11 +252,14 @@ impl Host {
                         // running already, this Host proceeds to manage them; otherwise, the original Host
                         // should manage them.
                         Message::CheckResourceGroup => {
-                            tasks.push(Box::pin(self.check_resource_group_managed(
-                                event.resource_group,
+                            self.launch_task(
+                                &mut tasks,
+                                state,
                                 cluster,
+                                event.resource_group,
                                 client,
-                            )));
+                                Task::Check,
+                            );
                             // TODO: rather than have to duplicate this "re-arming" of the receive message
                             // task in every branch that needs it, can I come up with a way to distinguish
                             // in a single place that it needs re-arming? (`Either` might help here...)
@@ -673,33 +674,23 @@ impl Host {
     ///   the situation.
     async fn check_resource_group_managed(
         &self,
-        token: ResourceToken,
+        token: &ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
-    ) -> HostMessage {
-        match is_resource_group_running_here(&token, cluster, client, true).await {
+    ) -> (WhereTo, Message) {
+        match is_resource_group_running_here(token, cluster, client, true).await {
             Ok(is_running_here) => {
-                let id = token.id.clone();
                 if is_running_here {
-                    self.send_message_to_self(token, Message::ManageResourceGroup)
-                        .await;
+                    (WhereTo::Here, Message::ManageResourceGroup)
                 } else {
                     match token.location {
-                        Location::Away => {
-                            self.send_message_to_partner(token, Message::ManageResourceGroup)
-                                .await;
-                        }
-                        Location::Home => {
-                            self.send_message_to_partner(token, Message::CheckResourceGroup)
-                                .await;
-                        }
+                        Location::Away => (WhereTo::Partner, Message::ManageResourceGroup),
+                        Location::Home => (WhereTo::Partner, Message::CheckResourceGroup),
                     }
-                };
-
-                HostMessage::None(id)
+                }
             }
-            Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
-            Err(ManagementError::Connection) => new_message(token, Message::RequestFailover),
+            Err(ManagementError::Configuration) => (WhereTo::Here, Message::ResourceError),
+            Err(ManagementError::Connection) => (WhereTo::Here, Message::RequestFailover),
         }
     }
 
@@ -713,24 +704,24 @@ impl Host {
         token: &ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
-    ) -> Message {
+    ) -> (WhereTo, Message) {
         let id = token.id.clone();
         let rg = cluster.get_resource_group(&id);
 
         match is_resource_group_running_here(token, cluster, client, true).await {
             Ok(is_running_here) => {
                 if is_running_here {
-                    Message::ManageResourceGroup
+                    (WhereTo::Here, Message::ManageResourceGroup)
                 } else if rg.get_managed() {
-                    Message::CheckResourceGroup
+                    (WhereTo::Partner, Message::CheckResourceGroup)
                 } else {
                     tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
-                    Message::ObserveResourceGroup
+                    (WhereTo::Partner, Message::ObserveResourceGroup)
                 }
             }
-            Err(ManagementError::Configuration) => Message::ResourceError,
-            Err(ManagementError::Connection) => Message::ObserveResourceGroup,
+            Err(ManagementError::Configuration) => (WhereTo::Here, Message::ResourceError),
+            Err(ManagementError::Connection) => (WhereTo::Partner, Message::ObserveResourceGroup),
         }
     }
 
@@ -742,12 +733,12 @@ impl Host {
         cluster: &Cluster,
         token: &ResourceToken,
         client: &ocf_resource_agent::Client,
-    ) -> Message {
+    ) -> (WhereTo, Message) {
         let rg = cluster.get_resource_group(&token.id);
 
         if !self.active() {
             warn!("Host {} asked to manage resource group {}, but it is inactive. Requesting partner manage it.", self.id(), token.id);
-            return Message::SwitchHost;
+            return (WhereTo::Here, Message::SwitchHost);
         }
 
         debug!("Host {} is managing resource group {}", self.id(), token.id);
@@ -763,7 +754,7 @@ impl Host {
                 // self.send_message_to_partner(token, Message::ObserveResourceGroup)
                 // .await;
                 // HostMessage::None(id)
-                Message::ObserveResourceGroup
+                (WhereTo::Partner, Message::ObserveResourceGroup)
             }
             Err(ManagementError::Connection) => {
                 debug!(
@@ -771,7 +762,7 @@ impl Host {
                     self.id(),
                     token.id
                 );
-                Message::RequestFailover
+                (WhereTo::Here, Message::RequestFailover)
             }
             Err(ManagementError::Configuration) => {
                 debug!(
@@ -779,7 +770,7 @@ impl Host {
                     self.id(),
                     token.id
                 );
-                Message::ResourceError
+                (WhereTo::Here, Message::ResourceError)
             }
         }
     }
@@ -822,21 +813,20 @@ impl Host {
                 new_message(token, Message::SwitchHost)
             }
 
-            msg = self.run_manage_task(cluster, client, &token, task) => {
+            (whereto, msg) = self.run_manage_task(cluster, client, &token, task) => {
                 let id = token.id.clone();
                 match msg {
                     Message::SwitchHost => new_message(token, Message::SwitchHost),
-                    Message::ObserveResourceGroup | Message::CheckResourceGroup => {
-                        self.send_message_to_partner(token, msg).await;
-                        HostMessage::None(id)
-                    }
-                    Message::ManageResourceGroup => {
-                        self.send_message_to_self(token, msg).await;
-                        HostMessage::None(id)
-                    }
                     Message::RequestFailover => new_message(token, Message::RequestFailover),
                     Message::ResourceError => new_message(token, Message::ResourceError),
                     Message::TaskCanceled => panic!("Unexpected to receive TaskCanceled message in this context."),
+                    other => {
+                        match whereto {
+                            WhereTo::Here => self.send_message_to_self(token, other).await,
+                            WhereTo::Partner => self.send_message_to_partner(token, other).await,
+                        };
+                        HostMessage::None(id)
+                    }
                 }
             }
         }
@@ -848,14 +838,17 @@ impl Host {
         client: &ocf_resource_agent::Client,
         token: &ResourceToken,
         task: Task,
-    ) -> Message {
+    ) -> (WhereTo, Message) {
         match task {
             Task::Manage => self.manage_resource_group(cluster, token, client).await,
             Task::Observe => {
                 self.observe_resource_group_managed_mode(token, cluster, client)
                     .await
             }
-            Task::Check => todo!(),
+            Task::Check => {
+                self.check_resource_group_managed(token, cluster, client)
+                    .await
+            }
         }
     }
 }
@@ -864,4 +857,9 @@ enum Task {
     Manage,
     Observe,
     Check,
+}
+
+enum WhereTo {
+    Here,
+    Partner,
 }
