@@ -130,6 +130,9 @@ impl Host {
                 }
                 HostMessage::TaskDone(_) => {}
                 HostMessage::ExitRequested(_) => {}
+                HostMessage::MessageFollows => {
+                    panic!("Unexpect to get MessageFollows in this context.")
+                }
             }
         }
     }
@@ -226,6 +229,9 @@ impl Host {
                     if state.ready_to_exit() {
                         return;
                     }
+                }
+                HostMessage::MessageFollows => {
+                    panic!("Unexpect to get MessageFollows in this context.")
                 }
             }
         }

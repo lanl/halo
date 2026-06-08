@@ -201,6 +201,9 @@ impl Host {
                 HostMessage::ExitRequested(id) => {
                     panic!("Unexpected to receive message 'ExitRequested({id})' in this context.")
                 }
+                HostMessage::MessageFollows => {
+                    panic!("Unexpect to get MessageFollows in this context.")
+                }
             }
         }
     }
@@ -246,6 +249,7 @@ impl Host {
                     tasks.push(Box::pin(self.receive_message()));
                 }
                 HostMessage::Resource(event) => {
+                    tasks.push(Box::pin(self.receive_message()));
                     let token = event.resource_group;
                     let id = &token.id;
                     match event.kind {
@@ -253,47 +257,29 @@ impl Host {
                         // running already, this Host proceeds to manage them; otherwise, the original Host
                         // should manage them.
                         Message::CheckResourceGroup => {
-                            self.launch_task(
-                                &mut tasks,
-                                state,
-                                cluster,
-                                token,
-                                client,
-                                Task::Check,
-                            );
-                            // TODO: rather than have to duplicate this "re-arming" of the receive message
-                            // task in every branch that needs it, can I come up with a way to distinguish
-                            // in a single place that it needs re-arming? (`Either` might help here...)
-                            tasks.push(Box::pin(self.receive_message()));
+                            self.launch_task(&mut tasks, state, cluster, token, client, Task::Check)
                         }
                         // Partner Host told this Host to begin managing this resource group.
-                        Message::ManageResourceGroup => {
-                            self.launch_task(
-                                &mut tasks,
-                                state,
-                                cluster,
-                                token,
-                                client,
-                                Task::Manage,
-                            );
-                            tasks.push(Box::pin(self.receive_message()));
-                        }
-                        Message::ObserveResourceGroup => {
-                            self.launch_task(
-                                &mut tasks,
-                                state,
-                                cluster,
-                                token,
-                                client,
-                                Task::Observe,
-                            );
-                            tasks.push(Box::pin(self.receive_message()));
-                        }
+                        Message::ManageResourceGroup => self.launch_task(
+                            &mut tasks,
+                            state,
+                            cluster,
+                            token,
+                            client,
+                            Task::Manage,
+                        ),
+                        Message::ObserveResourceGroup => self.launch_task(
+                            &mut tasks,
+                            state,
+                            cluster,
+                            token,
+                            client,
+                            Task::Observe,
+                        ),
                         // Child task for management of this resource group encountered an error indicating
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
                         Message::RequestFailover => {
-                            tasks.push(Box::pin(self.receive_message()));
                             if self.ready_for_failover(state, token) {
                                 return;
                             }
@@ -310,31 +296,28 @@ impl Host {
                                 return;
                             }
                         }
-                        Message::SwitchHost => {
-                            tasks.push(Box::pin(self.receive_message()));
-                            self.launch_task(
-                                &mut tasks,
-                                state,
-                                cluster,
-                                token,
-                                client,
-                                Task::SwitchHost,
-                            );
-                        }
-                        Message::ResourceError => {
-                            tasks.push(Box::pin(self.receive_message()));
-                            state.resources_with_errors.push(token);
-                        }
+                        Message::SwitchHost => self.launch_task(
+                            &mut tasks,
+                            state,
+                            cluster,
+                            token,
+                            client,
+                            Task::SwitchHost,
+                        ),
+                        Message::ResourceError => state.resources_with_errors.push(token),
                     };
                 }
                 HostMessage::TaskDone(id) => state.resource_task_exited(&id),
+                HostMessage::MessageFollows => {}
                 HostMessage::ExitRequested(_) => {
                     panic!("Unexpected to receive ExitRequested message in this context")
                 }
             }
         }
 
-        unreachable!()
+        unreachable!(
+            "Tasks loop should not exit, a receive message task should always be registered."
+        )
     }
 
     /// Deactivate this Host:
@@ -748,13 +731,7 @@ impl Host {
         match res {
             // Resource was stopped, and it is no longer supposed to be managed.
             // Enter "Observe" mode, starting with a check on the partner host.
-            Ok(()) => {
-                // let id = token.id.clone();
-                // self.send_message_to_partner(token, Message::ObserveResourceGroup)
-                // .await;
-                // HostMessage::TaskDone(id)
-                (WhereTo::Partner, Message::ObserveResourceGroup)
-            }
+            Ok(()) => (WhereTo::Partner, Message::ObserveResourceGroup),
             Err(ManagementError::Connection) => {
                 debug!(
                     "{}: broken connection while managing {}",
@@ -807,7 +784,8 @@ impl Host {
 
             // Received a cancel notification: exit right away.
             _ = revoke.lost_connection.notified() => {
-                return new_message(token, Message::TaskCanceled);
+                self.send_message_to_self(token, Message::TaskCanceled).await;
+                return HostMessage::MessageFollows;
             }
 
             _ = revoke.switch_host.notified() => {
