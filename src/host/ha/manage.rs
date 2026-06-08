@@ -221,7 +221,7 @@ impl Host {
 
         // Create a task to manage each resource group that should run on this host.
         for token in take(&mut state.manage_these_resources) {
-            self.launch_task(&mut tasks, state, cluster, token, client);
+            self.launch_task(&mut tasks, state, cluster, token, client, Task::Manage);
         }
 
         // Create a task to check on each resource group that wasn't running on the partner host.
@@ -272,15 +272,19 @@ impl Host {
                                 cluster,
                                 event.resource_group,
                                 client,
+                                Task::Manage,
                             );
                             tasks.push(Box::pin(self.receive_message()));
                         }
                         Message::ObserveResourceGroup => {
-                            tasks.push(Box::pin(self.observe_resource_group_managed_mode(
-                                event.resource_group,
+                            self.launch_task(
+                                &mut tasks,
+                                state,
                                 cluster,
+                                event.resource_group,
                                 client,
-                            )));
+                                Task::Observe,
+                            );
                             tasks.push(Box::pin(self.receive_message()));
                         }
                         // Child task for management of this resource group encountered an error indicating
@@ -706,36 +710,27 @@ impl Host {
     /// needs to redo the startup checks.
     async fn observe_resource_group_managed_mode(
         &self,
-        token: ResourceToken,
+        token: &ResourceToken,
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
-    ) -> HostMessage {
+    ) -> Message {
         let id = token.id.clone();
         let rg = cluster.get_resource_group(&id);
 
-        match is_resource_group_running_here(&token, cluster, client, true).await {
+        match is_resource_group_running_here(token, cluster, client, true).await {
             Ok(is_running_here) => {
                 if is_running_here {
-                    self.send_message_to_self(token, Message::ManageResourceGroup)
-                        .await;
+                    Message::ManageResourceGroup
                 } else if rg.get_managed() {
-                    self.send_message_to_partner(token, Message::CheckResourceGroup)
-                        .await;
+                    Message::CheckResourceGroup
                 } else {
                     tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
-                    self.send_message_to_partner(token, Message::ObserveResourceGroup)
-                        .await;
+                    Message::ObserveResourceGroup
                 }
-
-                HostMessage::None(id)
             }
-            Err(ManagementError::Configuration) => new_message(token, Message::ResourceError),
-            Err(ManagementError::Connection) => {
-                self.send_message_to_partner(token, Message::ObserveResourceGroup)
-                    .await;
-                HostMessage::None(id)
-            }
+            Err(ManagementError::Configuration) => Message::ResourceError,
+            Err(ManagementError::Connection) => Message::ObserveResourceGroup,
         }
     }
 
@@ -796,12 +791,13 @@ impl Host {
         cluster: &'a Cluster,
         token: ResourceToken,
         client: &'a ocf_resource_agent::Client,
+        task: Task,
     ) {
         let revoke = ResourceTaskCancel::new(token.id.clone());
         state.outstanding_resource_tasks.push(revoke.clone());
-        tasks.push(Box::pin(
-            self.run_manage_task_with_cancellation(cluster, client, token, revoke),
-        ));
+        tasks.push(Box::pin(self.run_manage_task_with_cancellation(
+            cluster, client, token, revoke, task,
+        )));
     }
 
     async fn run_manage_task_with_cancellation(
@@ -810,6 +806,7 @@ impl Host {
         client: &ocf_resource_agent::Client,
         token: ResourceToken,
         revoke: ResourceTaskCancel,
+        task: Task,
     ) -> HostMessage {
         tokio::select! {
             // Biased because if a task has been cancelled, it should exit ASAP and not bother
@@ -825,20 +822,22 @@ impl Host {
                 new_message(token, Message::SwitchHost)
             }
 
-            msg = self.run_manage_task(cluster, client, &token) => {
+            msg = self.run_manage_task(cluster, client, &token, task) => {
                 let id = token.id.clone();
                 match msg {
                     Message::SwitchHost => new_message(token, Message::SwitchHost),
-                    Message::ObserveResourceGroup => {
+                    Message::ObserveResourceGroup | Message::CheckResourceGroup => {
                         self.send_message_to_partner(token, msg).await;
+                        HostMessage::None(id)
+                    }
+                    Message::ManageResourceGroup => {
+                        self.send_message_to_self(token, msg).await;
                         HostMessage::None(id)
                     }
                     Message::RequestFailover => new_message(token, Message::RequestFailover),
                     Message::ResourceError => new_message(token, Message::ResourceError),
-                    other => todo!("handle message type {other:?}"),
+                    Message::TaskCanceled => panic!("Unexpected to receive TaskCanceled message in this context."),
                 }
-
-                // HostMessage::None(id)
             }
         }
     }
@@ -848,7 +847,21 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
         token: &ResourceToken,
+        task: Task,
     ) -> Message {
-        self.manage_resource_group(cluster, token, client).await
+        match task {
+            Task::Manage => self.manage_resource_group(cluster, token, client).await,
+            Task::Observe => {
+                self.observe_resource_group_managed_mode(token, cluster, client)
+                    .await
+            }
+            Task::Check => todo!(),
+        }
     }
+}
+
+enum Task {
+    Manage,
+    Observe,
+    Check,
 }
