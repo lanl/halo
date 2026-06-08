@@ -165,64 +165,69 @@ impl Host {
                 HostMessage::Command(command) => {
                     todo!("Handle command {command:?} in ha observe mode.")
                 }
-                HostMessage::Resource(event) => match event.kind {
-                    Message::RequestFailover | Message::SwitchHost => {
-                        panic!(
-                            "Unexpected to receive a {:?} event in observe mode.",
-                            event.kind
-                        )
-                    }
-                    // Although this is "observe-only" mode, the Manage message is used to indicate
-                    // that the resource is known to be stopped on the partner - meaning if it is
-                    // stopped here as well, the status should be updated to "stopped" instead of
-                    // being left at "unknown".
-                    Message::ManageResourceGroup => {
-                        self.launch_observe_task(
-                            &mut tasks,
-                            state,
-                            cluster,
-                            event.resource_group,
-                            client,
-                            Task::CheckPartnerKnownStopped,
-                        );
-                    }
-                    Message::CheckResourceGroup => {
-                        self.launch_observe_task(
-                            &mut tasks,
-                            state,
-                            cluster,
-                            event.resource_group,
-                            client,
-                            Task::CheckPartnerUnknown,
-                        );
-                    }
-                    Message::ObserveResourceGroup => {
-                        self.launch_observe_task(
-                            &mut tasks,
-                            state,
-                            cluster,
-                            event.resource_group,
-                            client,
-                            Task::Observe,
-                        );
-                    }
-                    Message::ResourceError => {
-                        let id = &event.resource_group.id;
-                        state.resource_task_exited(id);
-                        state.resources_with_errors.push(event.resource_group)
-                    }
-                    Message::TaskCanceled => {
-                        let id = &event.resource_group.id;
-                        state.resource_task_exited(id);
-                        cluster.get_resource_group(id).root.set_status_recursive(
-                            ResourceStatus::Unknown("Connection to remote host lost.".to_string()),
-                        );
-                        state.resources_to_observe.push(event.resource_group);
-                        if state.ready_to_exit() {
-                            return;
+                HostMessage::Resource(event) => {
+                    tasks.push(Box::pin(self.receive_message()));
+                    match event.kind {
+                        Message::RequestFailover | Message::SwitchHost => {
+                            panic!(
+                                "Unexpected to receive a {:?} event in observe mode.",
+                                event.kind
+                            )
                         }
-                    }
-                },
+                        // Although this is "observe-only" mode, the Manage message is used to indicate
+                        // that the resource is known to be stopped on the partner - meaning if it is
+                        // stopped here as well, the status should be updated to "stopped" instead of
+                        // being left at "unknown".
+                        Message::ManageResourceGroup => {
+                            self.launch_observe_task(
+                                &mut tasks,
+                                state,
+                                cluster,
+                                event.resource_group,
+                                client,
+                                Task::CheckPartnerKnownStopped,
+                            );
+                        }
+                        Message::CheckResourceGroup => {
+                            self.launch_observe_task(
+                                &mut tasks,
+                                state,
+                                cluster,
+                                event.resource_group,
+                                client,
+                                Task::CheckPartnerUnknown,
+                            );
+                        }
+                        Message::ObserveResourceGroup => {
+                            self.launch_observe_task(
+                                &mut tasks,
+                                state,
+                                cluster,
+                                event.resource_group,
+                                client,
+                                Task::Observe,
+                            );
+                        }
+                        Message::ResourceError => {
+                            let id = &event.resource_group.id;
+                            state.resource_task_exited(id);
+                            state.resources_with_errors.push(event.resource_group)
+                        }
+                        Message::TaskCanceled => {
+                            let id = &event.resource_group.id;
+                            state.resource_task_exited(id);
+                            cluster.get_resource_group(id).root.set_status_recursive(
+                                ResourceStatus::Unknown(
+                                    "Connection to remote host lost.".to_string(),
+                                ),
+                            );
+                            state.resources_to_observe.push(event.resource_group);
+                            if state.ready_to_exit() {
+                                return;
+                            }
+                        }
+                    };
+                }
                 HostMessage::TaskDone(id) => state.resource_task_exited(&id),
                 HostMessage::ExitRequested(id) => {
                     state.resource_task_exited(&id);
@@ -235,6 +240,10 @@ impl Host {
                 }
             }
         }
+
+        unreachable!(
+            "Tasks loop should not exit, a receive message task should always be registered."
+        )
     }
 
     // Returns (true, _) if a network error occurred, (false, _) otherwise.
@@ -320,7 +329,6 @@ impl Host {
         tasks.push(Box::pin(
             self.run_task_with_cancellation(cluster, client, token, revoke, task),
         ));
-        tasks.push(Box::pin(self.receive_message()));
     }
 
     async fn run_task_with_cancellation(
