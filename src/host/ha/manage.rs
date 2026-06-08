@@ -311,11 +311,14 @@ impl Host {
                         }
                         Message::SwitchHost => {
                             state.resource_task_exited(id);
-                            tasks.push(Box::pin(self.switch_host(
+                            self.launch_task(
+                                &mut tasks,
+                                state,
+                                cluster,
                                 event.resource_group,
                                 client,
-                                cluster,
-                            )));
+                                Task::SwitchHost,
+                            );
                         }
                         Message::ResourceError => {
                             state.resource_task_exited(id);
@@ -567,29 +570,24 @@ impl Host {
 
     async fn switch_host(
         &self,
-        token: ResourceToken,
+        token: &ResourceToken,
         client: &ocf_resource_agent::Client,
         cluster: &Cluster,
-    ) -> HostMessage {
+    ) -> (WhereTo, Message) {
         let id = token.id.clone();
         let rg = cluster.get_resource_group(&id);
 
         match rg.stop_resources(client).await {
-            Ok(()) => {}
+            Ok(()) => (WhereTo::Partner, Message::ManageResourceGroup),
             Err(ManagementError::Configuration) => {
                 debug!("Switch host operation recieved unexpected configuration error from remote agent.");
-                return new_message(token, Message::ResourceError);
+                (WhereTo::Here, Message::ResourceError)
             }
             Err(ManagementError::Connection) => {
                 debug!("Connection to remote agent failed during switch host operation.");
-                return new_message(token, Message::RequestFailover);
+                (WhereTo::Here, Message::RequestFailover)
             }
-        };
-
-        self.send_message_to_partner(token, Message::ManageResourceGroup)
-            .await;
-
-        HostMessage::None(id)
+        }
     }
 
     /// The purpose of this procedure is to perform startup logic to discover the existing state of
@@ -849,6 +847,7 @@ impl Host {
                 self.check_resource_group_managed(token, cluster, client)
                     .await
             }
+            Task::SwitchHost => self.switch_host(token, client, cluster).await,
         }
     }
 }
@@ -857,6 +856,7 @@ enum Task {
     Manage,
     Observe,
     Check,
+    SwitchHost,
 }
 
 enum WhereTo {
