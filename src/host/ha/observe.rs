@@ -128,7 +128,7 @@ impl Host {
                         }
                     }
                 }
-                HostMessage::None(_) => {}
+                HostMessage::TaskDone(_) => {}
                 HostMessage::ExitRequested(_) => {}
             }
         }
@@ -220,7 +220,7 @@ impl Host {
                         }
                     }
                 },
-                HostMessage::None(id) => state.resource_task_exited(&id),
+                HostMessage::TaskDone(id) => state.resource_task_exited(&id),
                 HostMessage::ExitRequested(id) => {
                     state.resource_task_exited(&id);
                     if state.ready_to_exit() {
@@ -348,7 +348,7 @@ impl Host {
                 if network_error_occured {
                     HostMessage::ExitRequested(id)
                 } else {
-                    HostMessage::None(id)
+                    HostMessage::TaskDone(id)
                 }
             }
         }
