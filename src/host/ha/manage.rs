@@ -195,7 +195,7 @@ impl Host {
                     // ability to stop resources even if they happened to be running on the remote.
                     HostCommand::Deactivate => {}
                 },
-                HostMessage::None(id) => {
+                HostMessage::TaskDone(id) => {
                     panic!("Unexpected message type 'None({id})' in client disconnected routine.")
                 }
                 HostMessage::ExitRequested(id) => {
@@ -327,7 +327,7 @@ impl Host {
                         }
                     };
                 }
-                HostMessage::None(id) => state.resource_task_exited(&id),
+                HostMessage::TaskDone(id) => state.resource_task_exited(&id),
                 HostMessage::ExitRequested(_) => {
                     panic!("Unexpected to receive ExitRequested message in this context")
                 }
@@ -752,7 +752,7 @@ impl Host {
                 // let id = token.id.clone();
                 // self.send_message_to_partner(token, Message::ObserveResourceGroup)
                 // .await;
-                // HostMessage::None(id)
+                // HostMessage::TaskDone(id)
                 (WhereTo::Partner, Message::ObserveResourceGroup)
             }
             Err(ManagementError::Connection) => {
@@ -827,7 +827,7 @@ impl Host {
             }
         }
 
-        HostMessage::None(id)
+        HostMessage::TaskDone(id)
     }
 
     async fn run_manage_task(
