@@ -399,6 +399,9 @@ enum HostMessage {
     TaskDone(String),
 
     ExitRequested(String),
+
+    /// Used to indicate that a task ended but it sent another message which should be processed.
+    MessageFollows,
 }
 
 #[derive(Debug)]

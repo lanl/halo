@@ -140,6 +140,9 @@ impl Host {
                 HostMessage::ExitRequested(id) => {
                     panic!("Unexpected to receive message 'ExitRequested({id})' in non-HA mode.")
                 }
+                HostMessage::MessageFollows => {
+                    panic!("Unexpect to get MessageFollows in this context.")
+                }
             }
         }
     }
@@ -211,6 +214,9 @@ impl Host {
                 }
                 HostMessage::ExitRequested(id) => {
                     panic!("Unexpected to receive message 'ExitRequested({id})' in non-HA mode.")
+                }
+                HostMessage::MessageFollows => {
+                    panic!("Unexpect to get MessageFollows in this context.")
                 }
             }
         }
