@@ -246,7 +246,8 @@ impl Host {
                     tasks.push(Box::pin(self.receive_message()));
                 }
                 HostMessage::Resource(event) => {
-                    let id = &event.resource_group.id;
+                    let token = event.resource_group;
+                    let id = &token.id;
                     match event.kind {
                         // Failover partner told this Host to check on this resource group. If they are
                         // running already, this Host proceeds to manage them; otherwise, the original Host
@@ -256,7 +257,7 @@ impl Host {
                                 &mut tasks,
                                 state,
                                 cluster,
-                                event.resource_group,
+                                token,
                                 client,
                                 Task::Check,
                             );
@@ -271,7 +272,7 @@ impl Host {
                                 &mut tasks,
                                 state,
                                 cluster,
-                                event.resource_group,
+                                token,
                                 client,
                                 Task::Manage,
                             );
@@ -282,7 +283,7 @@ impl Host {
                                 &mut tasks,
                                 state,
                                 cluster,
-                                event.resource_group,
+                                token,
                                 client,
                                 Task::Observe,
                             );
@@ -292,8 +293,8 @@ impl Host {
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
                         Message::RequestFailover => {
-                            state.resource_task_exited(id);
-                            if self.ready_for_failover(state, event.resource_group) {
+                            tasks.push(Box::pin(self.receive_message()));
+                            if self.ready_for_failover(state, token) {
                                 return;
                             }
                         }
@@ -305,24 +306,24 @@ impl Host {
                             rg.root.set_status_recursive(ResourceStatus::Unknown(
                                 "Connection to remote host lost.".to_string(),
                             ));
-                            if self.ready_for_failover(state, event.resource_group) {
+                            if self.ready_for_failover(state, token) {
                                 return;
                             }
                         }
                         Message::SwitchHost => {
-                            state.resource_task_exited(id);
+                            tasks.push(Box::pin(self.receive_message()));
                             self.launch_task(
                                 &mut tasks,
                                 state,
                                 cluster,
-                                event.resource_group,
+                                token,
                                 client,
                                 Task::SwitchHost,
                             );
                         }
                         Message::ResourceError => {
-                            state.resource_task_exited(id);
-                            state.resources_with_errors.push(event.resource_group);
+                            tasks.push(Box::pin(self.receive_message()));
+                            state.resources_with_errors.push(token);
                         }
                     };
                 }
@@ -797,6 +798,8 @@ impl Host {
         revoke: ResourceTaskCancel,
         task: Task,
     ) -> HostMessage {
+        let id = token.id.clone();
+
         tokio::select! {
             // Biased because if a task has been cancelled, it should exit ASAP and not bother
             // trying to do any more work.
@@ -804,30 +807,27 @@ impl Host {
 
             // Received a cancel notification: exit right away.
             _ = revoke.lost_connection.notified() => {
-                new_message(token, Message::TaskCanceled)
+                return new_message(token, Message::TaskCanceled);
             }
 
             _ = revoke.switch_host.notified() => {
-                new_message(token, Message::SwitchHost)
+                self.send_message_to_self(token, Message::SwitchHost).await;
             }
 
             (whereto, msg) = self.run_manage_task(cluster, client, &token, task) => {
-                let id = token.id.clone();
                 match msg {
-                    Message::SwitchHost => new_message(token, Message::SwitchHost),
-                    Message::RequestFailover => new_message(token, Message::RequestFailover),
-                    Message::ResourceError => new_message(token, Message::ResourceError),
                     Message::TaskCanceled => panic!("Unexpected to receive TaskCanceled message in this context."),
                     other => {
                         match whereto {
                             WhereTo::Here => self.send_message_to_self(token, other).await,
                             WhereTo::Partner => self.send_message_to_partner(token, other).await,
                         };
-                        HostMessage::None(id)
                     }
                 }
             }
         }
+
+        HostMessage::None(id)
     }
 
     async fn run_manage_task(
