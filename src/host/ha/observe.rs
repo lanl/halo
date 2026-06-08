@@ -209,9 +209,7 @@ impl Host {
                             );
                         }
                         Message::ResourceError => {
-                            let id = &event.resource_group.id;
-                            state.resource_task_exited(id);
-                            state.resources_with_errors.push(event.resource_group)
+                            state.resources_with_errors.push(event.resource_group);
                         }
                         Message::TaskCanceled => {
                             let id = &event.resource_group.id;
@@ -349,7 +347,9 @@ impl Host {
             (network_error_occured, msg) = self.run_task(cluster, client, &token, task) => {
                 let id = token.id.clone();
                 match msg {
-                    Message::ResourceError => return new_message(token, Message::ResourceError),
+                    Message::ResourceError => {
+                        self.send_message_to_self(token, Message::ResourceError).await;
+                    }
                     Message::ManageResourceGroup | Message::CheckResourceGroup => {
                         self.send_message_to_partner(token, msg).await;
                     }
