@@ -46,7 +46,12 @@ struct HostState {
     /// found".
     resources_with_errors: Vec<ResourceToken>,
 
+    /// True if an admin-requested fence has been initiated, meaning tasks on this host should be
+    /// cleaned up.
     admin_requested_fence: bool,
+
+    /// True if the manager initiated fencing, meaning tasks on this host should be cleaned up.
+    manager_requested_fence: bool,
 }
 
 impl HostState {
@@ -58,6 +63,7 @@ impl HostState {
             resources_in_transit: Vec::new(),
             resources_with_errors: Vec::new(),
             admin_requested_fence: false,
+            manager_requested_fence: false,
         }
     }
 
@@ -70,6 +76,48 @@ impl HostState {
             .collect();
 
         self.outstanding_resource_tasks = still_running;
+    }
+
+    fn should_exit_connected_loop(&self) -> bool {
+        // Connected loop should only exit when a fence action has been requested, either by admin
+        // intervention or through the manager service:
+        if !(self.admin_requested_fence || self.manager_requested_fence) {
+            return false;
+        }
+
+        // When a fence action has been requested, the loop should not exit until all outstanding
+        // tasks have been accounted for:
+        self.outstanding_resource_tasks.is_empty()
+    }
+
+    /// Set up the given resource group to be ready for failover.
+    fn prep_for_failover(&mut self, rg: ResourceToken) {
+        self.resource_task_exited(&rg.id);
+        self.resources_in_transit.push(rg);
+
+        // If there are outstanding resource group tasks, they need to be notified to exit.
+        for revoke in &self.outstanding_resource_tasks {
+            debug!(
+                "request failover: notifiying task for resource '{}'",
+                revoke.id
+            );
+            revoke.lost_connection.notify_one();
+        }
+    }
+
+    /// Gets a task cancellation signal struct for a task with the given resource group id.
+    /// If there's already a cancellation device in the collection of outstanding tasks, reuse it -
+    /// otherwise, create a new one and store it.
+    fn get_cancellation_device(&mut self, id: &str) -> ResourceTaskCancel {
+        for revoke in &self.outstanding_resource_tasks {
+            if revoke.id == id {
+                return revoke.clone();
+            }
+        }
+
+        let revoke = ResourceTaskCancel::new(id.to_string());
+        self.outstanding_resource_tasks.push(revoke.clone());
+        revoke
     }
 }
 
@@ -250,61 +298,45 @@ impl Host {
                 }
                 HostMessage::Resource(event) => {
                     tasks.push(Box::pin(self.receive_message()));
-                    let token = event.resource_group;
-                    let id = &token.id;
+                    let t = event.resource_group;
+                    let id = &t.id;
                     match event.kind {
                         // Failover partner told this Host to check on this resource group. If they are
                         // running already, this Host proceeds to manage them; otherwise, the original Host
                         // should manage them.
                         Message::CheckResourceGroup => {
-                            self.launch_task(&mut tasks, state, cluster, token, client, Task::Check)
+                            self.launch_task(&mut tasks, state, cluster, t, client, Task::Check)
                         }
                         // Partner Host told this Host to begin managing this resource group.
-                        Message::ManageResourceGroup => self.launch_task(
-                            &mut tasks,
-                            state,
-                            cluster,
-                            token,
-                            client,
-                            Task::Manage,
-                        ),
-                        Message::ObserveResourceGroup => self.launch_task(
-                            &mut tasks,
-                            state,
-                            cluster,
-                            token,
-                            client,
-                            Task::Observe,
-                        ),
+                        Message::ManageResourceGroup => {
+                            self.launch_task(&mut tasks, state, cluster, t, client, Task::Manage)
+                        }
+                        Message::ObserveResourceGroup => {
+                            self.launch_task(&mut tasks, state, cluster, t, client, Task::Observe)
+                        }
+                        Message::SwitchHost => {
+                            self.launch_task(&mut tasks, state, cluster, t, client, Task::Switch)
+                        }
                         // Child task for management of this resource group encountered an error indicating
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
                         Message::RequestFailover => {
-                            if self.ready_for_failover(state, token) {
-                                return;
-                            }
+                            state.manager_requested_fence = true;
+                            state.prep_for_failover(t);
                         }
                         // Child task for management of this resource exited after being instructed to
                         // cancel management.
                         Message::TaskCanceled => {
-                            state.resource_task_exited(id);
                             let rg = cluster.get_resource_group(id);
                             rg.root.set_status_recursive(ResourceStatus::Unknown(
                                 "Connection to remote host lost.".to_string(),
                             ));
-                            if self.ready_for_failover(state, token) {
-                                return;
-                            }
+                            state.prep_for_failover(t);
                         }
-                        Message::SwitchHost => self.launch_task(
-                            &mut tasks,
-                            state,
-                            cluster,
-                            token,
-                            client,
-                            Task::SwitchHost,
-                        ),
-                        Message::ResourceError => state.resources_with_errors.push(token),
+                        Message::ResourceError => {
+                            state.resource_task_exited(id);
+                            state.resources_with_errors.push(t);
+                        }
                     };
                 }
                 HostMessage::TaskDone(id) => state.resource_task_exited(&id),
@@ -312,6 +344,10 @@ impl Host {
                 HostMessage::ExitRequested(_) => {
                     panic!("Unexpected to receive ExitRequested message in this context")
                 }
+            }
+
+            if state.should_exit_connected_loop() {
+                return;
             }
         }
 
@@ -332,27 +368,6 @@ impl Host {
             );
             revoke.switch_host.notify_one();
         }
-    }
-
-    /// Returns true if all resource management tasks have exited and the failover is ready to
-    /// proceed.
-    ///
-    /// This is needed so that the loop in remote_connected_loop() knows whether to break out to the
-    /// "top level" loop in manage_ha().
-    fn ready_for_failover(&self, state: &mut HostState, rg: ResourceToken) -> bool {
-        state.resources_in_transit.push(rg);
-
-        // If there are outstanding resource group tasks, they need to be notified to exit.
-        for revoke in &state.outstanding_resource_tasks {
-            debug!(
-                "request failover: notifiying task for resource '{}'",
-                revoke.id
-            );
-            revoke.lost_connection.notify_one();
-        }
-
-        // If every resource management task has been cancelled, fencing should proceed:
-        state.outstanding_resource_tasks.is_empty()
     }
 
     /// When a connection has been lost to the remote agent, the Host task evaluates whether
@@ -377,8 +392,14 @@ impl Host {
             return None;
         }
 
+        assert!(state.manager_requested_fence);
+        state.manager_requested_fence = false;
+
         if self.fenced() {
             warn!("Host {} was already fenced; not fencing again", self.id());
+            // TODO: some of the resources in resources_in_transit should maybe be put into the
+            // "check" bucket instead of the "manage" bucket - depending on what state they were in
+            // when the network failure occurred...
             state.manage_these_resources = take(&mut state.resources_in_transit);
             return None;
         }
@@ -760,8 +781,12 @@ impl Host {
         client: &'a ocf_resource_agent::Client,
         task: Task,
     ) {
-        let revoke = ResourceTaskCancel::new(token.id.clone());
-        state.outstanding_resource_tasks.push(revoke.clone());
+        if state.admin_requested_fence || state.manager_requested_fence {
+            state.prep_for_failover(token);
+            return;
+        }
+
+        let revoke = state.get_cancellation_device(&token.id);
         tasks.push(Box::pin(self.run_manage_task_with_cancellation(
             cluster, client, token, revoke, task,
         )));
@@ -785,11 +810,12 @@ impl Host {
             // Received a cancel notification: exit right away.
             _ = revoke.lost_connection.notified() => {
                 self.send_message_to_self(token, Message::TaskCanceled).await;
-                return HostMessage::MessageFollows;
+                HostMessage::MessageFollows
             }
 
             _ = revoke.switch_host.notified() => {
                 self.send_message_to_self(token, Message::SwitchHost).await;
+                HostMessage::MessageFollows
             }
 
             (whereto, msg) = self.run_manage_task(cluster, client, &token, task) => {
@@ -797,15 +823,19 @@ impl Host {
                     Message::TaskCanceled => panic!("Unexpected to receive TaskCanceled message in this context."),
                     other => {
                         match whereto {
-                            WhereTo::Here => self.send_message_to_self(token, other).await,
-                            WhereTo::Partner => self.send_message_to_partner(token, other).await,
-                        };
+                            WhereTo::Here => {
+                                self.send_message_to_self(token, other).await;
+                                HostMessage::MessageFollows
+                            }
+                            WhereTo::Partner => {
+                                self.send_message_to_partner(token, other).await;
+                                HostMessage::TaskDone(id)
+                            }
+                        }
                     }
                 }
             }
         }
-
-        HostMessage::TaskDone(id)
     }
 
     async fn run_manage_task(
@@ -825,7 +855,7 @@ impl Host {
                 self.check_resource_group_managed(token, cluster, client)
                     .await
             }
-            Task::SwitchHost => self.switch_host(token, client, cluster).await,
+            Task::Switch => self.switch_host(token, client, cluster).await,
         }
     }
 }
@@ -834,7 +864,7 @@ enum Task {
     Manage,
     Observe,
     Check,
-    SwitchHost,
+    Switch,
 }
 
 enum WhereTo {
