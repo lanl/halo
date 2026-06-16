@@ -24,8 +24,8 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
             continue;
         }
 
-        print!("{}\t", res.id);
-        print!("({}):\t", res.kind);
+        print!("{:<20}\t", res.id);
+        print!("({})\t", res.kind);
         print!("{}", res.status);
         match res.status.as_str() {
             "Running" => print!(" on {}", res.home_host),
@@ -58,6 +58,8 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
 
         println!();
     }
+
+    println!();
 
     let mut abnormal = false;
     let mut connected_activated = String::new();
