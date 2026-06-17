@@ -39,16 +39,15 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
         if cli.verbose {
             print!(" [");
             let mut first_one = true;
-            let mut params: Vec<_> = res.parameters.keys().collect();
+            let mut params: Vec<_> = res.parameters.iter().collect();
             params.sort();
-            for param in params {
+            for (key, value) in params {
                 if first_one {
                     first_one = false;
                 } else {
                     print!("; ");
                 }
-                let value = &res.parameters[param];
-                print!("{param}: {value}");
+                print!("{key}: {value}");
             }
             print!("]");
         }
