@@ -1,0 +1,14 @@
+# Define the location to search for the configuration file
+# HALO_CONFIG=/etc/halo/halo.conf
+
+# Define port for the daemon to listen on
+# HALO_PORT=8000
+
+# Define the network that the daemon listens on
+# HALO_NET=192.168.1.0/24
+
+# The log level for the manager and remote daemons. Set to "debug" or "trace" for more output.
+# HALO_LOG=warn
+
+# When using TLS, HALO additionally will check below variables
+# HALO_{CLIENT,SERVER}_{CERT,KEY}
