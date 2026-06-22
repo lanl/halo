@@ -125,13 +125,5 @@ To install and start the remote server:
 
 ## Configuration
 
-Besides using command-line arguments,
-the daemons can be configured via environment variables defined in `/etc/sysconfig/halo`.
-HALO recognizes the following variables:
-
-- `HALO_CONFIG` -- defines the location to search for the configuration file (default: `/etc/halo/halo.conf`).
-- `HALO_PORT` -- defines port for the daemon to listen on (default `8000`).
-- `HALO_NET` -- defines the network that the daemon listens on (default `192.168.1.0/24`).
-- `HALO_LOG` -- the log level for the manager and remote daemons. Default is "warn". Set to "debug" or "trace" for more output.
-
-When using TLS, HALO additionally will check `HALO_{CLIENT,SERVER}_{CERT,KEY}`.
+Besides using command-line arguments, the daemons can be configured via
+environment variables defined in `/etc/sysconfig/halo`.  See sysconfig/halo.
