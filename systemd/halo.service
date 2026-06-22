@@ -9,7 +9,7 @@ Restart=on-failure
 RestartPreventExitStatus=64
 RestartSec=1
 User=root
-ExecStart=/usr/local/sbin/halo_manager
+ExecStart=/usr/sbin/halo_manager
 EnvironmentFile=-/etc/sysconfig/halo
 
 [Install]
