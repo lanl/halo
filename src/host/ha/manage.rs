@@ -46,12 +46,12 @@ struct HostState {
     /// found".
     resources_with_errors: Vec<ResourceToken>,
 
-    /// True if an admin-requested fence has been initiated, meaning tasks on this host should be
-    /// cleaned up.
-    admin_requested_fence: bool,
+    fence_initiated: Option<FenceDetails>,
+}
 
-    /// True if the manager initiated fencing, meaning tasks on this host should be cleaned up.
-    manager_requested_fence: bool,
+struct FenceDetails {
+    /// True if a fence was initiated by admin request, instead of autonomously by the manager.
+    admin_requested: bool,
 }
 
 impl HostState {
@@ -62,8 +62,7 @@ impl HostState {
             outstanding_resource_tasks: Vec::new(),
             resources_in_transit: Vec::new(),
             resources_with_errors: Vec::new(),
-            admin_requested_fence: false,
-            manager_requested_fence: false,
+            fence_initiated: None,
         }
     }
 
@@ -121,7 +120,7 @@ impl HostState {
     }
 
     fn fence_in_progress(&self) -> bool {
-        self.admin_requested_fence || self.manager_requested_fence
+        self.fence_initiated.is_some()
     }
 }
 
@@ -291,11 +290,7 @@ impl Host {
                     match command {
                         HostCommand::Failback => self.do_failback(state, cluster),
                         HostCommand::Deactivate => self.deactivate(state),
-                        HostCommand::Fence => {
-                            if self.admin_fence_request(state) {
-                                return;
-                            }
-                        }
+                        HostCommand::Fence => self.admin_fence_request(state),
                     };
 
                     tasks.push(Box::pin(self.receive_message()));
@@ -325,7 +320,11 @@ impl Host {
                         // that this Host should be fenced, and resources currently on it should be failed
                         // over.
                         Message::RequestFailover => {
-                            state.manager_requested_fence = true;
+                            if state.fence_initiated.is_none() {
+                                state.fence_initiated = Some(FenceDetails {
+                                    admin_requested: false,
+                                });
+                            }
                             state.prep_for_failover(t);
                         }
                         // Child task for management of this resource exited after being instructed to
@@ -396,14 +395,13 @@ impl Host {
         state: &mut HostState,
         cluster: &Arc<Cluster>,
     ) -> Option<ocf_resource_agent::Client> {
-        if state.admin_requested_fence {
-            state.admin_requested_fence = false;
+        let fence_details =
+            take(&mut state.fence_initiated).expect("Fence details must be set at this point.");
+
+        if fence_details.admin_requested {
             self.do_failover(state, cluster).await;
             return None;
         }
-
-        assert!(state.manager_requested_fence);
-        state.manager_requested_fence = false;
 
         if self.fenced() {
             warn!("Host {} was already fenced; not fencing again", self.id());
@@ -545,22 +543,30 @@ impl Host {
         }
     }
 
-    /// Returns true if there were no resource tasks running -- so remote_connected_loop() should
-    /// return immediately.
-    fn admin_fence_request(&self, state: &mut HostState) -> bool {
-        state.admin_requested_fence = true;
-        if state.outstanding_resource_tasks.is_empty() {
-            return true;
+    /// Initiate an admin fence request - unless a fence request was already in progress, in which
+    /// case, do nothing.
+    fn admin_fence_request(&self, state: &mut HostState) {
+        if state.fence_initiated.is_some() {
+            self.finish_admin_fence_request(FenceResult::AlreadyInProgress);
+            return;
         }
+
+        state.fence_initiated = Some(FenceDetails {
+            admin_requested: true,
+        });
 
         for task in &state.outstanding_resource_tasks {
             task.lost_connection.notify_one();
         }
-
-        false
     }
 
     fn do_failback(&self, state: &mut HostState, cluster: &Cluster) {
+        // If a fence request is in progress, there's no point in trying to fail back tasks. They
+        // will already be failed over by the fence action.
+        if state.fence_in_progress() {
+            return;
+        }
+
         let still_running = take(&mut state.outstanding_resource_tasks)
             .into_iter()
             .filter(|task| {
