@@ -126,4 +126,4 @@ To install and start the remote server:
 ## Configuration
 
 Besides using command-line arguments, the daemons can be configured via
-environment variables defined in `/etc/sysconfig/halo`.  See sysconfig/halo.
+environment variables defined in `/etc/sysconfig/halo`.  See [sysconfig/halo](sysconfig/halo).
