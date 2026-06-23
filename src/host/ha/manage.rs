@@ -81,7 +81,7 @@ impl HostState {
     fn should_exit_connected_loop(&self) -> bool {
         // Connected loop should only exit when a fence action has been requested, either by admin
         // intervention or through the manager service:
-        if !(self.admin_requested_fence || self.manager_requested_fence) {
+        if !(self.fence_in_progress()) {
             return false;
         }
 
@@ -118,6 +118,10 @@ impl HostState {
         let revoke = ResourceTaskCancel::new(id.to_string());
         self.outstanding_resource_tasks.push(revoke.clone());
         revoke
+    }
+
+    fn fence_in_progress(&self) -> bool {
+        self.admin_requested_fence || self.manager_requested_fence
     }
 }
 
@@ -781,7 +785,7 @@ impl Host {
         client: &'a ocf_resource_agent::Client,
         task: Task,
     ) {
-        if state.admin_requested_fence || state.manager_requested_fence {
+        if state.fence_in_progress() {
             state.prep_for_failover(token);
             return;
         }
