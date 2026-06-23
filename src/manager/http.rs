@@ -152,7 +152,7 @@ impl HostJson {
             id: host.id(),
             active: host.active(),
             connected: host.connected(),
-            fenced: host.fenced(),
+            fenced: host.fence_attempted(),
         }
     }
 }
@@ -239,11 +239,11 @@ async fn host_post(
     // Check "reset" first because it doesn't require a partner host to be present in order to be a
     // valid command:
     if payload.command == "reset" {
-        if !host.fenced() {
+        if !host.fence_attempted() {
             return Err((StatusCode::CONFLICT, "Host has not been fenced."));
         }
 
-        host.set_fenced(false);
+        host.set_fence_attempted(false);
         return match cluster
             .write_record_nonblocking(Record::new(Event::FenceReset, host.id(), payload.comment))
             .await
@@ -279,7 +279,7 @@ async fn host_post(
             if !partner.active() && payload.force != Some(true) {
                 return Err((StatusCode::CONFLICT, "Partner is disconnected."));
             }
-            if host.fenced() && payload.force != Some(true) {
+            if host.fence_attempted() && payload.force != Some(true) {
                 return Err((StatusCode::CONFLICT, "Host has already been fenced."));
             }
             return match host

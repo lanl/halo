@@ -204,7 +204,9 @@ impl super::Host {
     /// result. Suitable to be called by the management service.
     pub async fn do_fence_nonblocking(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
         if let FenceCommand::Off = command {
-            self.set_fenced(true);
+            // Mark the host as "fenced" even if fencing ends up failing, to prevent multiple
+            // attempts in a row.
+            self.set_fence_attempted(true);
         }
 
         let agent = self.fence_agent.as_ref().unwrap();

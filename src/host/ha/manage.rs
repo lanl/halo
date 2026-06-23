@@ -403,7 +403,7 @@ impl Host {
             return None;
         }
 
-        if self.fenced() {
+        if self.fence_attempted() {
             warn!("Host {} was already fenced; not fencing again", self.id());
             // TODO: some of the resources in resources_in_transit should maybe be put into the
             // "check" bucket instead of the "manage" bucket - depending on what state they were in
@@ -528,7 +528,7 @@ impl Host {
             self.finish_admin_fence_request(FenceResult::Success);
         }
 
-        self.set_fenced(true);
+        self.set_fence_attempted(true);
         self.set_connected(false);
 
         warn!("Host {} has been powered off.", self.id());

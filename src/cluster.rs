@@ -64,7 +64,7 @@ impl Cluster {
             let cluster_host_id = cluster_host.id();
 
             if let Some(fenced) = state.delta.hosts_fenced.get(&cluster_host_id) {
-                cluster_host.set_fenced(*fenced);
+                cluster_host.set_fence_attempted(*fenced);
                 unapplied_hosts.remove(&cluster_host_id);
             }
             if let Some(active) = state.delta.hosts_activated.get(&cluster_host_id) {

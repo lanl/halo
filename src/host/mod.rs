@@ -98,8 +98,9 @@ pub struct Host {
     /// Host.
     connected: std::sync::Mutex<bool>,
 
-    /// Whether the Host has been fenced. Cleared by the admin after making the Host healthy again.
-    fenced: std::sync::Mutex<bool>,
+    /// Whether a fence has been attempted for the Host. Cleared by the admin after making the Host
+    /// healthy again.
+    fence_attempted: std::sync::Mutex<bool>,
 
     /// Information on an in-progress fence event--or None if no admin fence request is
     /// in-progress.
@@ -123,7 +124,7 @@ impl Host {
             receiver: tokio::sync::Mutex::new(receiver),
             active: std::sync::Mutex::new(true),
             connected: std::sync::Mutex::new(false),
-            fenced: std::sync::Mutex::new(false),
+            fence_attempted: std::sync::Mutex::new(false),
             fence_event: std::sync::Mutex::new(None),
         }
     }
@@ -238,12 +239,12 @@ impl Host {
         *self.connected.lock().unwrap()
     }
 
-    pub fn fenced(&self) -> bool {
-        *self.fenced.lock().unwrap()
+    pub fn fence_attempted(&self) -> bool {
+        *self.fence_attempted.lock().unwrap()
     }
 
-    pub fn set_fenced(&self, fenced: bool) {
-        *self.fenced.lock().unwrap() = fenced;
+    pub fn set_fence_attempted(&self, fenced: bool) {
+        *self.fence_attempted.lock().unwrap() = fenced;
     }
 
     async fn get_client(&self, cluster: &Cluster) -> io::Result<ocf_resource_agent::Client> {
