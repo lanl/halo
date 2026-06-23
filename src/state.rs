@@ -227,10 +227,12 @@ impl Record {
             eprintln!("missing obj_id field");
             return handled_error();
         };
-        let mut comment = String::from(fields.next().unwrap_or(""));
+        let mut comment = fields.next().map(String::from);
         for remainder in fields {
-            comment.push('\t');
-            comment.push_str(remainder);
+            if let Some(comm) = comment.as_mut() {
+                comm.push('\t');
+                comm.push_str(remainder);
+            }
         }
 
         let timestamp = NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S.%f")
@@ -240,7 +242,7 @@ impl Record {
             timestamp,
             event: Event::try_from(event)?,
             obj_id: obj_id.to_string(),
-            comment: Some(comment.to_string()),
+            comment,
         })
     }
 }
