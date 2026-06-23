@@ -364,6 +364,12 @@ impl Host {
     ///   - Cancel any outstanding resource management tasks
     ///   - send the ResourceTokens over to the partner
     fn deactivate(&self, state: &mut HostState) {
+        // If a fence request is in progress, there's no point in trying to cancel outstanding
+        // tasks. They are already being cancelled by the fence action.
+        if state.fence_in_progress() {
+            return;
+        }
+
         for revoke in take(&mut state.outstanding_resource_tasks) {
             debug!(
                 "Deactivating host {}: notifying task for resource '{}'",
