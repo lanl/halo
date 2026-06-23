@@ -503,11 +503,12 @@ impl Resource {
         let mut output: String = String::from("{");
         params.iter().enumerate().for_each(|(i, (k, v))| {
             if i == params.len() - 1 {
-                output.push_str(&format!("\"{k}\": \"{v}\"}}"));
+                output.push_str(&format!("\"{k}\": \"{v}\""));
             } else {
                 output.push_str(&format!("\"{k}\": \"{v}\", "));
             }
         });
+        output.push('}');
         output
     }
 
