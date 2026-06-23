@@ -277,6 +277,9 @@ async fn host_post(
         }
         "fence" => {
             if !partner.active() && payload.force != Some(true) {
+                return Err((StatusCode::CONFLICT, "Partner is deactivated."));
+            }
+            if !partner.connected() && payload.force != Some(true) {
                 return Err((StatusCode::CONFLICT, "Partner is disconnected."));
             }
             if host.fence_attempted() && payload.force != Some(true) {
