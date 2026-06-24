@@ -8,7 +8,7 @@ Type=exec
 Restart=always
 RestartSec=1
 User=root
-ExecStart=/usr/local/sbin/halo
+ExecStart=/usr/sbin/halo_manager
 EnvironmentFile=-/etc/sysconfig/halo
 
 [Install]
