@@ -5,7 +5,7 @@ use std::{io, sync::Arc};
 
 use {clap::Parser, log::info};
 
-use crate::{cluster, Handle, HandledResult};
+use crate::{cluster, handled_error, Handle, HandledResult};
 
 pub mod http;
 
@@ -53,26 +53,26 @@ pub struct Cli {
 /// To avoid clobbering an already-in-use unix socket, a connection is attempted to an existing
 /// unix socket first. If this fails, a new socket listener can be returned, since an existing
 /// in-use socket was determined to be absent at the given location.
-async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListener> {
+async fn prepare_unix_socket(addr: &String) -> HandledResult<tokio::net::UnixListener> {
     // Check for existing socket in use
     match tokio::net::UnixStream::connect(&addr).await {
         Ok(_) => {
             eprintln!("Address already in use: {addr}");
-            return Err(io::Error::from(io::ErrorKind::AddrInUse));
+            return handled_error();
         }
         Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => {
             eprintln!("Unexpected error while preparing unix socket '{addr}': {e}");
-            return Err(e);
+            return handled_error();
         }
     };
     match std::fs::remove_file(addr) {
         Ok(_) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => {
-            eprintln!("error removing old socket: {e}");
-            return Err(e);
+            eprintln!("Error removing old socket: {e}");
+            return handled_error();
         }
     };
     // Create new socket
@@ -80,7 +80,7 @@ async fn prepare_unix_socket(addr: &String) -> io::Result<tokio::net::UnixListen
         Ok(l) => Ok(l),
         Err(e) => {
             eprintln!("error binding to socket '{addr}': {e}");
-            Err(e)
+            handled_error()
         }
     }
 }
@@ -113,13 +113,7 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
             None => &crate::default_socket(),
         };
 
-        let listener = match prepare_unix_socket(addr).await {
-            Ok(l) => l,
-            Err(_) => {
-                std::process::exit(1);
-            }
-        };
-
+        let listener = prepare_unix_socket(addr).await?;
         info!("listening on socket '{addr}'");
 
         let cluster = Arc::new(cluster);
@@ -128,7 +122,7 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
             http::server_main(listener, Arc::clone(&cluster)),
             manager_main(cluster)
         );
-    }));
 
-    Ok(())
+        Ok(())
+    }))
 }
