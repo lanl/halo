@@ -5,7 +5,8 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=exec
-Restart=always
+Restart=on-failure
+RestartPreventExitStatus=64
 RestartSec=1
 User=root
 ExecStart=/usr/local/sbin/halo_manager
