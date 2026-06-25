@@ -5,10 +5,7 @@ use std::{io, sync::Arc};
 
 use {clap::Parser, log::info};
 
-use crate::{
-    cluster,
-    commands::{Handle, HandledResult},
-};
+use crate::{cluster, Handle, HandledResult};
 
 pub mod http;
 

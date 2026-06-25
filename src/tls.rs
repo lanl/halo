@@ -13,7 +13,7 @@ use {
     tokio_rustls::{TlsAcceptor, TlsConnector},
 };
 
-use crate::commands::{handled_error, Handle, HandledResult};
+use crate::{handled_error, Handle, HandledResult};
 
 fn load_private_key(path: &str) -> HandledResult<PrivateKeyDer<'static>> {
     let key_file =

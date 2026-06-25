@@ -3,7 +3,7 @@
 
 use {clap::Args, reqwest::StatusCode};
 
-use crate::{commands::*, manager::http};
+use crate::{commands::*, handled_error, manager::http, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct ManageArgs {

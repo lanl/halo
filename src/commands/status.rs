@@ -3,7 +3,7 @@
 
 use clap::Args;
 
-use crate::{commands::*, manager::http};
+use crate::{commands::*, manager::http, Handle, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct StatusArgs {

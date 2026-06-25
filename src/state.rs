@@ -12,7 +12,7 @@ use std::{
 use chrono::{Local, NaiveDateTime};
 use log::error;
 
-use crate::commands::{handled_error, Handle, HandledError, HandledResult};
+use crate::{handled_error, Handle, HandledError, HandledResult};
 
 /// A delta of the state of all hosts and resources between the times before and after the statefile was read.
 #[derive(Debug)]

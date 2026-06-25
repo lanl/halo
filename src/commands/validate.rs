@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use crate::{
-    cluster::Cluster,
-    commands::{handled_error, Cli, HandledResult},
-};
+use crate::{cluster::Cluster, commands::Cli, handled_error, HandledResult};
 
 pub fn validate(args: &Cli) -> HandledResult<()> {
     match &args.config {

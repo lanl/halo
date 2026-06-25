@@ -13,9 +13,7 @@ use {
 };
 
 use crate::{
-    commands::{handled_error, Handle, HandledResult},
-    halo_capnp::ocf_resource_agent,
-    tls::get_acceptor,
+    halo_capnp::ocf_resource_agent, handled_error, tls::get_acceptor, Handle, HandledResult,
 };
 
 pub mod ocf;

@@ -5,10 +5,11 @@ use std::{collections::HashMap, fs, io, io::Write, net, sync::Mutex};
 
 use crate::{
     cluster::Cluster,
-    commands::{self, HandledResult},
+    commands,
     config::{self, Config},
     manager::{self, http},
     resource::Resource,
+    HandledResult,
 };
 
 /// Given a relative `path` in the test directory, prepend the

@@ -5,10 +5,7 @@ use std::{collections::HashMap, process::Command};
 
 use clap::Args;
 
-use crate::{
-    commands::{Handle, HandledResult},
-    config,
-};
+use crate::{config, Handle, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct DiscoverArgs {

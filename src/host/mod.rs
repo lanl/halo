@@ -17,10 +17,10 @@ use {
 
 use crate::{
     cluster::Cluster,
-    commands::{Handle, HandledResult},
     halo_capnp::{self, *},
     resource::Location,
     state::{Event, Record},
+    Handle, HandledResult,
 };
 
 pub mod power;
@@ -151,10 +151,7 @@ impl Host {
     /// Specify the host that should be this host's failover partner.
     ///
     /// Note that this function should be called exactly once to initialize the failover partner.
-    pub fn set_failover_partner(
-        &self,
-        partner: Option<Arc<Self>>,
-    ) -> crate::commands::HandledResult<()> {
+    pub fn set_failover_partner(&self, partner: Option<Arc<Self>>) -> HandledResult<()> {
         let new_partner = partner.map(|fp| Arc::clone(&fp));
         self.failover_partner.set(new_partner).handle_err(|_| {
             let curr_partner = match self.failover_partner.get().unwrap() {

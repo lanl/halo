@@ -3,11 +3,7 @@
 
 use clap::Args;
 
-use crate::{
-    cluster::Cluster,
-    commands::{self, Cli, HandledResult},
-    host::*,
-};
+use crate::{cluster::Cluster, commands::Cli, handled_error, host::*, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct PowerArgs {
@@ -98,7 +94,7 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
     }
 
     if error_seen {
-        commands::handled_error()
+        handled_error()
     } else {
         Ok(())
     }
@@ -111,7 +107,7 @@ fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> HandledResul
         FenceCommand::Status => {}
         other => {
             eprintln!("Must specify host names to perform action \"{other}\".");
-            return commands::handled_error();
+            return handled_error();
         }
     };
 

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::commands::{handled_error, HandledResult};
+use crate::{handled_error, HandledResult};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {

@@ -10,11 +10,11 @@ use std::{
 use {futures::future, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
 
 use crate::{
-    commands::{Handle, HandledResult},
     host::*,
     manager,
     resource::*,
     state::{Record, State},
+    Handle, HandledResult,
 };
 
 /// Cluster is the model used to represent the dynamic state of a cluster in memory.
