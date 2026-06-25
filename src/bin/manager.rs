@@ -5,6 +5,13 @@ use clap::Parser;
 
 use halo_lib::{self, cluster, manager};
 
+/// Used to indicate that the manager process exited with an error that requires admin intervention
+/// to correct, e.g., an invalid config file, or bad path to the manager socket, etc.
+///
+/// This is to be distinguished from internal errors (i.e., panics) that should lead systemd to try
+/// to restart the manager process.
+const EXIT_USER_ERROR: i32 = 64;
+
 /// The halo_manager binary runs the management daemon.
 fn main() {
     let mut args = manager::Cli::parse();
@@ -25,10 +32,10 @@ fn main() {
     )
     .init();
     let Ok(cluster) = cluster::Cluster::new(args) else {
-        std::process::exit(1);
+        std::process::exit(EXIT_USER_ERROR);
     };
 
     if manager::main(cluster).is_err() {
-        std::process::exit(1);
+        std::process::exit(EXIT_USER_ERROR);
     }
 }
