@@ -155,20 +155,9 @@ impl ResourceGroup {
         client: &ocf_resource_agent::Client,
         loc: Location,
     ) -> Result<(), ManagementError> {
-        let futures = self
-            .resources()
-            .map(|r| r.is_running_here(client, loc, true));
+        let futures = self.resources().map(|r| r.update_status(client, loc, true));
 
-        let statuses = future::join_all(futures).await;
-        let mut res = Ok(());
-
-        for result in statuses {
-            match result {
-                Ok(_) => {}
-                Err(e) => res = Err(e),
-            }
-        }
-        res
+        get_worst_error(future::join_all(futures).await.into_iter())
     }
 
     /// Attempt to start the resources in this resource group on the given location.
@@ -224,14 +213,9 @@ impl ResourceGroup {
     ) -> Result<bool, ManagementError> {
         let futures = self
             .resources()
-            .map(|r| r.is_running_here(client, loc, update_status_if_stopped));
+            .map(|r| r.update_status(client, loc, update_status_if_stopped));
 
-        for result in future::join_all(futures).await {
-            match result {
-                Ok(_) => {}
-                Err(e) => return Err(e),
-            }
-        }
+        get_worst_error(future::join_all(futures).await.into_iter())?;
 
         if self.root.is_running() {
             Ok(true)
@@ -312,23 +296,23 @@ impl Resource {
     }
 
     /// This method checks if the resource is running on the system connected via the given Client.
-    pub async fn is_running_here(
+    pub async fn update_status(
         &self,
         client: &ocf_resource_agent::Client,
         loc: Location,
         update_status_if_stopped: bool,
-    ) -> Result<bool, ManagementError> {
+    ) -> Result<(), ManagementError> {
         match self.monitor(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
                 self.set_running_on_loc(loc);
-                Ok(true)
+                Ok(())
             }
             Ok(AgentReply::Success(ocf::Status::Error(kind, reason))) => match kind {
                 ocf::OcfError::ErrNotRunning => {
                     if update_status_if_stopped {
                         self.set_status(ResourceStatus::Stopped);
                     }
-                    Ok(false)
+                    Ok(())
                 }
                 _ => {
                     self.set_status(ResourceStatus::Error(reason));
