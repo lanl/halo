@@ -61,6 +61,14 @@ pub fn send_command(
 
     match response.status() {
         StatusCode::OK => Ok(()),
+        StatusCode::CONFLICT => {
+            eprint!("Could not update '{resource}': ");
+            match response.text() {
+                Ok(text) => eprintln!("{text}"),
+                Err(e) => eprintln!("Error decoding response: {e}"),
+            };
+            handled_error()
+        }
         StatusCode::NOT_FOUND => {
             eprintln!("Could not update '{resource}': resource group not found.");
             eprintln!("Specify root resource ID.");
