@@ -41,7 +41,7 @@ pub fn do_failback(addr: Option<&str>, args: &FailbackArgs) -> HandledResult<()>
         StatusCode::NOT_FOUND => {
             eprintln!("Could not perform failback onto '{hostname}': host not found.");
         }
-        StatusCode::BAD_REQUEST => {
+        StatusCode::BAD_REQUEST | StatusCode::CONFLICT => {
             eprint!("Could not perform failback onto '{hostname}': ");
             match response.text() {
                 Ok(text) => eprintln!("{text}"),

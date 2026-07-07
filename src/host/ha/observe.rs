@@ -93,7 +93,7 @@ impl Host {
         loop {
             match self.receive_message().await {
                 HostMessage::Command(command) => {
-                    todo!("Handle command {command:?} in ha observe mode.")
+                    panic!("Unexpected to receive command {command:?} in ha observe mode.")
                 }
                 HostMessage::Resource(event) => {
                     match event.kind {
@@ -163,7 +163,7 @@ impl Host {
             trace!("Host {} got event: {event:?}", self.id());
             match event {
                 HostMessage::Command(command) => {
-                    todo!("Handle command {command:?} in ha observe mode.")
+                    panic!("Unexpected to receive command {command:?} in ha observe mode.")
                 }
                 HostMessage::Resource(event) => {
                     tasks.push(Box::pin(self.receive_message()));

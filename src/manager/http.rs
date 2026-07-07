@@ -191,6 +191,13 @@ async fn set_managed(
     Json(payload): Json<SetManagedArgs>,
     cluster: Arc<Cluster>,
 ) -> Result<(), (StatusCode, &'static str)> {
+    if !cluster.args.manage_resources {
+        return Err((
+            StatusCode::CONFLICT,
+            "The specified command can only be used when running in managed mode.",
+        ));
+    }
+
     for rg in cluster.resource_groups() {
         if rg.id() == resource_id {
             warn!(
@@ -232,6 +239,13 @@ async fn host_post(
     Json(payload): Json<HostArgs>,
     cluster: Arc<Cluster>,
 ) -> Result<(), (StatusCode, &'static str)> {
+    if !cluster.args.manage_resources {
+        return Err((
+            StatusCode::CONFLICT,
+            "The specified command can only be used when running in managed mode.",
+        ));
+    }
+
     let Some(host) = cluster.get_host(&host_id) else {
         return Err((StatusCode::NOT_FOUND, ""));
     };
