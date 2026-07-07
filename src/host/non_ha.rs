@@ -47,6 +47,14 @@ impl HostState {
 
         self.outstanding_resource_tasks = still_running;
     }
+
+    fn copy_outstanding_cancel_token(&self, id: &str) -> ResourceTaskCancel {
+        self.outstanding_resource_tasks
+            .iter()
+            .find(|tok| tok.id == id)
+            .expect("Must be called when a token is already stored for this resource.")
+            .clone()
+    }
 }
 
 impl Host {
@@ -190,9 +198,18 @@ impl Host {
                 }
                 HostMessage::Resource(event) => {
                     let id = &event.resource_group.id;
-                    state.resource_task_exited(id);
                     match event.kind {
+                        Message::ManageResourceGroup => {
+                            let revoke = state.copy_outstanding_cancel_token(id);
+                            tasks.push(Box::pin(self.manage_resource_group_non_ha(
+                                cluster,
+                                event.resource_group,
+                                client,
+                                revoke,
+                            )));
+                        }
                         Message::RequestFailover => {
+                            state.resource_task_exited(id);
                             let rg = cluster.get_resource_group(id);
                             rg.root.set_status_recursive(ResourceStatus::Unknown(
                                 "Connection to remote host lost.".to_string(),
@@ -202,6 +219,7 @@ impl Host {
                             }
                         }
                         Message::ResourceError => {
+                            state.resource_task_exited(id);
                             state.resources_with_errors.push(event.resource_group)
                         }
                         other => {
@@ -209,14 +227,10 @@ impl Host {
                         }
                     };
                 }
-                HostMessage::TaskDone(id) => {
-                    panic!("Unexpected to receive message 'None({id})' in non-HA mode.")
-                }
-                HostMessage::ExitRequested(id) => {
-                    panic!("Unexpected to receive message 'ExitRequested({id})' in non-HA mode.")
-                }
-                HostMessage::MessageFollows => {
-                    panic!("Unexpect to get MessageFollows in this context.")
+                HostMessage::TaskDone(_)
+                | HostMessage::ExitRequested(_)
+                | HostMessage::MessageFollows => {
+                    panic!("Unexpected to receive message {event:?} in non-HA mode.")
                 }
             }
         }
@@ -272,7 +286,10 @@ impl Host {
 
             res = rg.manage_loop(client, Location::Home) => {
                 match res {
-                    Ok(()) => todo!("Unsure how to handle this case yet"),
+                    Ok(()) => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time)).await;
+                        new_message(token, Message::ManageResourceGroup)
+                    }
                     Err(e) => match e {
                         ManagementError::Configuration => new_message(token, Message::ResourceError),
                         ManagementError::Connection => new_message(token, Message::RequestFailover),
