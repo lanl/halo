@@ -145,9 +145,6 @@ impl Host {
                 HostMessage::TaskDone(id) => {
                     panic!("Unexpected to receive message 'None({id})' in non-HA mode.")
                 }
-                HostMessage::ExitRequested(id) => {
-                    panic!("Unexpected to receive message 'ExitRequested({id})' in non-HA mode.")
-                }
                 HostMessage::MessageFollows => {
                     panic!("Unexpect to get MessageFollows in this context.")
                 }
@@ -227,9 +224,7 @@ impl Host {
                         }
                     };
                 }
-                HostMessage::TaskDone(_)
-                | HostMessage::ExitRequested(_)
-                | HostMessage::MessageFollows => {
+                HostMessage::TaskDone(_) | HostMessage::MessageFollows => {
                     panic!("Unexpected to receive message {event:?} in non-HA mode.")
                 }
             }

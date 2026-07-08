@@ -396,8 +396,6 @@ enum HostMessage {
     /// returned in a HostMessage::Resource.)
     TaskDone(String),
 
-    ExitRequested(String),
-
     /// Used to indicate that a task ended but it sent another message which should be processed.
     MessageFollows,
 }
@@ -444,6 +442,12 @@ fn new_message(rg: ResourceToken, kind: Message) -> HostMessage {
         resource_group: rg,
         kind,
     })
+}
+
+/// The destination that a Host will send a Message to.
+enum WhereTo {
+    Here,
+    Partner,
 }
 
 /// This object is shared between a parent Host task, and a ResourceGroup task that the Host task

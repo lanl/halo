@@ -249,9 +249,6 @@ impl Host {
                 HostMessage::TaskDone(id) => {
                     panic!("Unexpected message type 'None({id})' in client disconnected routine.")
                 }
-                HostMessage::ExitRequested(id) => {
-                    panic!("Unexpected to receive message 'ExitRequested({id})' in this context.")
-                }
                 HostMessage::MessageFollows => {
                     panic!("Unexpect to get MessageFollows in this context.")
                 }
@@ -344,9 +341,6 @@ impl Host {
                 }
                 HostMessage::TaskDone(id) => state.resource_task_exited(&id),
                 HostMessage::MessageFollows => {}
-                HostMessage::ExitRequested(_) => {
-                    panic!("Unexpected to receive ExitRequested message in this context")
-                }
             }
 
             if state.should_exit_connected_loop() {
@@ -929,9 +923,4 @@ enum Task {
     Observe,
     Check,
     Switch,
-}
-
-enum WhereTo {
-    Here,
-    Partner,
 }
