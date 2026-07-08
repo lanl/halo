@@ -1256,4 +1256,54 @@ mod tests {
 
         assert!(env.fence(1, false).is_err());
     }
+
+    /// It is illegal for halo to automatically fence a host when it was hosting an unmanaged
+    /// resource.
+    #[test]
+    fn auto_fence_illegal1() {
+        let env = test_env_helper("auto_fence_illegal1");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.unmanage_resource("zpool_1");
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = env.get_status();
+        for host in cluster_status.hosts {
+            assert!(!host.fenced)
+        }
+        for res in cluster_status.resources {
+            if res.id.contains("0") {
+                assert_eq!(res.status, "Running");
+            } else {
+                assert_eq!(res.status, "Unknown");
+            }
+        }
+    }
+
+    /// It is illegal for halo to automatically fence a host when its partner is deactivated.
+    #[test]
+    fn auto_fence_illegal2() {
+        let env = test_env_helper("auto_fence_illegal2");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.deactivate_host(0);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        drop(_b);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = env.get_status();
+        for host in cluster_status.hosts {
+            assert!(!host.fenced)
+        }
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Unknown");
+        }
+    }
 }

@@ -379,6 +379,54 @@ impl Host {
         }
     }
 
+    /// Determine if it's currently legal for HALO to automatically fence this host.
+    /// It is illegal if any of the following conditions hold:
+    ///
+    ///   - This host currently hosts an unmanaged resource: fencing the host would entail HALO
+    ///     moving the resource, which it's not allowed to do when the resource is unmanaged.
+    ///
+    ///   - The partner host is deactivated: in this case, fencing would not accomplish anything
+    ///     because the partner host isn't allowed to run resources anyways, so the best we can do
+    ///     is nothing, and hope this host becomes available again soon.
+    ///
+    ///   - The host's fence_attempted flag is already set: the admin needs to clear the flag
+    ///     before HALO is allowed to fence the host for a second time.
+    fn allowed_to_fence(&self, state: &HostState, cluster: &Arc<Cluster>) -> bool {
+        if self.fence_attempted() {
+            warn!("Host {} was already fenced; not fencing again", self.id());
+            return false;
+        }
+
+        for rg in &state.resources_in_transit {
+            let rg = cluster.get_resource_group(&rg.id);
+            if !rg.get_managed() {
+                warn!(
+                    "Host {} has unmanaged resource {}; not fencing automatically.",
+                    self.id(),
+                    rg.id()
+                );
+                warn!("Either re-manage the resource under HALO or manually fence the host.");
+                return false;
+            }
+        }
+
+        if !self.ha_failover_partner().active() {
+            warn!(
+                "Host {}'s partner {} is deactivated; not fencing {}.",
+                self.id(),
+                self.ha_failover_partner().id(),
+                self.id()
+            );
+            warn!(
+                "If you want to fail over resources to {}, then re-activate it and issue a manual fence command.",
+                self.ha_failover_partner().id()
+            );
+            return false;
+        }
+
+        true
+    }
+
     /// When a connection has been lost to the remote agent, the Host task evaluates whether
     /// failover is required.
     ///
@@ -403,12 +451,12 @@ impl Host {
             return None;
         }
 
-        if self.fence_attempted() {
-            warn!("Host {} was already fenced; not fencing again", self.id());
+        if !self.allowed_to_fence(state, cluster) {
             // TODO: some of the resources in resources_in_transit should maybe be put into the
             // "check" bucket instead of the "manage" bucket - depending on what state they were in
             // when the network failure occurred...
             state.manage_these_resources = take(&mut state.resources_in_transit);
+
             return None;
         }
 
