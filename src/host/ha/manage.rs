@@ -570,7 +570,6 @@ impl Host {
             self.finish_admin_fence_request(FenceResult::Success);
         }
 
-        self.set_fence_attempted(true);
         self.set_connected(false);
 
         warn!("Host {} has been powered off.", self.id());
