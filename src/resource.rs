@@ -278,6 +278,20 @@ impl ResourceGroup {
         self.set_host_state(State::Stopped, loc);
     }
 
+    pub fn is_running_nowhere(&self) -> bool {
+        self.home_node.state() == State::Stopped
+            && self.failover_node.as_ref().unwrap().state() == State::Stopped
+    }
+
+    pub fn is_stopped_at_location(&self, loc: Location) -> bool {
+        let state = match loc {
+            Location::Home => self.home_node.state(),
+            Location::Away => self.failover_node.as_ref().expect("must be set").state(),
+        };
+
+        state == State::Stopped
+    }
+
     fn set_host_state(&self, state: State, loc: Location) {
         let host = match loc {
             Location::Home => &self.home_node,

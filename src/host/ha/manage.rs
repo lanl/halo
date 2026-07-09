@@ -308,7 +308,7 @@ impl Host {
                             self.launch_task(&mut tasks, state, cluster, t, client, Task::Manage)
                         }
                         Message::ObserveResourceGroup => {
-                            self.launch_task(&mut tasks, state, cluster, t, client, Task::Observe)
+                            panic!("unexpected");
                         }
                         Message::SwitchHost => {
                             self.launch_task(&mut tasks, state, cluster, t, client, Task::Switch)
@@ -735,9 +735,12 @@ impl Host {
     /// - If yes, this sends a Message::ManageResourceGroup message to self, to direct this Host
     ///   task to begin managing the resource group.
     ///
-    /// - If not, then behavior depends on whether this is runnong on the home node or not.
+    /// - If not, then behavior depends on whether this is running on the home node or not, and
+    ///   also whether the resource is in managed mode.
+    ///
     ///   - Home node: send a CheckResourceGroup message to the failover Host, to see if the
     ///     resource might be running there.
+    ///
     ///   - Failover node: send a ManageResourceGroup back to the home Host, to direct it to begin
     ///     managing the resource group.
     ///
@@ -749,50 +752,41 @@ impl Host {
         cluster: &Cluster,
         client: &ocf_resource_agent::Client,
     ) -> (WhereTo, Message) {
-        match is_resource_group_running_here(token, cluster, client, true).await {
+        let rg = cluster.get_resource_group(&token.id);
+
+        // If the resource is known to be stopped at the partner, then we can confidently update
+        // the overall status to stopped if it's stopped here as well. But if the resource state is
+        // unknown on the partner, the overall resource state must remain unknown.
+        let update_status_if_stopped = rg.is_stopped_at_location(token.location.swap());
+
+        match is_resource_group_running_here(token, cluster, client, update_status_if_stopped).await
+        {
             Ok(is_running_here) => {
                 if is_running_here {
                     (WhereTo::Here, Message::ManageResourceGroup)
+                } else if rg.get_managed() && rg.is_running_nowhere() {
+                    let whereto = match token.location {
+                        Location::Away => WhereTo::Partner,
+                        Location::Home => WhereTo::Here,
+                    };
+                    (whereto, Message::ManageResourceGroup)
                 } else {
-                    match token.location {
-                        Location::Away => (WhereTo::Partner, Message::ManageResourceGroup),
-                        Location::Home => (WhereTo::Partner, Message::CheckResourceGroup),
-                    }
+                    // Resource is stopped and unmanaged: See if it's running on partner
+                    tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
+                        .await;
+                    (WhereTo::Partner, Message::CheckResourceGroup)
                 }
             }
             Err(ManagementError::Configuration) => (WhereTo::Here, Message::ResourceError),
-            Err(ManagementError::Connection) => (WhereTo::Here, Message::RequestFailover),
-        }
-    }
-
-    /// Perform observation of a resource group when the manager process is in "managed mode", but
-    /// the resource group itself is set to "managed = false".
-    ///
-    /// This checks each Host in a pair in turn, and if the resource becomes managed again, then it
-    /// needs to redo the startup checks.
-    async fn observe_resource_group_managed_mode(
-        &self,
-        token: &ResourceToken,
-        cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
-    ) -> (WhereTo, Message) {
-        let id = token.id.clone();
-        let rg = cluster.get_resource_group(&id);
-
-        match is_resource_group_running_here(token, cluster, client, true).await {
-            Ok(is_running_here) => {
-                if is_running_here {
-                    (WhereTo::Here, Message::ManageResourceGroup)
-                } else if rg.get_managed() {
-                    (WhereTo::Partner, Message::CheckResourceGroup)
+            Err(ManagementError::Connection) => {
+                if rg.get_managed() {
+                    (WhereTo::Here, Message::RequestFailover)
                 } else {
                     tokio::time::sleep(tokio::time::Duration::from_millis(cluster.args.sleep_time))
                         .await;
-                    (WhereTo::Partner, Message::ObserveResourceGroup)
+                    (WhereTo::Partner, Message::CheckResourceGroup)
                 }
             }
-            Err(ManagementError::Configuration) => (WhereTo::Here, Message::ResourceError),
-            Err(ManagementError::Connection) => (WhereTo::Partner, Message::ObserveResourceGroup),
         }
     }
 
@@ -820,7 +814,7 @@ impl Host {
         match res {
             // Resource was stopped, and it is no longer supposed to be managed.
             // Enter "Observe" mode, starting with a check on the partner host.
-            Ok(()) => (WhereTo::Partner, Message::ObserveResourceGroup),
+            Ok(()) => (WhereTo::Partner, Message::CheckResourceGroup),
             Err(ManagementError::Connection) => {
                 debug!(
                     "{}: broken connection while managing {}",
@@ -915,10 +909,6 @@ impl Host {
     ) -> (WhereTo, Message) {
         match task {
             Task::Manage => self.manage_resource_group(cluster, token, client).await,
-            Task::Observe => {
-                self.observe_resource_group_managed_mode(token, cluster, client)
-                    .await
-            }
             Task::Check => {
                 self.check_resource_group_managed(token, cluster, client)
                     .await
@@ -930,7 +920,6 @@ impl Host {
 
 enum Task {
     Manage,
-    Observe,
     Check,
     Switch,
 }
