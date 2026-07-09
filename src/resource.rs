@@ -63,8 +63,38 @@ pub struct ResourceGroup {
     pub root: Resource,
     managed: Mutex<bool>,
     args: manager::Cli,
-    home_node: Arc<Host>,
-    failover_node: Option<Arc<Host>>,
+    home_node: HostKnowledge,
+    failover_node: Option<HostKnowledge>,
+}
+
+#[derive(Debug)]
+struct HostKnowledge {
+    host: Arc<Host>,
+    state: Mutex<State>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum State {
+    Running,
+    Stopped,
+    Unknown,
+}
+
+impl HostKnowledge {
+    fn new(host: Arc<Host>) -> Self {
+        Self {
+            host,
+            state: Mutex::new(State::Unknown),
+        }
+    }
+
+    fn state(&self) -> State {
+        *self.state.lock().unwrap()
+    }
+
+    fn set_state(&self, state: State) {
+        *self.state.lock().unwrap() = state;
+    }
 }
 
 impl ResourceGroup {
@@ -78,8 +108,8 @@ impl ResourceGroup {
             root,
             managed: Mutex::new(true),
             args,
-            home_node,
-            failover_node,
+            home_node: HostKnowledge::new(home_node),
+            failover_node: failover_node.map(HostKnowledge::new),
         }
     }
 
@@ -88,11 +118,11 @@ impl ResourceGroup {
     }
 
     pub fn home_node(&self) -> &Arc<Host> {
-        &self.home_node
+        &self.home_node.host
     }
 
     pub fn failover_node(&self) -> Option<&Arc<Host>> {
-        self.failover_node.as_ref()
+        self.failover_node.as_ref().map(|h| &h.host)
     }
 
     /// The host-driven resource management loop manages resources on a given location until
@@ -168,9 +198,7 @@ impl ResourceGroup {
         client: &ocf_resource_agent::Client,
         loc: Location,
     ) -> Result<(), ManagementError> {
-        let futures = self.resources().map(|r| r.update_status(client, loc, true));
-
-        get_worst_error(future::join_all(futures).await.into_iter())
+        self.is_running_here(client, loc, true).await.map(|_| ())
     }
 
     /// Attempt to start the resources in this resource group on the given location.
@@ -179,7 +207,15 @@ impl ResourceGroup {
         client: &ocf_resource_agent::Client,
         loc: Location,
     ) -> Result<(), ManagementError> {
-        self.root.start_if_needed_recursive(client, loc).await
+        let res = self.root.start_if_needed_recursive(client, loc).await;
+
+        match res {
+            Ok(()) => self.set_host_state(State::Running, loc),
+            Err(ManagementError::Connection) => self.set_host_state(State::Unknown, loc),
+            _ => {}
+        };
+
+        res
     }
 
     /// Attempt to stop the resources in this resource group.
@@ -187,7 +223,20 @@ impl ResourceGroup {
         &self,
         client: &ocf_resource_agent::Client,
     ) -> Result<(), ManagementError> {
-        self.root.stop_recursive(client).await
+        let loc = match self.root.status() {
+            ResourceStatus::RunningOnHome => Some(Location::Home),
+            ResourceStatus::RunningOnAway => Some(Location::Away),
+            _ => None,
+        };
+        let res = self.root.stop_recursive(client).await;
+        if let Some(loc) = loc {
+            match res {
+                Ok(()) => self.set_host_state(State::Stopped, loc),
+                Err(ManagementError::Connection) => self.set_host_state(State::Unknown, loc),
+                _ => {}
+            }
+        }
+        res
     }
 
     pub fn get_overall_status(&self) -> ResourceStatus {
@@ -214,6 +263,35 @@ impl ResourceGroup {
         *managed_status = managed;
     }
 
+    pub fn has_been_stopped(&self, loc: Location) {
+        self.set_host_state(State::Stopped, loc);
+    }
+
+    fn set_host_state(&self, state: State, loc: Location) {
+        let host = match loc {
+            Location::Home => &self.home_node,
+            Location::Away => self
+                .failover_node
+                .as_ref()
+                .expect("Failover node must be set."),
+        };
+
+        host.set_state(state);
+
+        self.assert_knowledge_invariant();
+    }
+
+    fn assert_knowledge_invariant(&self) {
+        if let Some(ref failover_node) = self.failover_node {
+            let home_state = self.home_node.state();
+            let failover_state = failover_node.state();
+            if home_state == State::Running && failover_state == State::Running {
+                panic!("Resource group {} violated invariant: system believes it to be running on both nodes.",
+                    self.id());
+            }
+        }
+    }
+
     /// Check if the resource group is running on the system connected via the given Client.
     ///
     /// This checks each resource individually for the purpose of updating the status, but it uses
@@ -228,11 +306,17 @@ impl ResourceGroup {
             .resources()
             .map(|r| r.update_status(client, loc, update_status_if_stopped));
 
-        get_worst_error(future::join_all(futures).await.into_iter())?;
+        get_worst_error(future::join_all(futures).await.into_iter()).inspect_err(|e| {
+            if matches!(e, ManagementError::Connection) {
+                self.set_host_state(State::Unknown, loc);
+            }
+        })?;
 
         if self.root.is_running() {
+            self.set_host_state(State::Running, loc);
             Ok(true)
         } else {
+            self.set_host_state(State::Stopped, loc);
             Ok(false)
         }
     }
