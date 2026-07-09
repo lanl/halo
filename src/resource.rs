@@ -260,6 +260,17 @@ impl ResourceGroup {
     /// Sets resources group's managed status
     pub fn set_managed(&self, managed: bool) {
         let mut managed_status = self.managed.lock().unwrap();
+
+        // When a resource transitions from being unmanaged to being managed, any assumptions about
+        // its state MUST be revalidated before the manager can take any actions on it. Therefore,
+        // clear any out of date knowledge on whether it was known to be running somewhere.
+        if !*managed_status && managed {
+            *self.home_node.state.lock().unwrap() = State::Unknown;
+            if let Some(ref failover_node) = self.failover_node {
+                *failover_node.state.lock().unwrap() = State::Unknown;
+            }
+        }
+
         *managed_status = managed;
     }
 
