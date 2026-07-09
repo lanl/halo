@@ -75,7 +75,12 @@ pub struct ResourceJson {
 }
 
 impl ResourceJson {
-    fn build(res: &Resource, managed: bool) -> Self {
+    fn build(
+        res: &Resource,
+        managed: bool,
+        home_host: String,
+        failover_host: Option<String>,
+    ) -> Self {
         let mut comment = None;
 
         let status = match res.status() {
@@ -100,8 +105,8 @@ impl ResourceJson {
             status,
             comment,
             managed,
-            home_host: res.home_node.id(),
-            failover_host: res.failover_node.as_ref().map(|h| h.id()),
+            home_host,
+            failover_host,
         }
     }
 }
@@ -164,8 +169,16 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
             .resource_groups()
             .flat_map(|rg| {
                 let managed = rg.get_managed();
-                rg.resources()
-                    .map(move |res| ResourceJson::build(res, managed))
+                let home_host = rg.home_node().id();
+                let failover_host = rg.failover_node().map(|h| h.id());
+                rg.resources().map(move |res| {
+                    ResourceJson::build(
+                        res,
+                        managed,
+                        home_host.to_string(),
+                        failover_host.as_ref().map(|h| h.to_string()),
+                    )
+                })
             })
             .collect(),
 
