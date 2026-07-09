@@ -306,7 +306,9 @@ impl Cluster {
                         )
                     })
                     .collect();
-                Resource::from_config(self.me, dependents, host, failover_host, self.id, args)
+                Resource::from_config(
+                    self.me, dependents, /*host, failover_host,*/ self.id, args,
+                )
             }
         }
 
@@ -366,7 +368,7 @@ impl Cluster {
                     failover_host.clone(),
                     args.clone(),
                 );
-                ResourceGroup::new(root, args.clone())
+                ResourceGroup::new(root, args.clone(), Arc::clone(&host), failover_host.clone())
             })
             .collect()
     }
@@ -387,14 +389,11 @@ impl Cluster {
     pub fn print_summary(&self) {
         println!("=== Resource Groups ===");
         for rg in &self.resource_groups {
+            println!("\thome node: {}", rg.home_node().id());
+            println!("\tfailover node: {:?}", rg.failover_node().map(|h| h.id()));
             for res in rg.resources() {
                 print!("{}: ", res.id);
                 println!("{}", res.params_string());
-                println!("\thome node: {}", res.home_node.id());
-                println!(
-                    "\tfailover node: {:?}",
-                    res.failover_node.as_ref().map(|h| h.id())
-                );
             }
         }
 

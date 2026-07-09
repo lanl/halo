@@ -63,14 +63,23 @@ pub struct ResourceGroup {
     pub root: Resource,
     managed: Mutex<bool>,
     args: manager::Cli,
+    home_node: Arc<Host>,
+    failover_node: Option<Arc<Host>>,
 }
 
 impl ResourceGroup {
-    pub fn new(root: Resource, args: manager::Cli) -> Self {
+    pub fn new(
+        root: Resource,
+        args: manager::Cli,
+        home_node: Arc<Host>,
+        failover_node: Option<Arc<Host>>,
+    ) -> Self {
         Self {
             root,
             managed: Mutex::new(true),
             args,
+            home_node,
+            failover_node,
         }
     }
 
@@ -79,7 +88,11 @@ impl ResourceGroup {
     }
 
     pub fn home_node(&self) -> &Arc<Host> {
-        &self.root.home_node
+        &self.home_node
+    }
+
+    pub fn failover_node(&self) -> Option<&Arc<Host>> {
+        self.failover_node.as_ref()
     }
 
     /// The host-driven resource management loop manages resources on a given location until
@@ -266,8 +279,6 @@ pub struct Resource {
 
     // TODO: better privacy here
     status: Mutex<ResourceStatus>,
-    pub home_node: Arc<Host>,
-    pub failover_node: Option<Arc<Host>>,
 
     pub args: manager::Cli,
 }
@@ -276,8 +287,6 @@ impl Resource {
     pub fn from_config(
         res: crate::config::Resource,
         dependents: Vec<Resource>,
-        home_node: Arc<Host>,
-        failover_node: Option<Arc<Host>>,
         id: String,
         args: manager::Cli,
     ) -> Self {
@@ -288,8 +297,6 @@ impl Resource {
             status: Mutex::new(ResourceStatus::Unknown(
                 "Manager is starting up".to_string(),
             )),
-            home_node,
-            failover_node,
             id,
             args,
         }

@@ -614,7 +614,7 @@ impl Host {
                 let rg = cluster.get_resource_group(&task.id);
 
                 // If a resource is currently home, there is nothing to do for it.
-                if rg.root.home_node.id() == self.id() {
+                if rg.home_node().id() == self.id() {
                     return true;
                 }
 
