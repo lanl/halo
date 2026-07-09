@@ -571,6 +571,7 @@ impl Host {
         }
 
         self.set_connected(false);
+        self.update_resource_groups_stopped(cluster);
 
         warn!("Host {} has been powered off.", self.id());
 
@@ -581,6 +582,16 @@ impl Host {
 
             self.send_message_to_partner(token, Message::ManageResourceGroup)
                 .await;
+        }
+    }
+
+    fn update_resource_groups_stopped(&self, cluster: &Cluster) {
+        for rg in cluster.host_home_resource_groups(self) {
+            rg.has_been_stopped(Location::Home);
+        }
+
+        for rg in cluster.host_home_resource_groups(self.ha_failover_partner()) {
+            rg.has_been_stopped(Location::Away);
         }
     }
 
