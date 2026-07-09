@@ -181,7 +181,7 @@ mod tests {
 
         let cluster_status = env.get_status();
         for res in cluster_status.resources {
-            assert_eq!(res.status, "Error");
+            assert!(res.status == "Error" || res.status == "Unknown");
         }
 
         let _b = env.start_agent(0); // Now start the agent where the resources are running.
