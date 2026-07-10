@@ -130,7 +130,7 @@ mod tests {
         let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("1") {
-                assert_eq!(res.status, "Error");
+                assert_eq!(res.status, "Unknown");
             } else {
                 assert_eq!(res.status, "Running");
             }

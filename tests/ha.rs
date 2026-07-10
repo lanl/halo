@@ -73,7 +73,7 @@ mod tests {
         let cluster_status = env.get_status();
 
         for res in cluster_status.resources {
-            assert_eq!(res.status, "Error");
+            assert_eq!(res.status, "Unknown");
         }
     }
 
@@ -100,7 +100,7 @@ mod tests {
             if res.id.contains("0") {
                 assert_eq!(res.status, "Running");
             } else {
-                assert_eq!(res.status, "Error");
+                assert_eq!(res.status, "Unknown");
             }
         }
     }
@@ -146,7 +146,7 @@ mod tests {
         let cluster_status = env.get_status();
 
         for res in cluster_status.resources {
-            assert_eq!(res.status, "Error");
+            assert_eq!(res.status, "Unknown");
         }
 
         let _a = env.start_agent(0);
@@ -181,7 +181,7 @@ mod tests {
 
         let cluster_status = env.get_status();
         for res in cluster_status.resources {
-            assert!(res.status == "Error" || res.status == "Unknown");
+            assert_eq!(res.status, "Unknown");
         }
 
         let _b = env.start_agent(0); // Now start the agent where the resources are running.
@@ -1197,8 +1197,14 @@ mod tests {
         }
 
         let _b = env.start_agent(1);
+        std::thread::sleep(std::time::Duration::from_secs(1));
         env.failback(1).unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
 
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
