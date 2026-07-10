@@ -767,7 +767,7 @@ impl Host {
     ///
     /// - If an error was observed, returns a Message::ResourceError to inform the main Host task of
     ///   the situation.
-    async fn check_resource_group_managed(
+    async fn check_resource_group(
         &self,
         token: &ResourceToken,
         cluster: &Cluster,
@@ -780,7 +780,9 @@ impl Host {
         // unknown on the partner, the overall resource state must remain unknown.
         let update_status_if_stopped = rg.is_stopped_at_location(token.location.swap());
 
-        match is_resource_group_running_here(token, cluster, client, update_status_if_stopped).await
+        match rg
+            .is_running_here(client, token.location, update_status_if_stopped)
+            .await
         {
             Ok(is_running_here) => {
                 if is_running_here {
@@ -930,10 +932,7 @@ impl Host {
     ) -> (WhereTo, Message) {
         match task {
             Task::Manage => self.manage_resource_group(cluster, token, client).await,
-            Task::Check => {
-                self.check_resource_group_managed(token, cluster, client)
-                    .await
-            }
+            Task::Check => self.check_resource_group(token, cluster, client).await,
             Task::Switch => self.switch_host(token, client, cluster).await,
         }
     }
@@ -943,20 +942,4 @@ enum Task {
     Manage,
     Check,
     Switch,
-}
-
-/// Determine if a resource is running on the system connected in the given client.
-///
-/// If communication fails for some reason, an answer cannot be given, so Err(_) is returned
-/// instead.
-async fn is_resource_group_running_here(
-    token: &ResourceToken,
-    cluster: &Cluster,
-    client: &ocf_resource_agent::Client,
-    update_status_if_stopped: bool,
-) -> Result<bool, ManagementError> {
-    let rg = cluster.get_resource_group(&token.id);
-
-    rg.is_running_here(client, token.location, update_status_if_stopped)
-        .await
 }
