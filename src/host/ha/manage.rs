@@ -6,7 +6,7 @@
 use std::{io, mem::take};
 
 use {
-    futures::{future, stream::FuturesUnordered, StreamExt},
+    futures::{stream::FuturesUnordered, StreamExt},
     log::{debug, warn},
 };
 
@@ -145,12 +145,7 @@ impl Host {
     pub async fn manage_ha(&self, cluster: &Arc<Cluster>) {
         let mut state = HostState::new();
 
-        let my_resources = self.mint_resource_tokens(cluster);
-
-        // Check whether this host's primary resources are running locally, in order to determine if
-        // they should be managed locally or if the failover partner needs to check if they are
-        // failed over.
-        state.manage_these_resources = self.startup(cluster, my_resources).await;
+        state.check_these_resources = self.mint_resource_tokens(cluster);
 
         loop {
             match self.get_client(cluster).await {
@@ -194,6 +189,11 @@ impl Host {
     /// In the meantime, also listen for messages from the partner host task as well as the admin
     /// CLI utility, and handle them.
     async fn remote_disconnected_loop(&self, cluster: &Arc<Cluster>, state: &mut HostState) {
+        for token in take(&mut state.check_these_resources) {
+            self.send_message_to_partner(token, Message::CheckResourceGroup)
+                .await;
+        }
+
         tokio::select! {
             _ = self.remote_liveness_check(cluster) => {}
             _ = self.handle_messages_remote_disconnected(cluster, state) => {}
@@ -213,6 +213,32 @@ impl Host {
         loop {
             match self.receive_message().await {
                 HostMessage::Resource(message) => {
+                    let rg = cluster.get_resource_group(&message.resource_group.id);
+
+                    // If the resource group is unmanaged, the admin might start it on the partner,
+                    // so just check on it over there.
+                    if !rg.get_managed() {
+                        self.send_message_to_partner_delayed(
+                            message.resource_group,
+                            Message::CheckResourceGroup,
+                            cluster.args.sleep_time,
+                        );
+
+                        continue;
+                    }
+                    // If the host is known down (i.e., was previously fenced), then we know that
+                    // the resource is stopped, and any requests to manage it here can be bounced
+                    // back to the partner to manage it there.
+                    if rg.is_stopped_at_location(message.resource_group.location) {
+                        self.send_message_to_partner_delayed(
+                            message.resource_group,
+                            Message::ManageResourceGroup,
+                            cluster.args.sleep_time,
+                        );
+
+                        continue;
+                    }
+
                     let check_text = format!("Cannot determine resource status because connection failed to its {} host.",
                             match &message.resource_group.location {
                                 Location::Home => "home",
@@ -223,14 +249,15 @@ impl Host {
                         Message::ManageResourceGroup => {
                             let rg = cluster.get_resource_group(&message.resource_group.id);
                             rg.root
-                                .set_status_recursive(ResourceStatus::Error(check_text));
+                                .set_status_recursive(ResourceStatus::Unknown(check_text));
                             state.manage_these_resources.push(message.resource_group);
                         }
                         Message::CheckResourceGroup => {
-                            let rg = cluster.get_resource_group(&message.resource_group.id);
-                            rg.root
-                                .set_status_recursive(ResourceStatus::Error(check_text));
-                            state.check_these_resources.push(message.resource_group);
+                            self.send_message_to_partner_delayed(
+                                message.resource_group,
+                                Message::CheckResourceGroup,
+                                cluster.args.sleep_time,
+                            );
                         }
                         other => {
                             panic!(
@@ -660,73 +687,6 @@ impl Host {
                 debug!("Connection to remote agent failed during switch host operation.");
                 (WhereTo::Here, Message::RequestFailover)
             }
-        }
-    }
-
-    /// The purpose of this procedure is to perform startup logic to discover the existing state of
-    /// resources when the management service starts.
-    ///
-    /// - for each ResourceGroup:
-    ///     - Query the status of the resoource group on this host
-    ///     - if it is discovered to be running, return the token to the caller, who will arrange
-    ///       for the ResourceGroup management routine to run
-    ///     - if it is not running, send a message to the failover partner to check its status
-    ///       there.
-    ///     - the failover partner will either discover it to be running there and start managing
-    ///       it, or will send a message back to this host to start managing it.
-    ///
-    /// If a connection to the remote agent for this Host cannot be established, then just send
-    /// a message to the failover partner to see if the ResourceGroup is running there.
-    async fn startup(
-        &self,
-        cluster: &Cluster,
-        my_resources: Vec<ResourceToken>,
-    ) -> Vec<ResourceToken> {
-        let (manage_these, send_these): (Vec<ResourceToken>, Vec<ResourceToken>) =
-            match self.get_client(cluster).await {
-                Ok(client) => {
-                    let mut manage_these = Vec::new();
-                    let mut send_these = Vec::new();
-
-                    let statuses = my_resources
-                        .into_iter()
-                        .map(|token| self.home_startup_check(token, cluster, &client));
-
-                    for (token, is_home) in future::join_all(statuses).await {
-                        if is_home {
-                            manage_these.push(token)
-                        } else {
-                            send_these.push(token)
-                        }
-                    }
-
-                    (manage_these, send_these)
-                }
-                Err(_) => {
-                    self.set_connected(false);
-                    (Vec::new(), my_resources)
-                }
-            };
-
-        for token in send_these {
-            self.send_message_to_partner(token, Message::CheckResourceGroup)
-                .await;
-        }
-
-        manage_these
-    }
-
-    /// Perform startup check for a resource on its home node.
-    /// Returns (_, true) if the resource is running on the home node.
-    async fn home_startup_check(
-        &self,
-        token: ResourceToken,
-        cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
-    ) -> (ResourceToken, bool) {
-        match is_resource_group_running_here(&token, cluster, client, false).await {
-            Ok(is_running_here) => (token, is_running_here),
-            Err(_) => (token, false),
         }
     }
 
