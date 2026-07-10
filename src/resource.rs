@@ -317,6 +317,30 @@ impl ResourceGroup {
         }
     }
 
+    fn assert_not_running_elsewhere(&self, loc: Location) {
+        let Some(failover_node) = &self.failover_node else {
+            // This assertion is irrelevant for non-HA clusters, so just return.
+            return;
+        };
+
+        match loc {
+            Location::Home => {
+                if self.root.status() == ResourceStatus::RunningOnAway
+                    || failover_node.state() == State::Running
+                {
+                    panic!("Manager tried to manage resource {} on its home node while it still believes it to be running on its failover node.", self.id());
+                }
+            }
+            Location::Away => {
+                if self.root.status() == ResourceStatus::RunningOnHome
+                    || self.home_node.state() == State::Running
+                {
+                    panic!("Manager tried to manage resource {} on its failover node while it still believes it to be running on its home node.", self.id());
+                }
+            }
+        }
+    }
+
     /// Check if the resource group is running on the system connected via the given Client.
     ///
     /// This checks each resource individually for the purpose of updating the status, but it uses
@@ -327,6 +351,8 @@ impl ResourceGroup {
         loc: Location,
         update_status_if_stopped: bool,
     ) -> Result<bool, ManagementError> {
+        self.assert_not_running_elsewhere(loc);
+
         let futures = self
             .resources()
             .map(|r| r.update_status(client, loc, update_status_if_stopped));
