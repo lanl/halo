@@ -28,10 +28,7 @@ impl Host {
     ///
     /// This flips the location field -- the caller should NOT adjust location before calling this!
     async fn send_message_to_partner(&self, mut token: ResourceToken, message: Message) {
-        match token.location {
-            Location::Home => token.location = Location::Away,
-            Location::Away => token.location = Location::Home,
-        };
+        token.location = token.location.swap();
 
         let partner = self.ha_failover_partner();
 
@@ -48,10 +45,7 @@ impl Host {
         message: Message,
         dur: u64,
     ) {
-        match token.location {
-            Location::Home => token.location = Location::Away,
-            Location::Away => token.location = Location::Home,
-        };
+        token.location = token.location.swap();
 
         let partner = Arc::clone(self.ha_failover_partner());
 

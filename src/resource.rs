@@ -552,6 +552,15 @@ pub enum Location {
     Away,
 }
 
+impl Location {
+    pub fn swap(self) -> Self {
+        match self {
+            Location::Home => Location::Away,
+            Location::Away => Location::Home,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::ResourceStatus;
