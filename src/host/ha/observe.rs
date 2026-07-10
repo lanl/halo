@@ -146,8 +146,7 @@ impl Host {
                                 event.resource_group,
                                 Message::CheckResourceGroup,
                                 cluster.args.sleep_time,
-                            )
-                            .await;
+                            );
                         }
                     }
                 }

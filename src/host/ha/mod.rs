@@ -39,7 +39,7 @@ impl Host {
             .unwrap();
     }
 
-    async fn send_message_to_partner_delayed(
+    fn send_message_to_partner_delayed(
         &self,
         mut token: ResourceToken,
         message: Message,
