@@ -320,6 +320,9 @@ impl ResourceGroup {
         get_worst_error(future::join_all(futures).await.into_iter()).inspect_err(|e| {
             if matches!(e, ManagementError::Connection) {
                 self.set_host_state(State::Unknown, loc);
+                self.root.set_status_recursive(ResourceStatus::Unknown(
+                    "Connection to remote host lost.".to_string(),
+                ));
             }
         })?;
 
