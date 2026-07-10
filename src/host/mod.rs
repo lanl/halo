@@ -409,17 +409,11 @@ struct ResourceMessage {
 /// The commands that can be sent to a Host management task.
 #[derive(Debug)]
 enum Message {
-    /// Check the status of the resource group to determine if it is running or not. This message
-    /// carries the assumption that the resource group should be started on the home node, if
-    /// it is found to not be running on either node in the pair.
+    /// Check the status of the resource group to determine if it is running or not.
     CheckResourceGroup,
 
     /// Begin management of the resource group.
     ManageResourceGroup,
-
-    /// Begin observation of the resource group -- check on its status, but don't start it if
-    /// stopped.
-    ObserveResourceGroup,
 
     /// A resource management task has observed a condition like "connection timed out" and
     /// failover should be triggered.

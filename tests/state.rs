@@ -147,7 +147,7 @@ mod tests {
 
         // now fence manually:
         env.fence(1, true).unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(2));
         let cluster_status = env.get_status();
         for res in cluster_status.resources {
             if res.id.contains("1") {

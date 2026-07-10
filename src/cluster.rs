@@ -93,25 +93,19 @@ impl Cluster {
     }
 
     pub async fn main_loop(self: Arc<Self>) {
-        if self.args.manage_resources {
-            if self.failover {
-                let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(&self)).collect();
+        if self.failover {
+            let futures: Vec<_> = self.hosts.values().map(|h| h.manage_ha(&self)).collect();
 
-                let _ = future::join_all(futures).await;
-            } else {
-                let futures: Vec<_> = self.hosts.values().map(|h| h.manage(&self)).collect();
-
-                let _ = future::join_all(futures).await;
-            }
-        } else if self.failover {
-            let futures: Vec<_> = self.hosts.values().map(|h| h.observe_ha(&self)).collect();
+            let _ = future::join_all(futures).await;
+        } else if self.args.manage_resources {
+            let futures: Vec<_> = self.hosts.values().map(|h| h.manage(&self)).collect();
 
             let _ = future::join_all(futures).await;
         } else {
             let futures: Vec<_> = self.hosts.values().map(|h| h.observe(&self)).collect();
 
             let _ = future::join_all(futures).await;
-        };
+        }
     }
 
     pub fn resource_groups(&self) -> impl Iterator<Item = &ResourceGroup> {
@@ -259,6 +253,13 @@ impl Cluster {
         new.hosts = hosts;
 
         new.apply_state();
+
+        // If the cluster is running in "observe-only" mode, mark every resource group as unmanaged
+        if !args.manage_resources {
+            for rg in new.resource_groups() {
+                rg.set_managed(false);
+            }
+        }
 
         Ok(new)
     }

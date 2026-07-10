@@ -125,6 +125,50 @@ impl HostState {
 }
 
 impl Host {
+    fn ha_failover_partner(&self) -> &Arc<Host> {
+        self.failover_partner()
+            .expect("Host without failover partner in HA routine.")
+    }
+
+    /// Sends a message of the given type to self.
+    async fn send_message_to_self(&self, token: ResourceToken, message: Message) {
+        self.sender.send(new_message(token, message)).await.unwrap();
+    }
+
+    /// Sends the token over to the partner in the given message type.
+    ///
+    /// This flips the location field -- the caller should NOT adjust location before calling this!
+    async fn send_message_to_partner(&self, mut token: ResourceToken, message: Message) {
+        token.location = token.location.swap();
+
+        let partner = self.ha_failover_partner();
+
+        partner
+            .sender
+            .send(new_message(token, message))
+            .await
+            .unwrap();
+    }
+
+    fn send_message_to_partner_delayed(
+        &self,
+        mut token: ResourceToken,
+        message: Message,
+        dur: u64,
+    ) {
+        token.location = token.location.swap();
+
+        let partner = Arc::clone(self.ha_failover_partner());
+
+        tokio::task::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(dur)).await;
+            partner
+                .sender
+                .send(new_message(token, message))
+                .await
+                .unwrap()
+        });
+    }
     /// The main management loop for managing a particular host.
     ///
     /// When the system starts, each Host task is responsible for determining the state of its
@@ -194,6 +238,19 @@ impl Host {
                 .await;
         }
 
+        for token in take(&mut state.manage_these_resources) {
+            let rg = cluster.get_resource_group(&token.id);
+            if !rg.get_managed() {
+                self.send_message_to_partner_delayed(
+                    token,
+                    Message::CheckResourceGroup,
+                    cluster.args.sleep_time,
+                );
+            } else {
+                state.manage_these_resources.push(token);
+            }
+        }
+
         tokio::select! {
             _ = self.remote_liveness_check(cluster) => {}
             _ = self.handle_messages_remote_disconnected(cluster, state) => {}
@@ -215,17 +272,6 @@ impl Host {
                 HostMessage::Resource(message) => {
                     let rg = cluster.get_resource_group(&message.resource_group.id);
 
-                    // If the resource group is unmanaged, the admin might start it on the partner,
-                    // so just check on it over there.
-                    if !rg.get_managed() {
-                        self.send_message_to_partner_delayed(
-                            message.resource_group,
-                            Message::CheckResourceGroup,
-                            cluster.args.sleep_time,
-                        );
-
-                        continue;
-                    }
                     // If the host is known down (i.e., was previously fenced), then we know that
                     // the resource is stopped, and any requests to manage it here can be bounced
                     // back to the partner to manage it there.
@@ -238,18 +284,23 @@ impl Host {
 
                         continue;
                     }
+                    rg.root.set_status_recursive(ResourceStatus::Unknown(
+                        "Connection to remote host lost.".to_string(),
+                    ));
 
-                    let check_text = format!("Cannot determine resource status because connection failed to its {} host.",
-                            match &message.resource_group.location {
-                                Location::Home => "home",
-                                Location::Away => "failover",
-                            }
-                    );
+                    // If the resource group is unmanaged, the admin might start it on the partner,
+                    // so just check on it over there.
+                    if !rg.get_managed() {
+                        self.send_message_to_partner_delayed(
+                            message.resource_group,
+                            Message::CheckResourceGroup,
+                            cluster.args.sleep_time,
+                        );
+
+                        continue;
+                    }
                     match message.kind {
                         Message::ManageResourceGroup => {
-                            let rg = cluster.get_resource_group(&message.resource_group.id);
-                            rg.root
-                                .set_status_recursive(ResourceStatus::Unknown(check_text));
                             state.manage_these_resources.push(message.resource_group);
                         }
                         Message::CheckResourceGroup => {
@@ -333,9 +384,6 @@ impl Host {
                         // Partner Host told this Host to begin managing this resource group.
                         Message::ManageResourceGroup => {
                             self.launch_task(&mut tasks, state, cluster, t, client, Task::Manage)
-                        }
-                        Message::ObserveResourceGroup => {
-                            panic!("unexpected");
                         }
                         Message::SwitchHost => {
                             self.launch_task(&mut tasks, state, cluster, t, client, Task::Switch)
@@ -882,4 +930,20 @@ enum Task {
     Manage,
     Check,
     Switch,
+}
+
+/// Determine if a resource is running on the system connected in the given client.
+///
+/// If communication fails for some reason, an answer cannot be given, so Err(_) is returned
+/// instead.
+async fn is_resource_group_running_here(
+    token: &ResourceToken,
+    cluster: &Cluster,
+    client: &ocf_resource_agent::Client,
+    update_status_if_stopped: bool,
+) -> Result<bool, ManagementError> {
+    let rg = cluster.get_resource_group(&token.id);
+
+    rg.is_running_here(client, token.location, update_status_if_stopped)
+        .await
 }
