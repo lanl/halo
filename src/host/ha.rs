@@ -12,7 +12,7 @@ use {
 
 use crate::{
     cluster::Cluster,
-    resource::{ManagementError, ResourceStatus},
+    resource::{ManagementError, ResourceGroup, ResourceStatus},
 };
 
 use super::*;
@@ -169,6 +169,7 @@ impl Host {
                 .unwrap()
         });
     }
+
     /// The main management loop for managing a particular host.
     ///
     /// When the system starts, each Host task is responsible for determining the state of its
@@ -716,6 +717,14 @@ impl Host {
         state.outstanding_resource_tasks = still_running;
     }
 
+    // Preconditions to being able to move a resource:
+    //  - the resource must be in managed mode
+    //  - the partner must be active
+    //  - the partner must be connected
+    fn switch_host_legal(&self, rg: &ResourceGroup) -> bool {
+        rg.get_managed() && self.ha_failover_partner().active()
+    }
+
     async fn switch_host(
         &self,
         token: &ResourceToken,
@@ -724,6 +733,10 @@ impl Host {
     ) -> (WhereTo, Message) {
         let id = token.id.clone();
         let rg = cluster.get_resource_group(&id);
+
+        if !self.switch_host_legal(rg) {
+            return (WhereTo::Here, Message::ManageResourceGroup);
+        }
 
         match rg.stop_resources(client).await {
             Ok(()) => (WhereTo::Partner, Message::ManageResourceGroup),
@@ -809,7 +822,7 @@ impl Host {
     ) -> (WhereTo, Message) {
         let rg = cluster.get_resource_group(&token.id);
 
-        if !self.active() {
+        if !self.active() && self.switch_host_legal(rg) {
             warn!("Host {} asked to manage resource group {}, but it is inactive. Requesting partner manage it.", self.id(), token.id);
             return (WhereTo::Here, Message::SwitchHost);
         }
