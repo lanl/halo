@@ -1153,6 +1153,34 @@ mod tests {
         }
     }
 
+    /// Startup - a host is deactivated, but running an unmanaged resource.
+    ///
+    /// The manager should not move the resources (unmanaged dominates deactivated when determining
+    /// how to treat a resource).
+    #[test]
+    fn deactivate5() {
+        let env = test_env_helper("deactivate5");
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 1);
+        env.start_resource("mdt_1", 1);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.unmanage_resource("zpool_1");
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.deactivate_host(1);
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let cluster_status = env.get_status();
+        for res in cluster_status.resources {
+            assert_eq!(res.status, "Running");
+        }
+    }
+
     fn deactivate_one_host(env: &HaEnvironment) {
         std::thread::sleep(std::time::Duration::from_secs(1));
         env.deactivate_host(0);
