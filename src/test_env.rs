@@ -162,7 +162,7 @@ impl TestEnvironment {
     /// Construct default arguments for a test manager process. This assumes that the config file
     /// for the test is in a yaml file named {test_id}.yaml.
     fn manager_args(&self) -> manager::Cli {
-        let config_path = test_path(&format!("{}.yaml", self.test_id));
+        let config_path = test_path(&format!("configs/{}.yaml", self.test_id));
         let statefile_path = self.statefile_path();
         let socket_path = format!("{}/{}", self.private_dir_path, "test.socket");
         manager::Cli {

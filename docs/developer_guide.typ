@@ -363,7 +363,7 @@ it has the benefit of making automated tests much simpler to implement and run.
 
 == How to Test Failover by Hand
 
-To test fencing by hand, use the failover config at `tests/failover.yaml`. This config defines two
+To test fencing by hand, use the failover config at `tests/configs/failover.yaml`. This config defines two
 hosts that are in a failover pair, and which use the test fence agent.
 
 1. Launch one or both of the test agents:
@@ -383,7 +383,7 @@ test fence agent at `tests/fence_test` is hardcoded to assume that the remote PI
 
 #codeblock[
 ```bash
-cargo run --bin halo_manager -- --config tests/failover.yaml --socket halo.socket --verbose --sleep-time 2000 --manage-resources --fence-on-connection-close --statefile halo.state
+cargo run --bin halo_manager -- --config tests/configs/failover.yaml --socket halo.socket --verbose --sleep-time 2000 --manage-resources --fence-on-connection-close --statefile halo.state
 ```
 ]
 
@@ -401,7 +401,7 @@ There are a few arguments here that are used for the test environment, but not i
 
 #codeblock[
 ```bash
-cargo run --bin halo --config tests/failover.yaml power status
+cargo run --bin halo --config tests/configs/failover.yaml power status
 ```
 ]
 
@@ -409,7 +409,7 @@ cargo run --bin halo --config tests/failover.yaml power status
 
 #codeblock[
 ```bash
-cargo run --bin halo --config tests/failover.yaml power off fence_mds01
+cargo run --bin halo --config tests/configs/failover.yaml power off fence_mds01
 ```
 ]
 
