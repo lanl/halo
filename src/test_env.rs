@@ -146,17 +146,17 @@ impl TestEnvironment {
     /// Writes out the given config as a yaml file in the tests private directory.
     pub fn write_out_config(&self, config: &Config) {
         let mut config_file =
-            std::fs::File::create(format!("{}/config.yaml", &self.private_dir_path)).unwrap();
+            std::fs::File::create(format!("{}/config.yaml", self.private_dir_path)).unwrap();
         let contents = serde_yaml::to_string(&config).unwrap();
         config_file.write_all(contents.as_bytes()).unwrap();
     }
 
     pub fn socket_path(&self) -> String {
-        format!("{}/test.socket", &self.private_dir_path)
+        format!("{}/test.socket", self.private_dir_path)
     }
 
     pub fn statefile_path(&self) -> String {
-        format!("{}/halo.state", &self.private_dir_path)
+        format!("{}/halo.state", self.private_dir_path)
     }
 
     /// Construct default arguments for a test manager process. This assumes that the config file
@@ -192,8 +192,8 @@ impl TestEnvironment {
             .iter()
             .map(|agent| {
                 let log_file = match &agent.id {
-                    Some(id) => format!("{}/agent_{id}_log", &self.private_dir_path),
-                    None => format!("{}/agent_log", &self.private_dir_path),
+                    Some(id) => format!("{}/agent_{id}_log", self.private_dir_path),
+                    None => format!("{}/agent_log", self.private_dir_path),
                 };
                 let log_file = std::fs::File::create(log_file).unwrap();
 
@@ -227,7 +227,7 @@ impl TestEnvironment {
 
     /// Starts the manager in a new process for
     pub fn start_manager(&self, manage_resources: bool) -> ManagerHandle {
-        let log_file = format!("{}/manager_log", &self.private_dir_path);
+        let log_file = format!("{}/manager_log", self.private_dir_path);
         let log_file = std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -235,9 +235,9 @@ impl TestEnvironment {
             .open(log_file)
             .unwrap();
 
-        let socket_path = format!("{}/test.socket", &self.private_dir_path);
-        let config_path = format!("{}/config.yaml", &self.private_dir_path);
-        let statefile_path = format!("{}/halo.state", &self.private_dir_path);
+        let socket_path = format!("{}/test.socket", self.private_dir_path);
+        let config_path = format!("{}/config.yaml", self.private_dir_path);
+        let statefile_path = format!("{}/halo.state", self.private_dir_path);
 
         let mut args = vec![
             "--verbose",
@@ -289,14 +289,14 @@ impl TestEnvironment {
     /// script checks to determine if the resource is running.
     pub fn stop_resource(&self, resource: &config::Resource, agent: usize) {
         let path = self.get_resource_path(resource, agent);
-        std::fs::remove_file(&path).expect(&format!("failed to remove file '{}'", &path));
+        std::fs::remove_file(&path).expect(&format!("failed to remove file '{}'", path));
     }
 
     /// Simulate a resource startin by creating the state file that the test OCF resource
     /// script checks to determine if the resource is running.
     pub fn start_resource(&self, resource: &config::Resource, agent: usize) {
         let path = self.get_resource_path(resource, agent);
-        std::fs::File::create(&path).expect(&format!("failed to create file '{}'", &path));
+        std::fs::File::create(&path).expect(&format!("failed to create file '{}'", path));
     }
 
     /// Returns true if a resource is "started", meaning its state file exists for the given agent.

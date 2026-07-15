@@ -706,7 +706,7 @@ impl Host {
                 }
 
                 // If a resource is not home, then need to stop it and pass management on...
-                warn!("{} is not home and will be moved back.", &task.id);
+                warn!("{} is not home and will be moved back.", task.id);
 
                 task.switch_host.notify_one();
 
