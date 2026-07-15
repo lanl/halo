@@ -46,9 +46,29 @@ pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluste
                 let cluster = Arc::clone(&cluster);
                 |path, payload| host_post(path, payload, cluster)
             }),
+        )
+        .route(
+            "/clear_events",
+            post({
+                let cluster = Arc::clone(&cluster);
+                || clear_events(cluster)
+            }),
         );
 
     axum::serve(listener, server).await.unwrap();
+}
+
+async fn clear_events(cluster: Arc<Cluster>) -> Result<(), (StatusCode, &'static str)> {
+    match cluster
+        .write_record_nonblocking(Record::new(Event::Clear, "events".to_string(), None))
+        .await
+    {
+        Ok(()) => Ok(()),
+        Err(_) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to append record to statefile.",
+        )),
+    }
 }
 
 /// The representation of Cluster state that is communicated back to the admin using the status

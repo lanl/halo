@@ -84,6 +84,7 @@ impl Delta {
                         false,
                     );
                 }
+                Event::Clear => {}
             }
         }
         Ok((state_delta, records))
@@ -262,6 +263,8 @@ pub enum Event {
     Fence,
     /// Admin has reset the host after fencing, so that it can be fenced again.
     FenceReset,
+    /// Clear the events log.
+    Clear,
 }
 
 impl fmt::Display for Event {
@@ -276,6 +279,7 @@ impl fmt::Display for Event {
                 Self::Deactivate => "deactivate",
                 Self::Fence => "fence",
                 Self::FenceReset => "reset",
+                Self::Clear => "clear",
             }
         )
     }
@@ -291,6 +295,7 @@ impl TryFrom<&str> for Event {
             "deactivate" => Self::Deactivate,
             "fence" => Self::Fence,
             "reset" => Self::FenceReset,
+            "clear" => Self::Clear,
             _ => {
                 eprintln!("failed to parse '{val}' as Event");
                 return handled_error();
