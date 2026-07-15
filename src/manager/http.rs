@@ -156,7 +156,7 @@ impl EventJson {
             self.timestamp,
             self.event,
             self.obj_id,
-            self.comment.as_deref().unwrap_or("none")
+            self.comment.as_deref().unwrap_or("")
         )
     }
 }
