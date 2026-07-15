@@ -117,21 +117,22 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
             println!(", {} (deactivated)", dd);
         }
     }
-    if !args.exclude_normal {
+
+    if !args.exclude_normal && !cluster.events.is_empty() {
         print!("Events: ");
-        if cluster.events.is_empty() {
-            println!("NULL");
-        } else {
-            println!();
-            for (i, e) in cluster.events.iter().enumerate() {
-                if i == args.event_count {
-                    break;
-                }
-                println!("{}", e.syslog_print())
-            }
+        println!();
+
+        for e in tail(&cluster.events, args.event_count) {
+            println!("{}", e.syslog_print());
         }
     }
+
     Ok(())
+}
+
+fn tail(events: &[http::EventJson], n: usize) -> &[http::EventJson] {
+    let n = std::cmp::min(n, events.len());
+    &events[events.len() - n..]
 }
 
 pub fn get_status(socket: Option<&str>) -> HandledResult<http::ClusterJson> {
