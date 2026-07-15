@@ -284,6 +284,16 @@ The documentation here is a brief summary.
 
 The `status` command is used to print out a summary of the cluster status.
 
+=== events
+
+The `events` command has two subcommands.
+- `events show` is used to show the entire event history.
+  Normally the status command only prints out the most recent events,
+  so this command can be used to see older events.
+- `events clear` is used to clear the event history up to the current moment,
+  so that old events are no longer printed by the `status` command.
+  Those old events are still printed by the `events show` command, however.
+
 === failback
 
 The `failback` command is used to gracefully return failed-over resources to their home node.
