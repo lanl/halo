@@ -131,8 +131,23 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
 }
 
 fn tail(events: &[http::EventJson], n: usize) -> &[http::EventJson] {
-    let n = std::cmp::min(n, events.len());
-    &events[events.len() - n..]
+    for i in 0..events.len() {
+        // Start checking from the end of the events list (newest event checked first):
+        let ind = events.len() - i - 1;
+
+        // Return at most n events:
+        if i == n {
+            return &events[ind + 1..];
+        }
+
+        // A "clear" event means the admin doesn't want to see anything older than this, so just
+        // return what we've got so far (even if it's fewer events than `n`):
+        if events[ind].event == "clear" {
+            return &events[ind + 1..];
+        }
+    }
+
+    events
 }
 
 pub fn get_status(socket: Option<&str>) -> HandledResult<http::ClusterJson> {
