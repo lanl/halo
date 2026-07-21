@@ -16,7 +16,7 @@ use {
 
 use crate::{
     cluster::Cluster,
-    host::{FenceResult, Host, HostCommand},
+    host::{FenceResult, Host, HostCommand, HostId},
     resource::{Resource, ResourceStatus},
     state::{Event, Record},
 };
@@ -98,35 +98,59 @@ impl ResourceJson {
     fn build(
         res: &Resource,
         managed: bool,
-        home_host: String,
-        failover_host: Option<String>,
+        home_host: &HostId,
+        failover_host: &Option<HostId>,
     ) -> Self {
         let mut comment = None;
+        let status: &str;
 
-        let status = match res.status() {
-            ResourceStatus::Unknown(ref reason) => {
-                comment = Some(reason.clone());
-                "Unknown"
+        let status_map = res.status();
+
+        'status: {
+            if *status_map.get(home_host).unwrap() == ResourceStatus::Running {
+                status = "Running";
+                break 'status;
+            };
+
+            if let Some(failover_host) = &failover_host {
+                if *status_map.get(failover_host).unwrap() == ResourceStatus::Running {
+                    status = "Running (Failed Over)";
+                    break 'status;
+                }
             }
-            ResourceStatus::Error(ref reason) => {
-                comment = Some(reason.clone());
-                "Error"
+
+            for st in status_map.values() {
+                if let ResourceStatus::Error(reason) = st {
+                    comment = Some(reason.clone());
+                    status = "Error";
+                    break 'status;
+                }
             }
-            ResourceStatus::Stopped => "Stopped",
-            ResourceStatus::RunningOnAway => "Running (Failed Over)",
-            ResourceStatus::RunningOnHome => "Running",
+
+            for st in status_map.values() {
+                if let ResourceStatus::Unknown(reason) = st {
+                    comment = Some(reason.clone());
+                    status = "Unknown";
+                    break 'status;
+                }
+            }
+
+            if status_map.values().all(|st| *st == ResourceStatus::Stopped) {
+                status = "Stopped";
+            } else {
+                status = "Unexpected (BUG)";
+            }
         }
-        .to_string();
 
         Self {
             id: res.id.to_string(),
             kind: res.kind.clone(),
             parameters: res.parameters.clone(),
-            status,
+            status: status.to_string(),
             comment,
             managed,
-            home_host,
-            failover_host,
+            home_host: home_host.to_string(),
+            failover_host: failover_host.as_ref().map(|h| h.to_string()),
         }
     }
 }
@@ -191,14 +215,8 @@ async fn get_status(cluster: Arc<Cluster>) -> Json<ClusterJson> {
                 let managed = rg.get_managed();
                 let home_host = rg.home_node().id();
                 let failover_host = rg.failover_node().map(|h| h.id());
-                rg.resources().map(move |res| {
-                    ResourceJson::build(
-                        res,
-                        managed,
-                        home_host.to_string(),
-                        failover_host.as_ref().map(|h| h.to_string()),
-                    )
-                })
+                rg.resources()
+                    .map(move |res| ResourceJson::build(res, managed, &home_host, &failover_host))
             })
             .collect(),
 
