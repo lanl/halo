@@ -394,7 +394,13 @@ pub struct Resource {
     /// Unique identifier for the resource.
     pub id: ResourceId,
 
-    state: ResourceState,
+    /// How many instances of this resource are permitted to run simultaneously. Normally a
+    /// resource has the requirement that it cannot run on multiple hosts at the same time. For
+    /// such "mutually exclusive" resources, count will equal 1. When count is N, the resource can
+    /// run on up to N hosts simultanesouly.
+    pub count: usize,
+
+    pub state: ResourceState,
 
     pub args: manager::Cli,
 }
@@ -418,13 +424,13 @@ struct PerHostStatus {
 ///
 ///     oss00   -> Unknown
 ///     oss01   -> Stopped
-#[derive(Debug)]
-struct ResourceState {
+#[derive(Clone, Debug)]
+pub struct ResourceState {
     inner: Arc<Mutex<HashMap<HostId, PerHostStatus>>>,
 }
 
 impl ResourceState {
-    fn new(host_list: Vec<HostId>) -> Self {
+    pub fn new(host_list: Vec<HostId>) -> Self {
         let inner = host_list
             .into_iter()
             .map(|h| (h, PerHostStatus::default()))
@@ -432,6 +438,15 @@ impl ResourceState {
 
         Self {
             inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    pub fn add_hosts(&self, hosts: &[HostId]) {
+        for host in hosts {
+            self.inner
+                .lock()
+                .unwrap()
+                .insert(host.clone(), PerHostStatus::default());
         }
     }
 
@@ -469,8 +484,37 @@ impl Resource {
             kind: res.kind,
             parameters: res.parameters,
             dependents,
+            count: 1,
             state: ResourceState::new(host_list),
             id: ResourceId(id),
+            args,
+        }
+    }
+
+    pub fn from_config2(
+        res: &crate::config::Resource2,
+        config: &crate::config::Config2,
+        status_list: &HashMap<String, (usize, ResourceState)>,
+        args: manager::Cli,
+    ) -> Self {
+        let dependents = res
+            .dependents
+            .iter()
+            .map(|r| {
+                let r = config.get_resource(r);
+                Self::from_config2(r, config, status_list, args.clone())
+            })
+            .collect();
+
+        let (count, state) = status_list.get(&res.name).unwrap();
+
+        Self {
+            kind: res.kind.clone(),
+            parameters: res.parameters.clone(),
+            dependents,
+            count: *count,
+            state: state.clone(),
+            id: ResourceId(res.name.clone()),
             args,
         }
     }
