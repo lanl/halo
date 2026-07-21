@@ -62,7 +62,12 @@ impl Host {
         loop {
             let resource_groups_to_observe: Vec<_> = cluster
                 .host_home_resource_groups(self)
-                .filter(|rg| !matches!(rg.get_overall_status(), ResourceStatus::Error(_)))
+                .filter(|rg| {
+                    !matches!(
+                        rg.get_overall_status_on_host(&self.id()),
+                        ResourceStatus::Error(_)
+                    )
+                })
                 .collect();
 
             if resource_groups_to_observe.is_empty() {
@@ -208,9 +213,12 @@ impl Host {
                         Message::RequestFailover => {
                             state.resource_task_exited(id);
                             let rg = cluster.get_resource_group(id);
-                            rg.root.set_status_recursive(ResourceStatus::Unknown(
-                                "Connection to remote host lost.".to_string(),
-                            ));
+                            rg.root.set_status_recursive(
+                                ResourceStatus::Unknown(
+                                    "Connection to remote host lost.".to_string(),
+                                ),
+                                &self.id(),
+                            );
                             if self.ready_for_reboot(state, event.resource_group) {
                                 return;
                             }
@@ -244,7 +252,7 @@ impl Host {
     async fn observe_resource_group(&self, cluster: &Cluster, rg_name: &str, client: &Client) {
         let rg = cluster.get_resource_group(rg_name);
         match rg
-            .observe_loop(client, false, Location::Home)
+            .observe_loop(client, false)
             .await
             .expect_err("observe_loop() should not exit until an error occurs in this usage.")
         {

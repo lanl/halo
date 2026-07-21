@@ -136,8 +136,8 @@ impl ResourceGroup {
     ///     failover partner to see if the resource was started there (manual failover).
     pub async fn manage_loop(&self, client: &Client, loc: Location) -> Result<(), ManagementError> {
         loop {
-            self.update_resources(client, loc).await?;
-            match self.get_overall_status() {
+            self.update_resources(client).await?;
+            match self.get_overall_status_on_host(&client.name) {
                 ResourceStatus::Stopped => {
                     if self.get_managed() {
                         self.start_resources(client, loc).await?;
@@ -145,7 +145,7 @@ impl ResourceGroup {
                         return Ok(());
                     }
                 }
-                ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway => {}
+                ResourceStatus::Running => {}
                 other => {
                     warn!("resource status was unexpected: {other:?}");
                     return Err(ManagementError::Configuration);
@@ -163,10 +163,9 @@ impl ResourceGroup {
         &self,
         client: &Client,
         exit_if_resource_stopped: bool,
-        loc: Location,
     ) -> Result<(), ManagementError> {
         loop {
-            self.update_resources(client, loc).await?;
+            self.update_resources(client).await?;
             if exit_if_resource_stopped && !self.resources().any(|res| res.is_running()) {
                 return Ok(());
             }
@@ -175,35 +174,13 @@ impl ResourceGroup {
         }
     }
 
-    /// Check the statuses of each of the resources in this resource group.
-    ///
-    /// This function updates the status of each resource (zpool and target) in the resource
-    /// group, and the host.
-    ///
-    /// When checking a resource's status, errors can occur at multiple levels:
-    ///
-    /// - Errors in communicating with the remote agent--for example, "Connection timed out"--lead
-    ///   to this function returning an Err() variant containing the error. Nothing can be
-    ///   concluded about the status of a remote resource in such a case, so the status is set to
-    ///   Unknown.
-    /// - When communication with the remote agent succesfully occurred, but the remote agent
-    ///   returned an error status, this function returns an Ok() variant and sets the resource
-    ///   status to the appropriate value to indicate the kind of error returned.
-    async fn update_resources(
-        &self,
-        client: &Client,
-        loc: Location,
-    ) -> Result<(), ManagementError> {
-        self.is_running_here(client, loc, true).await.map(|_| ())
-    }
-
     /// Attempt to start the resources in this resource group on the given location.
     async fn start_resources(&self, client: &Client, loc: Location) -> Result<(), ManagementError> {
         let res = self.root.start_if_needed_recursive(client, loc).await;
 
         match res {
-            Ok(()) => self.set_host_state(State::Running, loc),
-            Err(ManagementError::Connection) => self.set_host_state(State::Unknown, loc),
+            Ok(()) => self.set_host_state(State::Running, &client.name),
+            Err(ManagementError::Connection) => self.set_host_state(State::Unknown, &client.name),
             _ => {}
         };
 
@@ -212,24 +189,19 @@ impl ResourceGroup {
 
     /// Attempt to stop the resources in this resource group.
     pub async fn stop_resources(&self, client: &Client) -> Result<(), ManagementError> {
-        let loc = match self.root.status() {
-            ResourceStatus::RunningOnHome => Some(Location::Home),
-            ResourceStatus::RunningOnAway => Some(Location::Away),
-            _ => None,
-        };
         let res = self.root.stop_recursive(client).await;
-        if let Some(loc) = loc {
-            match res {
-                Ok(()) => self.set_host_state(State::Stopped, loc),
-                Err(ManagementError::Connection) => self.set_host_state(State::Unknown, loc),
-                _ => {}
-            }
+
+        match res {
+            Ok(()) => self.set_host_state(State::Stopped, &client.name),
+            Err(ManagementError::Connection) => self.set_host_state(State::Unknown, &client.name),
+            _ => {}
         }
+
         res
     }
 
-    pub fn get_overall_status(&self) -> ResourceStatus {
-        let statuses = self.resources().map(|r| r.status());
+    pub fn get_overall_status_on_host(&self, host: &str) -> ResourceStatus {
+        let statuses = self.resources().map(|r| r.status_on_host(host));
 
         ResourceStatus::get_worst(statuses.into_iter())
     }
@@ -263,8 +235,8 @@ impl ResourceGroup {
         *managed_status = managed;
     }
 
-    pub fn has_been_stopped(&self, loc: Location) {
-        self.set_host_state(State::Stopped, loc);
+    pub fn has_been_stopped(&self, host: &str) {
+        self.set_host_state(State::Stopped, host);
     }
 
     pub fn is_running_nowhere(&self) -> bool {
@@ -281,13 +253,21 @@ impl ResourceGroup {
         state == State::Stopped
     }
 
-    fn set_host_state(&self, state: State, loc: Location) {
-        let host = match loc {
-            Location::Home => &self.home_node,
-            Location::Away => self
+    fn set_host_state(&self, state: State, host_id: &str) {
+        let host = if host_id == self.home_node.host.id() {
+            &self.home_node
+        } else {
+            let failover_host = self
                 .failover_node
                 .as_ref()
-                .expect("Failover node must be set."),
+                .expect("Failover node must be set.");
+            if host_id != failover_host.host.id() {
+                panic!(
+                    "Unexpeced host id: {host_id} for setting resource state of {}",
+                    self.id()
+                );
+            }
+            failover_host
         };
 
         host.set_state(state);
@@ -306,60 +286,57 @@ impl ResourceGroup {
         }
     }
 
-    fn assert_not_running_elsewhere(&self, loc: Location) {
-        let Some(failover_node) = &self.failover_node else {
+    fn assert_not_running_elsewhere(&self, host: &str) {
+        if !self.failover_node.is_some() {
             // This assertion is irrelevant for non-HA clusters, so just return.
             return;
         };
 
-        match loc {
-            Location::Home => {
-                if self.root.status() == ResourceStatus::RunningOnAway
-                    || failover_node.state() == State::Running
-                {
-                    panic!("Manager tried to manage resource {} on its home node while it still believes it to be running on its failover node.", self.id());
-                }
+        for (other_host, status) in self.root.status() {
+            if other_host == host {
+                continue;
             }
-            Location::Away => {
-                if self.root.status() == ResourceStatus::RunningOnHome
-                    || self.home_node.state() == State::Running
-                {
-                    panic!("Manager tried to manage resource {} on its failover node while it still believes it to be running on its home node.", self.id());
-                }
+
+            if status == ResourceStatus::Running {
+                panic!("Manager tried to manage resource {} on host {} while it still believes it to be running on host {}.", self.id(), host, other_host);
             }
         }
     }
 
-    /// Check if the resource group is running on the system connected via the given Client.
+    /// Check the statuses of each of the resources in this resource group.
     ///
-    /// This checks each resource individually for the purpose of updating the status, but it uses
-    /// the result of the root resource to determine the "overall" status.
-    pub async fn is_running_here(
-        &self,
-        client: &Client,
-        loc: Location,
-        update_status_if_stopped: bool,
-    ) -> Result<bool, ManagementError> {
-        self.assert_not_running_elsewhere(loc);
+    /// This function updates the status of each resource (zpool and target) in the resource
+    /// group, and the host.
+    ///
+    /// When checking a resource's status, errors can occur at multiple levels:
+    ///
+    /// - Errors in communicating with the remote agent--for example, "Connection timed out"--lead
+    ///   to this function returning an Err() variant containing the error. Nothing can be
+    ///   concluded about the status of a remote resource in such a case, so the status is set to
+    ///   Unknown.
+    /// - When communication with the remote agent succesfully occurred, but the remote agent
+    ///   returned an error status, this function returns an Ok() variant and sets the resource
+    ///   status to the appropriate value to indicate the kind of error returned.
+    pub async fn update_resources(&self, client: &Client) -> Result<bool, ManagementError> {
+        self.assert_not_running_elsewhere(&client.name);
 
-        let futures = self
-            .resources()
-            .map(|r| r.update_status(client, loc, update_status_if_stopped));
+        let futures = self.resources().map(|r| r.update_status(client));
 
         get_worst_error(future::join_all(futures).await.into_iter()).inspect_err(|e| {
             if matches!(e, ManagementError::Connection) {
-                self.set_host_state(State::Unknown, loc);
-                self.root.set_status_recursive(ResourceStatus::Unknown(
-                    "Connection to remote host lost.".to_string(),
-                ));
+                self.set_host_state(State::Unknown, &client.name);
+                self.root.set_status_recursive(
+                    ResourceStatus::Unknown("Connection to remote host lost.".to_string()),
+                    &client.name,
+                );
             }
         })?;
 
-        if self.root.is_running() {
-            self.set_host_state(State::Running, loc);
+        if self.root.is_running_on_loc(&client.name) {
+            self.set_host_state(State::Running, &client.name);
             Ok(true)
         } else {
-            self.set_host_state(State::Stopped, loc);
+            self.set_host_state(State::Stopped, &client.name);
             Ok(false)
         }
     }
@@ -404,10 +381,56 @@ pub struct Resource {
     /// Unique identifier for the resource.
     pub id: String,
 
-    // TODO: better privacy here
-    status: Mutex<ResourceStatus>,
+    /// How many instances of this resource are permitted to run simultaneously. Normally a
+    /// resource has the requirement that it cannot run on multiple hosts at the same time. For
+    /// such "mutually exclusive" resources, count will equal 1. When count is N, the resource can
+    /// run on up to N hosts simultanesouly.
+    _count: usize,
+
+    state: ResourceState,
 
     pub args: manager::Cli,
+}
+
+pub type HostStatusMap = HashMap<String, ResourceStatus>;
+
+#[derive(Debug)]
+struct ResourceState {
+    inner: Arc<Mutex<HostStatusMap>>,
+}
+
+impl ResourceState {
+    fn new(host_list: Vec<String>) -> Self {
+        let inner: HostStatusMap = host_list
+            .into_iter()
+            .map(|h| {
+                (
+                    h,
+                    ResourceStatus::Unknown("Manager is starting up".to_string()),
+                )
+            })
+            .collect();
+
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    fn get(&self) -> HostStatusMap {
+        self.inner.lock().unwrap().clone()
+    }
+
+    /// Update the status for `host` to `new_status`.
+    /// Returns the old status.
+    fn update(&self, new_status: ResourceStatus, host: &str) -> ResourceStatus {
+        let mut map = self.inner.lock().unwrap();
+        let ent = map
+            .get_mut(host)
+            .expect("Host {host} must have an entry in the status map");
+        let old_status = ent.clone();
+        *ent = new_status;
+        old_status
+    }
 }
 
 impl Resource {
@@ -416,49 +439,42 @@ impl Resource {
         dependents: Vec<Resource>,
         id: String,
         args: manager::Cli,
+        host_list: Vec<String>,
     ) -> Self {
         Resource {
             kind: res.kind,
             parameters: res.parameters,
             dependents,
-            status: Mutex::new(ResourceStatus::Unknown(
-                "Manager is starting up".to_string(),
-            )),
+            _count: 1,
+            state: ResourceState::new(host_list),
             id,
             args,
         }
     }
 
     /// This method checks if the resource is running on the system connected via the given Client.
-    pub async fn update_status(
-        &self,
-        client: &Client,
-        loc: Location,
-        update_status_if_stopped: bool,
-    ) -> Result<(), ManagementError> {
+    pub async fn update_status(&self, client: &Client) -> Result<(), ManagementError> {
         match self.monitor(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
-                self.set_running_on_loc(loc);
+                self.set_running_on_loc(&client.name);
                 Ok(())
             }
             Ok(AgentReply::Success(ocf::Status::Error(kind, reason))) => match kind {
                 ocf::OcfError::ErrNotRunning => {
-                    if update_status_if_stopped {
-                        self.set_status(ResourceStatus::Stopped);
-                    }
+                    self.set_status(ResourceStatus::Stopped, &client.name);
                     Ok(())
                 }
                 _ => {
-                    self.set_status(ResourceStatus::Error(reason));
+                    self.set_status(ResourceStatus::Error(reason), &client.name);
                     Err(ManagementError::Configuration)
                 }
             },
             Ok(AgentReply::Error(reason)) => {
-                self.set_status(ResourceStatus::Error(reason));
+                self.set_status(ResourceStatus::Error(reason), &client.name);
                 Err(ManagementError::Configuration)
             }
             Err(e) => {
-                self.set_status(ResourceStatus::Unknown(format!("{e}")));
+                self.set_status(ResourceStatus::Unknown(format!("{e}")), &client.name);
                 Err(e.into())
             }
         }
@@ -472,7 +488,7 @@ impl Resource {
         loc: Location,
     ) -> Result<(), ManagementError> {
         // If this resource is already running, don't bother doing anything:
-        if !self.is_running() {
+        if !self.is_running_on_loc(&client.name) {
             warn!(
                 "Attempting to start resource {} on {}.",
                 self.id,
@@ -483,12 +499,14 @@ impl Resource {
             );
             match self.start(client).await {
                 // Agent replies that the resource was started succesfully.
-                Ok(AgentReply::Success(ocf::Status::Success)) => self.set_running_on_loc(loc),
+                Ok(AgentReply::Success(ocf::Status::Success)) => {
+                    self.set_running_on_loc(&client.name)
+                }
                 // Agent replies that it could not start the resource. This is likely due to a
                 // misconfiguration or other issue that requires admin intervention, so return an
                 // error.
                 Ok(AgentReply::Success(ocf::Status::Error(_, reason))) => {
-                    self.set_status(ResourceStatus::Error(reason));
+                    self.set_status(ResourceStatus::Error(reason), &client.name);
                     return Err(ManagementError::Configuration);
                 }
                 // Agent replies that it could not run the resource management script. This is
@@ -497,7 +515,7 @@ impl Resource {
                 Ok(AgentReply::Error(reason)) => {
                     error!("Warning: Remote agent returned error {reason} when attempting to start resource {}.",
                         self.id);
-                    self.set_status(ResourceStatus::Error(reason));
+                    self.set_status(ResourceStatus::Error(reason), &client.name);
                     return Err(ManagementError::Configuration);
                 }
                 // An RPC error occurred, for example, because the connection timed out or was
@@ -507,7 +525,7 @@ impl Resource {
                         "Error: '{e:?}' when attempting to start resource '{}'.",
                         self.id
                     );
-                    self.set_status(ResourceStatus::Unknown(format!("{e}")));
+                    self.set_status(ResourceStatus::Unknown(format!("{e}")), &client.name);
                     return Err(e.into());
                 }
             };
@@ -529,14 +547,14 @@ impl Resource {
 
         match self.stop(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
-                self.set_status(ResourceStatus::Stopped);
+                self.set_status(ResourceStatus::Stopped, &client.name);
                 Ok(())
             }
             // Agent replies that it could not stop the resource. This is likely due to a
             // misconfiguration or other issue that requires admin intervention, so return an
             // error.
             Ok(AgentReply::Success(ocf::Status::Error(_, reason))) => {
-                self.set_status(ResourceStatus::Error(reason));
+                self.set_status(ResourceStatus::Error(reason), &client.name);
                 Err(ManagementError::Configuration)
             }
             // Agent replies that it could not run the resource management script. This is
@@ -545,7 +563,7 @@ impl Resource {
             Ok(AgentReply::Error(reason)) => {
                 error!("Warning: Remote agent returned error {reason} when attempting to stop resource {}.",
                     self.id);
-                self.set_status(ResourceStatus::Error(reason));
+                self.set_status(ResourceStatus::Error(reason), &client.name);
                 Err(ManagementError::Configuration)
             }
             // An RPC error occurred, for example, because the connection timed out or was
@@ -555,7 +573,7 @@ impl Resource {
                     "Error: '{e:?}' when attempting to stop resource '{}'.",
                     self.id
                 );
-                self.set_status(ResourceStatus::Unknown(format!("{e}")));
+                self.set_status(ResourceStatus::Unknown(format!("{e}")), &client.name);
                 Err(e.into())
             }
         }
@@ -577,35 +595,41 @@ impl Resource {
         remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Stop).await
     }
 
-    pub fn status(&self) -> ResourceStatus {
-        self.status.lock().unwrap().clone()
+    pub fn status(&self) -> HostStatusMap {
+        self.state.get()
     }
 
-    pub fn set_status(&self, new_status: ResourceStatus) {
-        let mut status = self.status.lock().unwrap();
-        let old_status_copy = status.clone();
-        *status = new_status.clone();
-        std::mem::drop(status);
-        if old_status_copy != new_status {
+    pub fn status_on_host(&self, host: &str) -> ResourceStatus {
+        self.status()
+            .get(host)
+            .expect("Host {host} should have a status entry")
+            .clone()
+    }
+
+    pub fn set_status(&self, new_status: ResourceStatus, host: &str) {
+        let old_status = self.state.update(new_status.clone(), host);
+
+        if old_status != new_status {
             warn!(
                 "Updating status of resource {} from {:?} to {:?}",
-                self.id, old_status_copy, new_status
+                self.id, old_status, new_status
             )
         }
     }
 
     fn is_running(&self) -> bool {
-        matches!(
-            self.status(),
-            ResourceStatus::RunningOnHome | ResourceStatus::RunningOnAway
-        )
+        self.state
+            .get()
+            .values()
+            .any(|v| *v == ResourceStatus::Running)
     }
 
-    pub fn set_running_on_loc(&self, loc: Location) {
-        match loc {
-            Location::Home => self.set_status(ResourceStatus::RunningOnHome),
-            Location::Away => self.set_status(ResourceStatus::RunningOnAway),
-        };
+    fn is_running_on_loc(&self, host: &str) -> bool {
+        self.status_on_host(host) == ResourceStatus::Running
+    }
+
+    pub fn set_running_on_loc(&self, host: &str) {
+        self.set_status(ResourceStatus::Running, host);
     }
 
     /// Return a string representation of this resource's parameters in a predictable way.
@@ -624,12 +648,12 @@ impl Resource {
         output
     }
 
-    pub fn set_status_recursive(&self, status: ResourceStatus) {
+    pub fn set_status_recursive(&self, status: ResourceStatus, host: &str) {
         for child in self.dependents.iter() {
-            child.set_status_recursive(status.clone());
+            child.set_status_recursive(status.clone(), host);
         }
 
-        self.set_status(status);
+        self.set_status(status, host);
     }
 }
 
@@ -642,7 +666,7 @@ impl Resource {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ResourceStatus {
     /// The resource's status cannot be determined because communication failed between the manager
-    /// service and the remote agent.
+    /// service and the remote agent, or because it hasn't been checked yet.
     Unknown(String),
 
     /// An operation failed in a way that the manager cannot address, and so the resource is
@@ -651,14 +675,11 @@ pub enum ResourceStatus {
     /// state that requires admin intervention.
     Error(String),
 
-    /// The resource is not running anywhere.
+    /// The resource is not running.
     Stopped,
 
-    /// The resource is running on its failover node.
-    RunningOnAway,
-
-    /// The resource is running on its home node.
-    RunningOnHome,
+    /// The resource is running.
+    Running,
 }
 
 impl ResourceStatus {
@@ -709,13 +730,6 @@ mod tests {
         assert_eq!(
             ResourceStatus::get_worst(vec![].into_iter()),
             ResourceStatus::Unknown("".to_string()),
-        );
-
-        assert_eq!(
-            ResourceStatus::get_worst(
-                vec![ResourceStatus::RunningOnHome, ResourceStatus::RunningOnAway].into_iter()
-            ),
-            ResourceStatus::RunningOnAway,
         );
     }
 }

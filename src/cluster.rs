@@ -307,9 +307,11 @@ impl Cluster {
                         )
                     })
                     .collect();
-                Resource::from_config(
-                    self.me, dependents, /*host, failover_host,*/ self.id, args,
-                )
+                let mut host_list = vec![host.id().clone()];
+                if let Some(failover_host) = failover_host {
+                    host_list.push(failover_host.id().clone());
+                };
+                Resource::from_config(self.me, dependents, self.id, args, host_list)
             }
         }
 
