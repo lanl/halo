@@ -8,6 +8,71 @@ use serde::{Deserialize, Serialize};
 use crate::{handled_error, HandledResult};
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct Config2 {
+    pub hosts: Vec<Host2>,
+    pub resources: Vec<Resource2>,
+    pub resource_groups: Vec<ResourceGroup>,
+}
+
+impl Config2 {
+    pub fn get_resource(&self, name: &str) -> &Resource2 {
+        for res in &self.resources {
+            if res.name == name {
+                return res;
+            }
+        }
+
+        panic!("Resource {name} referenced but not defined anywhere. Invalid config.");
+    }
+
+    /// Get all the failover pairs from this config.
+    pub fn get_failover_partners(&self) -> HashMap<String, String> {
+        self.resource_groups
+            .iter()
+            .flat_map(|rg| {
+                let Some(partner) = rg.failover_hosts.first() else {
+                    return vec![];
+                };
+
+                vec![
+                    (rg.home_host.clone(), partner.clone()),
+                    (partner.clone(), rg.home_host.clone()),
+                ]
+            })
+            .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Host2 {
+    /// Hostname or IP address, with an optional port suffix.
+    pub hostname: String,
+
+    /// Name of the fence agent executable to use for fencing this host.
+    pub fence_agent: Option<String>,
+
+    /// Fence parameters for this host.
+    pub fence_parameters: Option<HashMap<String, String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResourceGroup {
+    pub root: String,
+    pub home_host: String,
+    pub failover_hosts: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Resource2 {
+    pub name: String,
+    pub kind: String,
+
+    pub parameters: HashMap<String, String>,
+
+    pub dependents: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub hosts: Vec<Host>,
     pub failover_pairs: Option<Vec<Vec<String>>>,
