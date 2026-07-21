@@ -152,6 +152,14 @@ impl Host {
         Host::new(config.hostname.clone(), fence_agent)
     }
 
+    pub fn from_config2(config: &crate::config::Host2) -> Self {
+        let fence_agent = config
+            .fence_agent
+            .as_ref()
+            .map(|agent| FenceAgent::from_params(agent, &config.fence_parameters));
+        Host::new(config.hostname.clone(), fence_agent)
+    }
+
     /// Given a string that may be of the form "<address>:port number>", split it out into the address
     /// and port number portions.
     fn get_host_port(host_str: &str) -> (&str, Option<u16>) {

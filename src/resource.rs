@@ -387,20 +387,20 @@ pub struct Resource {
     /// run on up to N hosts simultanesouly.
     _count: usize,
 
-    state: ResourceState,
+    pub state: ResourceState,
 
     pub args: manager::Cli,
 }
 
 pub type HostStatusMap = HashMap<String, ResourceStatus>;
 
-#[derive(Debug)]
-struct ResourceState {
+#[derive(Debug, Clone)]
+pub struct ResourceState {
     inner: Arc<Mutex<HostStatusMap>>,
 }
 
 impl ResourceState {
-    fn new(host_list: Vec<String>) -> Self {
+    pub fn new(host_list: Vec<String>) -> Self {
         let inner: HostStatusMap = host_list
             .into_iter()
             .map(|h| {
@@ -413,6 +413,15 @@ impl ResourceState {
 
         Self {
             inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    pub fn add_hosts(&self, hosts: &[String]) {
+        for host in hosts {
+            self.inner.lock().unwrap().insert(
+                host.to_string(),
+                ResourceStatus::Unknown("Manager is starting up".to_string()),
+            );
         }
     }
 
@@ -448,6 +457,34 @@ impl Resource {
             _count: 1,
             state: ResourceState::new(host_list),
             id,
+            args,
+        }
+    }
+
+    pub fn from_config2(
+        res: &crate::config::Resource2,
+        config: &crate::config::Config2,
+        status_list: &HashMap<String, (usize, ResourceState)>,
+        args: manager::Cli,
+    ) -> Self {
+        let dependents = res
+            .dependents
+            .iter()
+            .map(|r| {
+                let r = config.get_resource(r);
+                Self::from_config2(r, config, status_list, args.clone())
+            })
+            .collect();
+
+        let (count, state) = status_list.get(&res.name).unwrap();
+
+        Self {
+            kind: res.kind.clone(),
+            parameters: res.parameters.clone(),
+            dependents,
+            _count: *count,
+            state: state.clone(),
+            id: res.name.clone(),
             args,
         }
     }

@@ -10,6 +10,7 @@ use std::{
 use {futures::future, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
 
 use crate::{
+    config,
     host::*,
     manager,
     resource::*,
@@ -264,6 +265,114 @@ impl Cluster {
         Ok(new)
     }
 
+    pub fn from_config2(
+        config: &config::Config2,
+        args: manager::Cli,
+        state: Option<State>,
+        tls_args: Option<TlsArgs>,
+    ) -> Self {
+        let hosts: HashMap<_, _> = config
+            .hosts
+            .iter()
+            .map(|h| (h.hostname.clone(), Arc::new(Host::from_config2(h))))
+            .collect();
+
+        // Set failover partners:
+        let failover_partners = config.get_failover_partners();
+        for host in hosts.values() {
+            if let Some(partner) = failover_partners.get(host.raw_name()) {
+                let partner = hosts
+                    .get(partner)
+                    .expect("Host {} referenced but not defined. Invalid config.");
+
+                // TODO: use ? and make this method return HandledResult
+                host.set_failover_partner(Some(Arc::clone(partner)))
+                    .unwrap();
+            } else {
+                // TODO: use ? and make this method return HandledResult
+                host.set_failover_partner(None).unwrap();
+            }
+        }
+
+        let mut resource_list: HashMap<String, (usize, ResourceState)> = HashMap::new();
+
+        fn update_resource_list(
+            config: &config::Config2,
+            list: &mut HashMap<String, (usize, ResourceState)>,
+            resource: &config::Resource2,
+            hostnames: &[String],
+        ) {
+            list.entry(resource.name.clone())
+                .and_modify(|(count, val)| {
+                    *count += 1;
+                    val.add_hosts(hostnames);
+                })
+                .or_insert((1, ResourceState::new(Vec::from(hostnames))));
+
+            for res in &resource.dependents {
+                let res = config.get_resource(res);
+                update_resource_list(config, list, res, hostnames);
+            }
+        }
+
+        // First iteration: just determine which resources are shared vs. exclusive.
+        for rg in &config.resource_groups {
+            let root = config.get_resource(&rg.root);
+            let mut hostnames = Vec::new();
+            hostnames.push(rg.home_host.clone());
+            hostnames.extend_from_slice(&rg.failover_hosts);
+
+            let hostnames: Vec<_> = hostnames
+                .iter()
+                .map(|h| hosts.get(h).unwrap().id())
+                .collect();
+
+            update_resource_list(config, &mut resource_list, root, &hostnames);
+        }
+
+        // Second iteration: create the actual resource groups
+        let mut resource_groups = Vec::new();
+        for config_rg in &config.resource_groups {
+            let root = config.get_resource(&config_rg.root);
+
+            let root_resource = Resource::from_config2(root, config, &resource_list, args.clone());
+
+            let home_host = Arc::clone(
+                hosts
+                    .get(&config_rg.home_host)
+                    .expect("Host {h} referenced but not defined. Invalid config."),
+            );
+
+            let failover_host = config_rg
+                .failover_hosts
+                .first()
+                .map(|h| {
+                    hosts
+                        .get(h)
+                        .expect("Host {h} referenced but not defined. Invalid config.")
+                })
+                .map(Arc::clone);
+
+            let rg: ResourceGroup =
+                ResourceGroup::new(root_resource, args.clone(), home_host, failover_host);
+            resource_groups.push(rg);
+        }
+
+        // In the Cluster object, hosts should be mapped by their "unique" ID, which is different
+        // in the test environment and a "real" environment. The id() method on host gives the
+        // right value:
+        let hosts = hosts.into_values().map(|host| (host.id(), host)).collect();
+
+        Self {
+            resource_groups,
+            hosts,
+            args,
+            failover: true,
+            state,
+            tls_args,
+        }
+    }
+
     /// Given a config::Host object, convert it into a vector of ResourceGroups where each
     /// ResourceGroup represents a complete dependency tree of resources on the Host.
     fn one_host_resource_groups(
@@ -396,7 +505,8 @@ impl Cluster {
             println!("\tfailover node: {:?}", rg.failover_node().map(|h| h.id()));
             for res in rg.resources() {
                 print!("{}: ", res.id);
-                println!("{}", res.params_string());
+                print!("{}", res.params_string());
+                println!(" status_map: {:?}", res.state);
             }
         }
 
