@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{collections::HashMap, process::Command};
+use std::process::Command;
 
 use clap::Args;
 
@@ -17,16 +17,18 @@ pub struct DiscoverArgs {
 }
 
 pub fn discover(args: &DiscoverArgs) -> HandledResult<()> {
-    let mut config = config::Config {
+    let mut config = config::Config2 {
         hosts: Vec::new(),
-        failover_pairs: None,
+        resources: Vec::new(),
+        resource_groups: Vec::new(),
     };
     let hostnames = crate::commands::nodesets2hostnames(&args.hostnames)
         .handle_err(|e| eprintln!("nodeset syntax error: {e}"))?;
 
     for hostname in hostnames {
-        let host = discover_one_host(&hostname, args.verbose)?;
+        let (host, mut resources) = discover_one_host(&hostname, args.verbose)?;
         config.hosts.push(host);
+        config.resources.append(&mut resources);
     }
     println!("{}", serde_yaml::to_string(&config).unwrap());
     Ok(())
@@ -34,34 +36,44 @@ pub fn discover(args: &DiscoverArgs) -> HandledResult<()> {
 
 /// Attempt to discover all of the resources (zpools and lustre targerts) running on `hostname`,
 /// and construct them into a config::Host object that owns those resources.
-fn discover_one_host(hostname: &str, verbose: bool) -> HandledResult<config::Host> {
-    let zpool_output = get_zpool_output(hostname, verbose)?;
-
-    let mut resources = parse_zpool_output(zpool_output);
-
+fn discover_one_host(
+    hostname: &str,
+    verbose: bool,
+) -> HandledResult<(config::Host2, Vec<config::Resource2>)> {
     let lustre_output = get_lustre_output(hostname, verbose)?;
-
     let lustre_resources = parse_lustre_output(lustre_output)?;
 
-    resources.extend(lustre_resources);
+    let zpool_output = get_zpool_output(hostname, verbose)?;
+    let mut zpool_resources = parse_zpool_output(zpool_output);
 
-    Ok(config::Host {
+    for zpool in zpool_resources.iter_mut() {
+        for lustre_target in &lustre_resources {
+            let zpool_name = lustre_target.name.split('/').next().unwrap();
+            if zpool_name == zpool.name {
+                zpool.dependents.push(lustre_target.name.clone());
+            }
+        }
+    }
+
+    let resources = zpool_resources
+        .into_iter()
+        .chain(lustre_resources)
+        .collect();
+
+    let host = config::Host2 {
         hostname: hostname.to_string(),
-        resources,
         fence_agent: None,
         fence_parameters: None,
-    })
+    };
+
+    Ok((host, resources))
 }
 
-fn parse_lustre_output(output: String) -> HandledResult<HashMap<String, config::Resource>> {
-    let mut resources = HashMap::new();
+fn parse_lustre_output(output: String) -> HandledResult<Vec<config::Resource2>> {
+    let mut resources = Vec::new();
 
     for line in output.lines() {
-        let res = config::Resource::new_lustre(line)?;
-
-        let target = res.parameters.get("target").unwrap();
-
-        resources.insert(target.to_string(), res);
+        resources.push(config::Resource2::new_lustre(line)?);
     }
 
     Ok(resources)
@@ -71,7 +83,7 @@ fn get_lustre_output(hostname: &str, verbose: bool) -> HandledResult<String> {
     // Get Targets and parse both Zpools and Lustre targets
     if verbose {
         eprintln!("Discovering lustre targets for host={hostname}");
-        eprintln!("Running command on hosggt: 'mount -t lustre'");
+        eprintln!("Running command on host: 'mount -t lustre'");
     }
     let output = Command::new("ssh")
         .args([hostname, "mount", "-t", "lustre"])
@@ -88,13 +100,11 @@ fn get_lustre_output(hostname: &str, verbose: bool) -> HandledResult<String> {
     Ok(String::from_utf8(output.stdout).unwrap())
 }
 
-fn parse_zpool_output(output: String) -> HashMap<String, config::Resource> {
-    HashMap::from_iter(output.lines().map(|line| {
-        (
-            line.to_string(),
-            config::Resource::new_zpool(line.to_string()),
-        )
-    }))
+fn parse_zpool_output(output: String) -> Vec<config::Resource2> {
+    output
+        .lines()
+        .map(|line| config::Resource2::new_zpool(line.to_string()))
+        .collect()
 }
 
 fn get_zpool_output(hostname: &str, verbose: bool) -> HandledResult<String> {
@@ -131,16 +141,10 @@ mod tests {
         let resources = parse_zpool_output(output);
         assert_eq!(resources.len(), 2);
 
-        let goal = HashMap::from([
-            (
-                "zpool_1".to_string(),
-                Resource::new_zpool("zpool_1".to_string()),
-            ),
-            (
-                "zpool_2".to_string(),
-                Resource::new_zpool("zpool_2".to_string()),
-            ),
-        ]);
+        let goal = vec![
+            Resource2::new_zpool("zpool_1".to_string()),
+            Resource2::new_zpool("zpool_2".to_string()),
+        ];
 
         assert_eq!(resources, goal);
     }
@@ -153,28 +157,27 @@ mod tests {
         let resources = parse_lustre_output(output.to_string()).unwrap();
         assert_eq!(resources.len(), 2);
 
-        let goal_1 = Resource {
+        let goal_1 = Resource2 {
+            name: "oss01e0/ost2".to_string(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
                 ("mountpoint".to_string(), "/mnt/ost2".to_string()),
                 ("target".to_string(), "oss01e0/ost2".to_string()),
                 ("type".to_string(), "ost".to_string()),
             ]),
-            requires: Some("oss01e0".to_string()),
+            dependents: vec![],
         };
-        let goal_2 = Resource {
+        let goal_2 = Resource2 {
+            name: "oss01e1/ost3".to_string(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
                 ("mountpoint".to_string(), "/mnt/ost3".to_string()),
                 ("target".to_string(), "oss01e1/ost3".to_string()),
                 ("type".to_string(), "ost".to_string()),
             ]),
-            requires: Some("oss01e1".to_string()),
+            dependents: vec![],
         };
-        let goal = HashMap::from([
-            ("oss01e0/ost2".to_string(), goal_1),
-            ("oss01e1/ost3".to_string(), goal_2),
-        ]);
+        let goal = vec![goal_1, goal_2];
 
         assert_eq!(resources, goal);
     }

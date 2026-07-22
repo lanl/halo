@@ -62,7 +62,12 @@ impl Host {
         loop {
             let resource_groups_to_observe: Vec<_> = cluster
                 .host_home_resource_groups(self)
-                .filter(|rg| !matches!(rg.get_overall_status(), ResourceStatus::Error(_)))
+                .filter(|rg| {
+                    !matches!(
+                        rg.get_overall_status_on_host(&self.id()),
+                        ResourceStatus::Error(_)
+                    )
+                })
                 .collect();
 
             if resource_groups_to_observe.is_empty() {
@@ -171,7 +176,7 @@ impl Host {
 
     async fn remote_connected_loop_non_ha(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         cluster: &Cluster,
         state: &mut HostState,
     ) {
@@ -208,9 +213,12 @@ impl Host {
                         Message::RequestFailover => {
                             state.resource_task_exited(id);
                             let rg = cluster.get_resource_group(id);
-                            rg.root.set_status_recursive(ResourceStatus::Unknown(
-                                "Connection to remote host lost.".to_string(),
-                            ));
+                            rg.root.set_status_recursive(
+                                ResourceStatus::Unknown(
+                                    "Connection to remote host lost.".to_string(),
+                                ),
+                                &self.id(),
+                            );
                             if self.ready_for_reboot(state, event.resource_group) {
                                 return;
                             }
@@ -241,15 +249,10 @@ impl Host {
         state.outstanding_resource_tasks.is_empty()
     }
 
-    async fn observe_resource_group(
-        &self,
-        cluster: &Cluster,
-        rg_name: &str,
-        client: &ocf_resource_agent::Client,
-    ) {
+    async fn observe_resource_group(&self, cluster: &Cluster, rg_name: &str, client: &Client) {
         let rg = cluster.get_resource_group(rg_name);
         match rg
-            .observe_loop(client, false, Location::Home)
+            .observe_loop(client, false)
             .await
             .expect_err("observe_loop() should not exit until an error occurs in this usage.")
         {
@@ -267,7 +270,7 @@ impl Host {
         &self,
         cluster: &Cluster,
         token: ResourceToken,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         revoke: ResourceTaskCancel,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);

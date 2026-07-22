@@ -8,44 +8,77 @@ use serde::{Deserialize, Serialize};
 use crate::{handled_error, HandledResult};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Config {
-    pub hosts: Vec<Host>,
-    pub failover_pairs: Option<Vec<Vec<String>>>,
+pub struct Config2 {
+    pub hosts: Vec<Host2>,
+    pub resources: Vec<Resource2>,
+    pub resource_groups: Vec<ResourceGroup>,
+}
+
+impl Config2 {
+    pub fn get_resource(&self, name: &str) -> &Resource2 {
+        for res in &self.resources {
+            if res.name == name {
+                return res;
+            }
+        }
+
+        panic!("Resource {name} referenced but not defined anywhere. Invalid config.");
+    }
+
+    /// Get all the failover pairs from this config.
+    pub fn get_failover_partners(&self) -> HashMap<String, String> {
+        self.resource_groups
+            .iter()
+            .flat_map(|rg| {
+                let Some(partner) = rg.failover_hosts.first() else {
+                    return vec![];
+                };
+
+                vec![
+                    (rg.home_host.clone(), partner.clone()),
+                    (partner.clone(), rg.home_host.clone()),
+                ]
+            })
+            .collect()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Host {
+pub struct Host2 {
+    /// Hostname or IP address, with an optional port suffix.
     pub hostname: String,
 
-    /// Resources should be given a unique identifier to identify them in this hashmap.
-    pub resources: HashMap<String, Resource>,
-
-    /// Name of the fence agent binary to use for fencing this host.
+    /// Name of the fence agent executable to use for fencing this host.
     pub fence_agent: Option<String>,
 
     /// Fence parameters for this host.
     pub fence_parameters: Option<HashMap<String, String>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Resource {
-    /// An OCF Resource Agent identifier, such as "heartbeat/ZFS" or "lustre/Lustre"
-    pub kind: String,
-
-    /// The resource parameters, which are to be passed to the OCF Resource Agent.
-    pub parameters: HashMap<String, String>,
-
-    /// Each resource is allowed to specify a single dependency. The named resource must be started
-    /// before this one.
-    pub requires: Option<String>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResourceGroup {
+    pub root: String,
+    pub home_host: String,
+    pub failover_hosts: Vec<String>,
 }
 
-impl Resource {
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Resource2 {
+    pub name: String,
+    pub kind: String,
+
+    pub parameters: HashMap<String, String>,
+
+    pub dependents: Vec<String>,
+}
+
+impl Resource2 {
     pub fn new_zpool(pool: String) -> Self {
         Self {
+            name: pool.clone(),
             kind: "heartbeat/ZFS".to_string(),
             parameters: HashMap::from([("pool".to_string(), pool)]),
-            requires: None,
+            dependents: vec![],
         }
     }
 
@@ -54,7 +87,6 @@ impl Resource {
         let mut tokens = mount_output.split_whitespace();
 
         let device = tokens.next().unwrap();
-        let zpool = device.split('/').next().unwrap();
         let mountpoint = tokens.nth(1).unwrap();
 
         let opts = tokens.nth(2).unwrap();
@@ -76,13 +108,14 @@ impl Resource {
             return handled_error();
         };
         Ok(Self {
+            name: device.to_string(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
                 ("mountpoint".to_string(), mountpoint.to_string()),
                 ("target".to_string(), device.to_string()),
                 ("type".to_string(), kind.to_string()),
             ]),
-            requires: Some(zpool.to_string()),
+            dependents: vec![],
         })
     }
 }

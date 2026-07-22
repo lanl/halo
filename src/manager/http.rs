@@ -102,27 +102,51 @@ impl ResourceJson {
         failover_host: Option<String>,
     ) -> Self {
         let mut comment = None;
+        let status: &str;
 
-        let status = match res.status() {
-            ResourceStatus::Unknown(ref reason) => {
-                comment = Some(reason.clone());
-                "Unknown"
+        let status_map = res.status();
+
+        'status: {
+            if *status_map.get(&home_host).unwrap() == ResourceStatus::Running {
+                status = "Running";
+                break 'status;
+            };
+
+            if let Some(failover_host) = &failover_host {
+                if *status_map.get(failover_host).unwrap() == ResourceStatus::Running {
+                    status = "Running (Failed Over)";
+                    break 'status;
+                }
             }
-            ResourceStatus::Error(ref reason) => {
-                comment = Some(reason.clone());
-                "Error"
+
+            for st in status_map.values() {
+                if let ResourceStatus::Error(reason) = st {
+                    comment = Some(reason.clone());
+                    status = "Error";
+                    break 'status;
+                }
             }
-            ResourceStatus::Stopped => "Stopped",
-            ResourceStatus::RunningOnAway => "Running (Failed Over)",
-            ResourceStatus::RunningOnHome => "Running",
+
+            for st in status_map.values() {
+                if let ResourceStatus::Unknown(reason) = st {
+                    comment = Some(reason.clone());
+                    status = "Unknown";
+                    break 'status;
+                }
+            }
+
+            if status_map.values().all(|st| *st == ResourceStatus::Stopped) {
+                status = "Stopped";
+            } else {
+                status = "Unexpected (BUG)";
+            }
         }
-        .to_string();
 
         Self {
             id: res.id.clone(),
             kind: res.kind.clone(),
             parameters: res.parameters.clone(),
-            status,
+            status: status.to_string(),
             comment,
             managed,
             home_host,

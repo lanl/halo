@@ -1,0 +1,42 @@
+#!/bin/bash
+
+HALO_TEST_ID=${HALO_TEST_ID:-test_agent}
+
+RESOURCE_NAME=$2
+RESOURCE_ARG=$3
+
+if [[ -z "${HALO_TEST_DIRECTORY}" ]]; then
+	res_state_file="$HALO_TEST_ID.$RESOURCE_NAME.$RESOURCE_ARG"
+else
+	res_state_file="$HALO_TEST_DIRECTORY/$HALO_TEST_ID.$RESOURCE_NAME.$RESOURCE_ARG"
+fi
+
+start () {
+	touch $res_state_file || exit 1
+	exit 0
+}
+
+stop () {
+	rm -f $res_state_file
+	exit 0
+}
+
+monitor () {
+	if [ -f "$res_state_file" ]; then
+		exit 0
+	else
+		exit 7
+	fi
+}
+
+no_such_command() {
+	echo "No such command"
+	exit 1
+}
+
+case $1 in
+    start)              start;;
+    stop)               stop;;
+    status|monitor)     monitor;;
+    *)                  no_such_command;;
+esac

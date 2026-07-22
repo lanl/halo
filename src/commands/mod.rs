@@ -10,6 +10,7 @@ pub mod manage;
 pub mod power;
 pub mod reset;
 pub mod status;
+pub mod test_config;
 pub mod validate;
 
 use {
@@ -60,6 +61,7 @@ pub enum Commands {
     Power(PowerArgs),
     Reset(ResetArgs),
     Validate,
+    TestConfig,
     Manage(ManageArgs),
     Unmanage(UnManageArgs),
     Activate(ActivateArgs),
@@ -74,6 +76,7 @@ pub fn main(cli: &Cli) -> HandledResult<()> {
         Commands::Fence(args) => fence::fence(cli, args),
         Commands::Power(args) => power::power(cli, args),
         Commands::Validate => validate::validate(cli),
+        Commands::TestConfig => test_config::test_config(),
         Commands::Status(args) => status::status(cli, args),
         Commands::Manage(args) => manage::manage(cli, args),
         Commands::Unmanage(args) => manage::unmanage(cli, args),

@@ -10,6 +10,7 @@ use std::{
 use {futures::future, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
 
 use crate::{
+    config,
     host::*,
     manager,
     resource::*,
@@ -162,7 +163,7 @@ impl Cluster {
             eprintln!("Could not open config file \"{configpath}\": {e}");
         })?;
 
-        let config: crate::config::Config = serde_yaml::from_str(&config).handle_err(|e| {
+        let config: crate::config::Config2 = serde_yaml::from_str(&config).handle_err(|e| {
             eprintln!("Could not parse config file \"{configpath}\": {e}");
         })?;
 
@@ -183,75 +184,7 @@ impl Cluster {
             None
         };
 
-        let mut new = Cluster {
-            resource_groups: Vec::new(),
-            hosts: HashMap::new(),
-            args: args.clone(),
-            failover: false,
-            state,
-            tls_args,
-        };
-
-        let hosts: HashMap<String, Arc<Host>> = config
-            .hosts
-            .iter()
-            .map(|host| (host.hostname.clone(), Arc::new(Host::from_config(host))))
-            .collect();
-
-        for config_host in config.hosts.into_iter() {
-            let host = hosts.get(&config_host.hostname).ok_or(()).handle_err(|_| {
-                eprintln!(
-                    "failed to find host '{}' in cluster config",
-                    config_host.hostname
-                );
-            })?;
-            let host = Arc::clone(host);
-
-            let (failover_hostname, failover_host): (&str, Option<Arc<Host>>) =
-                match &config.failover_pairs {
-                    Some(pairs) => {
-                        new.failover = true;
-                        let failover_hostname = get_failover_partner(pairs, &config_host.hostname)
-                            .ok_or(())
-                            .handle_err(|_| {
-                                eprintln!(
-                                "failed to find failover partner for host '{}' in cluster config",
-                                config_host.hostname
-                            );
-                            })?;
-                        let failover_host =
-                            hosts.get(failover_hostname).ok_or(()).handle_err(|_| {
-                                eprintln!(
-                                    "failed to find failover host '{}' in cluster config",
-                                    failover_hostname
-                                );
-                            })?;
-                        (failover_hostname, Some(Arc::clone(failover_host)))
-                    }
-                    None => ("<none>", None),
-                };
-            // NOTE: .clone() needed dur to later use by 'rg', which may not need 'failover_host'
-            // in the future.
-            host.set_failover_partner(failover_host.clone())
-                .handle_err(|_| {
-                    eprintln!(
-                        "failed to set failover partner '{}' for host '{}'",
-                        failover_hostname, config_host.hostname
-                    )
-                })?;
-
-            let mut rg =
-                Self::one_host_resource_groups(config_host, host, failover_host, args.clone());
-            new.resource_groups.append(&mut rg);
-        }
-
-        // In the Cluster object, hosts should be mapped by their "unique" ID, which is different
-        // in the test environment and a "real" environment. The id() method on host gives the
-        // right value:
-        let hosts = hosts.into_values().map(|host| (host.id(), host)).collect();
-
-        new.hosts = hosts;
-
+        let new = Cluster::from_config2(&config, args.clone(), state, tls_args);
         new.apply_state();
 
         // If the cluster is running in "observe-only" mode, mark every resource group as unmanaged
@@ -264,114 +197,112 @@ impl Cluster {
         Ok(new)
     }
 
-    /// Given a config::Host object, convert it into a vector of ResourceGroups where each
-    /// ResourceGroup represents a complete dependency tree of resources on the Host.
-    fn one_host_resource_groups(
-        config_host: crate::config::Host,
-        host: Arc<Host>,
-        failover_host: Option<Arc<Host>>,
+    pub fn from_config2(
+        config: &config::Config2,
         args: manager::Cli,
-    ) -> Vec<ResourceGroup> {
-        use std::cell::RefCell;
-        use std::rc::Rc;
+        state: Option<State>,
+        tls_args: Option<TlsArgs>,
+    ) -> Self {
+        let hosts: HashMap<_, _> = config
+            .hosts
+            .iter()
+            .map(|h| (h.hostname.clone(), Arc::new(Host::from_config2(h))))
+            .collect();
 
-        /// This type exists for convenience while building the resouce dependency tree.
-        /// A TransitionalResource knows both its parent (via me.requires),
-        /// and (some of) its children.
-        #[derive(Debug, Clone)]
-        struct TransitionalResource {
-            me: crate::config::Resource,
-            children: RefCell<Vec<Rc<TransitionalResource>>>,
-            id: String,
-        }
+        // Set failover partners:
+        let failover_partners = config.get_failover_partners();
+        for host in hosts.values() {
+            if let Some(partner) = failover_partners.get(host.raw_name()) {
+                let partner = hosts
+                    .get(partner)
+                    .expect("Host {} referenced but not defined. Invalid config.");
 
-        impl TransitionalResource {
-            /// Given a TransitionalResource, recursively converts it into a Resource.
-            ///
-            /// This method assumes that self is the sole owner of self.children, meaning that it
-            /// holds the sole reference to those children. All other references must have been
-            /// dropped. This will panic if there are outstanding references!
-            fn into_resource(
-                self,
-                host: Arc<Host>,
-                failover_host: Option<Arc<Host>>,
-                args: manager::Cli,
-            ) -> Resource {
-                let dependents = RefCell::into_inner(self.children)
-                    .into_iter()
-                    .map(|child| {
-                        Rc::into_inner(child).unwrap().into_resource(
-                            Arc::clone(&host),
-                            failover_host.clone(),
-                            args.clone(),
-                        )
-                    })
-                    .collect();
-                Resource::from_config(
-                    self.me, dependents, /*host, failover_host,*/ self.id, args,
-                )
+                // TODO: use ? and make this method return HandledResult
+                host.set_failover_partner(Some(Arc::clone(partner)))
+                    .unwrap();
+            } else {
+                // TODO: use ? and make this method return HandledResult
+                host.set_failover_partner(None).unwrap();
             }
         }
 
-        let resources: HashMap<String, TransitionalResource> = config_host
-            .resources
-            .into_iter()
-            .map(|(id, res)| {
-                let trans_res = TransitionalResource {
-                    me: res,
-                    children: RefCell::new(Vec::new()),
-                    id: id.clone(),
-                };
-                (id, trans_res)
-            })
-            .collect();
+        let mut resource_list: HashMap<String, (usize, ResourceState)> = HashMap::new();
 
-        // This will hold the roots of the resource dependency trees:
-        let mut roots: Vec<Rc<TransitionalResource>> = Vec::new();
-        // While building the dependency trees, it will be necessary to look up a resource in its
-        // tree given its ID, so processed_nodes enables that. It uses Rc<> to share a reference to
-        // the same underlying resources as roots.
-        let mut processed_nodes: HashMap<String, Rc<TransitionalResource>> = HashMap::new();
+        fn update_resource_list(
+            config: &config::Config2,
+            list: &mut HashMap<String, (usize, ResourceState)>,
+            resource: &config::Resource2,
+            hostnames: &[String],
+        ) {
+            list.entry(resource.name.clone())
+                .and_modify(|(count, val)| {
+                    *count += 1;
+                    val.add_hosts(hostnames);
+                })
+                .or_insert((1, ResourceState::new(Vec::from(hostnames))));
 
-        for (id, res) in resources.iter() {
-            let this_resource = Rc::new(res.clone());
-            processed_nodes.insert(id.clone(), Rc::clone(&this_resource));
-            match &this_resource.me.requires {
-                Some(parent) => {
-                    // Depending on whether this_resource's parent appeared before or after this
-                    // resource in the iteration order, we need to get a reference to it from
-                    // either processed_nodes, or resources.
-                    let parent = match processed_nodes.get(parent) {
-                        Some(parent) => parent,
-                        // TODO: rather than unwrap here, return an error so that the program can
-                        // report to the user that the config was invalid.
-                        None => resources.get(parent).unwrap(),
-                    };
-                    parent.children.borrow_mut().push(this_resource);
-                }
-                None => {
-                    // This resource is a root, so add to root list:
-                    roots.push(this_resource);
-                }
-            };
+            for res in &resource.dependents {
+                let res = config.get_resource(res);
+                update_resource_list(config, list, res, hostnames);
+            }
         }
 
-        // Drop all non-root references to the TransitionalResources so that the returned vector
-        // can take ownership of them with into_inner():
-        std::mem::drop(processed_nodes);
-        std::mem::drop(resources);
+        // First iteration: just determine which resources are shared vs. exclusive.
+        for rg in &config.resource_groups {
+            let root = config.get_resource(&rg.root);
+            let mut hostnames = Vec::new();
+            hostnames.push(rg.home_host.clone());
+            hostnames.extend_from_slice(&rg.failover_hosts);
 
-        roots
-            .into_iter()
-            .map(|root| {
-                let root = Rc::into_inner(root).unwrap().into_resource(
-                    Arc::clone(&host),
-                    failover_host.clone(),
-                    args.clone(),
-                );
-                ResourceGroup::new(root, args.clone(), Arc::clone(&host), failover_host.clone())
-            })
-            .collect()
+            let hostnames: Vec<_> = hostnames
+                .iter()
+                .map(|h| hosts.get(h).unwrap().id())
+                .collect();
+
+            update_resource_list(config, &mut resource_list, root, &hostnames);
+        }
+
+        // Second iteration: create the actual resource groups
+        let mut resource_groups = Vec::new();
+        for config_rg in &config.resource_groups {
+            let root = config.get_resource(&config_rg.root);
+
+            let root_resource = Resource::from_config2(root, config, &resource_list, args.clone());
+
+            let home_host = Arc::clone(
+                hosts
+                    .get(&config_rg.home_host)
+                    .expect("Host {h} referenced but not defined. Invalid config."),
+            );
+
+            let failover_host = config_rg
+                .failover_hosts
+                .first()
+                .map(|h| {
+                    hosts
+                        .get(h)
+                        .expect("Host {h} referenced but not defined. Invalid config.")
+                })
+                .map(Arc::clone);
+
+            let rg: ResourceGroup =
+                ResourceGroup::new(root_resource, args.clone(), home_host, failover_host);
+            resource_groups.push(rg);
+        }
+
+        // In the Cluster object, hosts should be mapped by their "unique" ID, which is different
+        // in the test environment and a "real" environment. The id() method on host gives the
+        // right value:
+        let hosts = hosts.into_values().map(|host| (host.id(), host)).collect();
+
+        Self {
+            resource_groups,
+            hosts,
+            args,
+            failover: true,
+            state,
+            tls_args,
+        }
     }
 
     /// Write a Record entry into the Cluster's statefile.
@@ -394,7 +325,8 @@ impl Cluster {
             println!("\tfailover node: {:?}", rg.failover_node().map(|h| h.id()));
             for res in rg.resources() {
                 print!("{}: ", res.id);
-                println!("{}", res.params_string());
+                print!("{}", res.params_string());
+                println!(" status_map: {:?}", res.state);
             }
         }
 

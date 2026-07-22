@@ -1,0 +1,75 @@
+hosts:
+- hostname: 127.0.0.1:8005
+  fence_agent: fence_test
+  fence_parameters:
+    target: fence_nfs00
+    test_id: failover
+- hostname: 127.0.0.1:8006
+  fence_agent: fence_test
+  fence_parameters:
+    target: fence_nfs01
+    test_id: failover
+
+resources:
+- name: ip_addr_1
+  kind: heartbeat/ip
+  parameters:
+    ip: 192.168.1.1
+  dependents:
+  - route_1
+- name: route_1
+  kind: heartbeat/route
+  parameters:
+    route: 192.168.1.1
+  dependents:
+  - mount_home
+  - mount_projects
+- name: ip_addr_2
+  kind: heartbeat/ip
+  parameters:
+    ip: 192.168.1.2
+  dependents:
+  - route_1
+- name: route_2
+  kind: heartbeat/route
+  parameters:
+    route: 192.168.1.2
+  dependents:
+  - mount_home
+  - mount_projects
+- name: mount_home
+  kind: heartbeat/filesystem
+  parameters:
+    fstype: nfs
+    device: 192.168.1.10:/home
+    directory: /mnt/home
+  dependents:
+  - export_home
+- name: export_home
+  kind: heartbeat/export
+  parameters:
+    directory: /mnt/home
+  dependents: []
+- name: mount_projects
+  kind: heartbeat/filesystem
+  parameters:
+    fstype: nfs
+    device: 192.168.1.10:/projects
+    directory: /mnt/projects
+  dependents:
+  - export_home
+- name: export_projects
+  kind: heartbeat/export
+  parameters:
+    directory: /mnt/projects
+  dependents: []
+
+resource_groups:
+- root: ip_addr_1
+  home_host: 127.0.0.1:8005
+  failover_hosts:
+    - 127.0.0.1:8006
+- root: ip_addr_2
+  home_host: 127.0.0.1:8006
+  failover_hosts:
+    - 127.0.0.1:8005

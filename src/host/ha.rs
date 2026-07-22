@@ -285,9 +285,10 @@ impl Host {
 
                         continue;
                     }
-                    rg.root.set_status_recursive(ResourceStatus::Unknown(
-                        "Connection to remote host lost.".to_string(),
-                    ));
+                    rg.root.set_status_recursive(
+                        ResourceStatus::Unknown("Connection to remote host lost.".to_string()),
+                        &self.id(),
+                    );
 
                     // If the resource group is unmanaged, the admin might start it on the partner,
                     // so just check on it over there.
@@ -337,7 +338,7 @@ impl Host {
 
     async fn remote_connected_loop(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         cluster: &Cluster,
         state: &mut HostState,
     ) {
@@ -404,9 +405,12 @@ impl Host {
                         // cancel management.
                         Message::TaskCanceled => {
                             let rg = cluster.get_resource_group(id);
-                            rg.root.set_status_recursive(ResourceStatus::Unknown(
-                                "Connection to remote host lost.".to_string(),
-                            ));
+                            rg.root.set_status_recursive(
+                                ResourceStatus::Unknown(
+                                    "Connection to remote host lost.".to_string(),
+                                ),
+                                &self.id(),
+                            );
                             state.prep_for_failover(t);
                         }
                         Message::ResourceError => {
@@ -512,7 +516,7 @@ impl Host {
         &self,
         state: &mut HostState,
         cluster: &Arc<Cluster>,
-    ) -> Option<ocf_resource_agent::Client> {
+    ) -> Option<Client> {
         let fence_details =
             take(&mut state.fence_initiated).expect("Fence details must be set at this point.");
 
@@ -617,9 +621,13 @@ impl Host {
 
             for token in tokens_to_send {
                 let rg = cluster.get_resource_group(&token.id);
-                rg.root.set_status_recursive(ResourceStatus::Error(
-                    "Fencing this reource's host failed. Management cannot proceed.".to_string(),
-                ));
+                rg.root.set_status_recursive(
+                    ResourceStatus::Error(
+                        "Fencing this reource's host failed. Management cannot proceed."
+                            .to_string(),
+                    ),
+                    &self.id(),
+                );
                 state.resources_with_errors.push(token);
             }
 
@@ -654,7 +662,8 @@ impl Host {
         for token in tokens_to_send {
             let rg = cluster.get_resource_group(&token.id);
             // We know resource is stopped if fencing succeeded:
-            rg.root.set_status_recursive(ResourceStatus::Stopped);
+            rg.root
+                .set_status_recursive(ResourceStatus::Stopped, &self.id());
 
             self.send_message_to_partner(token, Message::ManageResourceGroup)
                 .await;
@@ -663,11 +672,11 @@ impl Host {
 
     fn update_resource_groups_stopped(&self, cluster: &Cluster) {
         for rg in cluster.host_home_resource_groups(self) {
-            rg.has_been_stopped(Location::Home);
+            rg.has_been_stopped(&self.id());
         }
 
         for rg in cluster.host_home_resource_groups(self.ha_failover_partner()) {
-            rg.has_been_stopped(Location::Away);
+            rg.has_been_stopped(&self.id());
         }
     }
 
@@ -728,7 +737,7 @@ impl Host {
     async fn switch_host(
         &self,
         token: &ResourceToken,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         cluster: &Cluster,
     ) -> (WhereTo, Message) {
         let id = token.id.clone();
@@ -771,19 +780,11 @@ impl Host {
         &self,
         token: &ResourceToken,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
     ) -> (WhereTo, Message) {
         let rg = cluster.get_resource_group(&token.id);
 
-        // If the resource is known to be stopped at the partner, then we can confidently update
-        // the overall status to stopped if it's stopped here as well. But if the resource state is
-        // unknown on the partner, the overall resource state must remain unknown.
-        let update_status_if_stopped = rg.is_stopped_at_location(token.location.swap());
-
-        match rg
-            .is_running_here(client, token.location, update_status_if_stopped)
-            .await
-        {
+        match rg.update_resources(client).await {
             Ok(is_running_here) => {
                 if is_running_here {
                     (WhereTo::Here, Message::ManageResourceGroup)
@@ -820,7 +821,7 @@ impl Host {
         &self,
         cluster: &Cluster,
         token: &ResourceToken,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
     ) -> (WhereTo, Message) {
         let rg = cluster.get_resource_group(&token.id);
 
@@ -863,7 +864,7 @@ impl Host {
         state: &mut HostState,
         cluster: &'a Cluster,
         token: ResourceToken,
-        client: &'a ocf_resource_agent::Client,
+        client: &'a Client,
         task: Task,
     ) {
         if state.fence_in_progress() {
@@ -880,7 +881,7 @@ impl Host {
     async fn run_manage_task_with_cancellation(
         &self,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         token: ResourceToken,
         revoke: ResourceTaskCancel,
         task: Task,
@@ -926,7 +927,7 @@ impl Host {
     async fn run_manage_task(
         &self,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         token: &ResourceToken,
         task: Task,
     ) -> (WhereTo, Message) {

@@ -1,21 +1,26 @@
 hosts:
 - hostname: 127.0.0.1:8004
-  resources:
-    test_mgt:
-      kind: lustre/Lustre
-      parameters:
-        target: test_mgt
-        mountpoint: /mnt/test_mgt
-        type: mgt
-      requires: test_zpool
-    test_zpool:
-      kind: heartbeat/ZFS
-      parameters:
-        pool: test_zpool
-      requires: null
   fence_agent: fence_test
   fence_parameters:
-    test_id: fencing
     target: fence_mds00
-failover_pairs: null
+    test_id: fencing
 
+resources:
+- name: test_zpool
+  kind: heartbeat/zfs
+  parameters:
+    pool: test_zpool
+  dependents:
+  - test_mgt
+- name: test_mgt
+  kind: lustre/lustre
+  parameters:
+    target: test_mgt
+    mountpoint: /mnt/test_mgt
+    type: mgt
+  dependents: []
+
+resource_groups:
+- root: test_zpool
+  home_host: 127.0.0.1:8004
+  failover_hosts: []
