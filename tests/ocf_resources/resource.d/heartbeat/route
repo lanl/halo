@@ -1,0 +1,5 @@
+#!/bin/bash
+
+generic_resource_script=$(dirname "$0")/generic_resource
+
+bash $generic_resource_script $1 route $OCF_RESKEY_route
