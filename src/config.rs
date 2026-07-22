@@ -72,6 +72,54 @@ pub struct Resource2 {
     pub dependents: Vec<String>,
 }
 
+impl Resource2 {
+    pub fn new_zpool(pool: String) -> Self {
+        Self {
+            name: pool.clone(),
+            kind: "heartbeat/ZFS".to_string(),
+            parameters: HashMap::from([("pool".to_string(), pool)]),
+            dependents: vec![],
+        }
+    }
+
+    /// Given a line of output from the `mount` command, parses it into a Lustre Resource.
+    pub fn new_lustre(mount_output: &str) -> HandledResult<Self> {
+        let mut tokens = mount_output.split_whitespace();
+
+        let device = tokens.next().unwrap();
+        let mountpoint = tokens.nth(1).unwrap();
+
+        let opts = tokens.nth(2).unwrap();
+        let opts = opts.trim_matches(|c| c == '(' || c == ')').split(',');
+        let mut kind: Option<String> = None;
+        for opt in opts {
+            if opt.starts_with("svname=") {
+                if opt.contains("MDT") {
+                    kind = Some("mdt".to_string());
+                } else if opt.contains("MGS") {
+                    kind = Some("mgs".to_string());
+                } else if opt.contains("OST") {
+                    kind = Some("ost".to_string());
+                }
+            }
+        }
+        let Some(kind) = kind else {
+            eprintln!("could not parse lustre mount line: '{mount_output}'");
+            return handled_error();
+        };
+        Ok(Self {
+            name: device.to_string(),
+            kind: "lustre/Lustre".to_string(),
+            parameters: HashMap::from([
+                ("mountpoint".to_string(), mountpoint.to_string()),
+                ("target".to_string(), device.to_string()),
+                ("type".to_string(), kind.to_string()),
+            ]),
+            dependents: vec![],
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub hosts: Vec<Host>,
@@ -103,51 +151,4 @@ pub struct Resource {
     /// Each resource is allowed to specify a single dependency. The named resource must be started
     /// before this one.
     pub requires: Option<String>,
-}
-
-impl Resource {
-    pub fn new_zpool(pool: String) -> Self {
-        Self {
-            kind: "heartbeat/ZFS".to_string(),
-            parameters: HashMap::from([("pool".to_string(), pool)]),
-            requires: None,
-        }
-    }
-
-    /// Given a line of output from the `mount` command, parses it into a Lustre Resource.
-    pub fn new_lustre(mount_output: &str) -> HandledResult<Self> {
-        let mut tokens = mount_output.split_whitespace();
-
-        let device = tokens.next().unwrap();
-        let zpool = device.split('/').next().unwrap();
-        let mountpoint = tokens.nth(1).unwrap();
-
-        let opts = tokens.nth(2).unwrap();
-        let opts = opts.trim_matches(|c| c == '(' || c == ')').split(',');
-        let mut kind: Option<String> = None;
-        for opt in opts {
-            if opt.starts_with("svname=") {
-                if opt.contains("MDT") {
-                    kind = Some("mdt".to_string());
-                } else if opt.contains("MGS") {
-                    kind = Some("mgs".to_string());
-                } else if opt.contains("OST") {
-                    kind = Some("ost".to_string());
-                }
-            }
-        }
-        let Some(kind) = kind else {
-            eprintln!("could not parse lustre mount line: '{mount_output}'");
-            return handled_error();
-        };
-        Ok(Self {
-            kind: "lustre/Lustre".to_string(),
-            parameters: HashMap::from([
-                ("mountpoint".to_string(), mountpoint.to_string()),
-                ("target".to_string(), device.to_string()),
-                ("type".to_string(), kind.to_string()),
-            ]),
-            requires: Some(zpool.to_string()),
-        })
-    }
 }
