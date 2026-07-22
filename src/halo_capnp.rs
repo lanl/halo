@@ -5,7 +5,7 @@ use std::{env, io};
 
 use futures::AsyncReadExt;
 
-use crate::{cluster, remote::ocf, resource::Resource};
+use crate::{cluster, host, remote::ocf, resource::Resource};
 
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
@@ -45,9 +45,10 @@ pub enum AgentReply {
 /// the operation was attempted or what the outcome was if it was attempted.
 pub async fn remote_ocf_operation_given_client(
     res: &Resource,
-    client: &ocf_resource_agent::Client,
+    client: &host::Client,
     op: ocf_resource_agent::Operation,
 ) -> Result<AgentReply, capnp::Error> {
+    let client = &client.client;
     let mut request = client.operation_request();
     prep_request(&mut request, res, op);
 

@@ -134,11 +134,7 @@ impl ResourceGroup {
     ///   - The root resource is discovered to be stopped, and the resource group is unmanaged: it
     ///     returns back to the host management code so that the host can begin checing the
     ///     failover partner to see if the resource was started there (manual failover).
-    pub async fn manage_loop(
-        &self,
-        client: &ocf_resource_agent::Client,
-        loc: Location,
-    ) -> Result<(), ManagementError> {
+    pub async fn manage_loop(&self, client: &Client, loc: Location) -> Result<(), ManagementError> {
         loop {
             self.update_resources(client, loc).await?;
             match self.get_overall_status() {
@@ -165,7 +161,7 @@ impl ResourceGroup {
     /// will exit with Ok(()) if the entire resource group has stopped.
     pub async fn observe_loop(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         exit_if_resource_stopped: bool,
         loc: Location,
     ) -> Result<(), ManagementError> {
@@ -195,18 +191,14 @@ impl ResourceGroup {
     ///   status to the appropriate value to indicate the kind of error returned.
     async fn update_resources(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         loc: Location,
     ) -> Result<(), ManagementError> {
         self.is_running_here(client, loc, true).await.map(|_| ())
     }
 
     /// Attempt to start the resources in this resource group on the given location.
-    async fn start_resources(
-        &self,
-        client: &ocf_resource_agent::Client,
-        loc: Location,
-    ) -> Result<(), ManagementError> {
+    async fn start_resources(&self, client: &Client, loc: Location) -> Result<(), ManagementError> {
         let res = self.root.start_if_needed_recursive(client, loc).await;
 
         match res {
@@ -219,10 +211,7 @@ impl ResourceGroup {
     }
 
     /// Attempt to stop the resources in this resource group.
-    pub async fn stop_resources(
-        &self,
-        client: &ocf_resource_agent::Client,
-    ) -> Result<(), ManagementError> {
+    pub async fn stop_resources(&self, client: &Client) -> Result<(), ManagementError> {
         let loc = match self.root.status() {
             ResourceStatus::RunningOnHome => Some(Location::Home),
             ResourceStatus::RunningOnAway => Some(Location::Away),
@@ -347,7 +336,7 @@ impl ResourceGroup {
     /// the result of the root resource to determine the "overall" status.
     pub async fn is_running_here(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         loc: Location,
         update_status_if_stopped: bool,
     ) -> Result<bool, ManagementError> {
@@ -443,7 +432,7 @@ impl Resource {
     /// This method checks if the resource is running on the system connected via the given Client.
     pub async fn update_status(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         loc: Location,
         update_status_if_stopped: bool,
     ) -> Result<(), ManagementError> {
@@ -479,7 +468,7 @@ impl Resource {
     /// Updates the status of each resource based on the outcome of the start attempt.
     async fn start_if_needed_recursive(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         loc: Location,
     ) -> Result<(), ManagementError> {
         // If this resource is already running, don't bother doing anything:
@@ -533,10 +522,7 @@ impl Resource {
         get_worst_error(future::join_all(futures).await.into_iter())
     }
 
-    async fn stop_recursive(
-        &self,
-        client: &ocf_resource_agent::Client,
-    ) -> Result<(), ManagementError> {
+    async fn stop_recursive(&self, client: &Client) -> Result<(), ManagementError> {
         let results = self.dependents.iter().map(|r| r.stop_recursive(client));
 
         get_worst_error(future::join_all(results).await.into_iter())?;
@@ -576,21 +562,18 @@ impl Resource {
     }
 
     /// Perform a monitor RPC for this resource given a client.
-    async fn monitor(
-        &self,
-        client: &ocf_resource_agent::Client,
-    ) -> Result<AgentReply, capnp::Error> {
+    async fn monitor(&self, client: &Client) -> Result<AgentReply, capnp::Error> {
         remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Monitor)
             .await
     }
 
     /// Perform a start RPC for this resource given a client.
-    async fn start(&self, client: &ocf_resource_agent::Client) -> Result<AgentReply, capnp::Error> {
+    async fn start(&self, client: &Client) -> Result<AgentReply, capnp::Error> {
         remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Start).await
     }
 
     /// Perform a stop RPC for this resource given a client.
-    async fn stop(&self, client: &ocf_resource_agent::Client) -> Result<AgentReply, capnp::Error> {
+    async fn stop(&self, client: &Client) -> Result<AgentReply, capnp::Error> {
         remote_ocf_operation_given_client(self, client, ocf_resource_agent::Operation::Stop).await
     }
 

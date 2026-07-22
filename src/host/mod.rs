@@ -80,6 +80,14 @@ pub enum FenceResult {
     WritingStateRecordFailed,
 }
 
+pub struct Client {
+    /// The client object used to talk to the remote agent.
+    pub client: ocf_resource_agent::Client,
+
+    /// The ID (hostname or test ID) of the host.
+    pub name: String,
+}
+
 /// A server on which services can run.
 #[derive(Debug)]
 pub struct Host {
@@ -253,13 +261,17 @@ impl Host {
         *self.fence_attempted.lock().unwrap() = fenced;
     }
 
-    async fn get_client(&self, cluster: &Cluster) -> io::Result<ocf_resource_agent::Client> {
+    async fn get_client(&self, cluster: &Cluster) -> io::Result<Client> {
         let client = halo_capnp::get_client(&self.address(), cluster.tls_args.as_ref()).await;
         match client {
             Ok(_) => self.set_connected(true),
             Err(_) => self.set_connected(false),
         };
-        client
+
+        Ok(Client {
+            client: client?,
+            name: self.id(),
+        })
     }
 
     pub async fn update_activation_status(
