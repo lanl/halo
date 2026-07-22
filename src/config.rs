@@ -8,14 +8,14 @@ use serde::{Deserialize, Serialize};
 use crate::{handled_error, HandledResult};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Config2 {
-    pub hosts: Vec<Host2>,
-    pub resources: Vec<Resource2>,
+pub struct Config {
+    pub hosts: Vec<Host>,
+    pub resources: Vec<Resource>,
     pub resource_groups: Vec<ResourceGroup>,
 }
 
-impl Config2 {
-    pub fn get_resource(&self, name: &str) -> &Resource2 {
+impl Config {
+    pub fn get_resource(&self, name: &str) -> &Resource {
         for res in &self.resources {
             if res.name == name {
                 return res;
@@ -44,7 +44,7 @@ impl Config2 {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Host2 {
+pub struct Host {
     /// Hostname or IP address, with an optional port suffix.
     pub hostname: String,
 
@@ -62,8 +62,8 @@ pub struct ResourceGroup {
     pub failover_hosts: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Resource2 {
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Resource {
     pub name: String,
     pub kind: String,
 
@@ -72,40 +72,7 @@ pub struct Resource2 {
     pub dependents: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Config {
-    pub hosts: Vec<Host>,
-    pub failover_pairs: Option<Vec<Vec<String>>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Host {
-    pub hostname: String,
-
-    /// Resources should be given a unique identifier to identify them in this hashmap.
-    pub resources: HashMap<String, Resource>,
-
-    /// Name of the fence agent binary to use for fencing this host.
-    pub fence_agent: Option<String>,
-
-    /// Fence parameters for this host.
-    pub fence_parameters: Option<HashMap<String, String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Resource {
-    /// An OCF Resource Agent identifier, such as "heartbeat/ZFS" or "lustre/Lustre"
-    pub kind: String,
-
-    /// The resource parameters, which are to be passed to the OCF Resource Agent.
-    pub parameters: HashMap<String, String>,
-
-    /// Each resource is allowed to specify a single dependency. The named resource must be started
-    /// before this one.
-    pub requires: Option<String>,
-}
-
-impl Resource2 {
+impl Resource {
     pub fn new_zpool(pool: String) -> Self {
         Self {
             name: pool.clone(),

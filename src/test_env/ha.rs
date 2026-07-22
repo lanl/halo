@@ -66,9 +66,9 @@ impl HaEnvironment {
     }
 
     pub fn get_resource_by_id(&self, resource_id: &str) -> &config::Resource {
-        for host in &self.config.hosts {
-            if let Some(resource) = host.resources.get(resource_id) {
-                return resource;
+        for res in &self.config.resources {
+            if res.name == resource_id {
+                return res;
             }
         }
 
@@ -333,13 +333,11 @@ impl Drop for HaEnvironment {
     /// When dropping the environment, make sure that no resources were "double-started"--that
     /// is, started on both hosts in a pair.
     fn drop(&mut self) {
-        for host in self.config.hosts.iter() {
-            for (id, resource) in host.resources.iter() {
-                if self.env.resource_is_started(resource, 0)
-                    && self.env.resource_is_started(resource, 1)
-                {
-                    panic!("Resource {} was double-started!", id)
-                }
+        for resource in self.config.resources.iter() {
+            if self.env.resource_is_started(resource, 0)
+                && self.env.resource_is_started(resource, 1)
+            {
+                panic!("Resource {} was double-started!", resource.name)
             }
         }
     }
@@ -349,38 +347,37 @@ impl Drop for HaEnvironment {
 fn ha_config(ports: [u16; 2], test_id: String) -> Config {
     let mut config = Config {
         hosts: Vec::new(),
-        failover_pairs: Some(vec![vec![
-            format!("127.0.0.1:{}", ports[0]),
-            format!("127.0.0.1:{}", ports[1]),
-        ]]),
+        resources: Vec::new(),
+        resource_groups: Vec::new(),
     };
 
-    for (i, port) in ports.iter().enumerate() {
+    for i in 0..2 {
         let zpool_name = || -> String { format!("zpool_{i}") };
         let lustre_name = || -> String { format!("mdt_{i}") };
+        let my_hostname = || -> String { format!("127.0.0.1:{}", ports[i]) };
+        let partner_hostname =
+            || -> String { format!("127.0.0.1:{}", if i == 0 { ports[1] } else { ports[0] }) };
 
         let root_resource = config::Resource {
+            name: zpool_name(),
             kind: "heartbeat/ZFS".to_string(),
             parameters: HashMap::from([("pool".to_string(), zpool_name())]),
-            requires: None,
+            dependents: vec![lustre_name()],
         };
 
         let child_resource = config::Resource {
+            name: lustre_name(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
                 ("mountpoint".to_string(), lustre_name()),
                 ("target".to_string(), lustre_name()),
                 ("kind".to_string(), "mdt".to_string()),
             ]),
-            requires: Some(zpool_name()),
+            dependents: Vec::new(),
         };
 
         let host = config::Host {
-            hostname: format!("127.0.0.1:{}", port),
-            resources: HashMap::from([
-                (zpool_name(), root_resource),
-                (lustre_name(), child_resource),
-            ]),
+            hostname: my_hostname(),
             fence_agent: Some("fence_test".to_string()),
             fence_parameters: Some(HashMap::from([
                 ("target".to_string(), format!("{test_id}_{i}")),
@@ -388,7 +385,16 @@ fn ha_config(ports: [u16; 2], test_id: String) -> Config {
             ])),
         };
 
+        let resource_group = config::ResourceGroup {
+            home_host: my_hostname(),
+            failover_hosts: vec![partner_hostname()],
+            root: zpool_name(),
+        };
+
         config.hosts.push(host);
+        config.resources.push(root_resource);
+        config.resources.push(child_resource);
+        config.resource_groups.push(resource_group);
     }
 
     config
