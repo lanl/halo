@@ -1,0 +1,7 @@
+#!/bin/bash
+
+generic_resource_script=$(dirname "$0")/generic_resource
+
+param=$(echo $OCF_RESKEY_directory | tr / _)
+
+bash $generic_resource_script $1 fs $param
