@@ -6,7 +6,7 @@ use std::{collections::HashMap, fs, io, io::Write, net, sync::Mutex};
 use crate::{
     cluster::Cluster,
     commands,
-    config::{self, Config},
+    config::{self, Config2},
     manager::{self, http},
     resource::Resource,
     HandledResult,
@@ -144,7 +144,7 @@ impl TestEnvironment {
     }
 
     /// Writes out the given config as a yaml file in the tests private directory.
-    pub fn write_out_config(&self, config: &Config) {
+    pub fn write_out_config(&self, config: &Config2) {
         let mut config_file =
             std::fs::File::create(format!("{}/config.yaml", self.private_dir_path)).unwrap();
         let contents = serde_yaml::to_string(&config).unwrap();
@@ -287,27 +287,27 @@ impl TestEnvironment {
 
     /// Simulate a resource stopping by removing the state file that the test OCF resource
     /// script checks to determine if the resource is running.
-    pub fn stop_resource(&self, resource: &config::Resource, agent: usize) {
+    pub fn stop_resource(&self, resource: &config::Resource2, agent: usize) {
         let path = self.get_resource_path(resource, agent);
         std::fs::remove_file(&path).expect(&format!("failed to remove file '{}'", path));
     }
 
     /// Simulate a resource startin by creating the state file that the test OCF resource
     /// script checks to determine if the resource is running.
-    pub fn start_resource(&self, resource: &config::Resource, agent: usize) {
+    pub fn start_resource(&self, resource: &config::Resource2, agent: usize) {
         let path = self.get_resource_path(resource, agent);
         std::fs::File::create(&path).expect(&format!("failed to create file '{}'", path));
     }
 
     /// Returns true if a resource is "started", meaning its state file exists for the given agent.
-    pub fn resource_is_started(&self, resource: &config::Resource, agent: usize) -> bool {
+    pub fn resource_is_started(&self, resource: &config::Resource2, agent: usize) -> bool {
         let path = self.get_resource_path(resource, agent);
         std::fs::exists(path).unwrap()
     }
 
     /// Get the path to the "resource state file" used in a test -- that is, the file whose
     /// presence indicates the resource is running and whose absence indicates it is stopped.
-    fn get_resource_path(&self, resource: &config::Resource, agent: usize) -> String {
+    fn get_resource_path(&self, resource: &config::Resource2, agent: usize) -> String {
         let path = match resource.kind.as_str() {
             "heartbeat/ZFS" => &format!("zfs.{}", resource.parameters.get("pool").unwrap()),
             "lustre/Lustre" => &format!(
@@ -400,7 +400,7 @@ pub struct HaEnvironment {
     env: TestEnvironment,
     ports: [u16; 2],
     test_id: String,
-    config: Config,
+    config: Config2,
 }
 
 impl HaEnvironment {
@@ -448,10 +448,10 @@ impl HaEnvironment {
         self.env.socket_path()
     }
 
-    pub fn get_resource_by_id(&self, resource_id: &str) -> &config::Resource {
-        for host in &self.config.hosts {
-            if let Some(resource) = host.resources.get(resource_id) {
-                return resource;
+    pub fn get_resource_by_id(&self, resource_id: &str) -> &config::Resource2 {
+        for res in &self.config.resources {
+            if res.name == resource_id {
+                return res;
             }
         }
 
@@ -540,13 +540,11 @@ impl Drop for HaEnvironment {
     /// When dropping the environment, make sure that no resources were "double-started"--that
     /// is, started on both hosts in a pair.
     fn drop(&mut self) {
-        for host in self.config.hosts.iter() {
-            for (id, resource) in host.resources.iter() {
-                if self.env.resource_is_started(resource, 0)
-                    && self.env.resource_is_started(resource, 1)
-                {
-                    panic!("Resource {} was double-started!", id)
-                }
+        for resource in self.config.resources.iter() {
+            if self.env.resource_is_started(resource, 0)
+                && self.env.resource_is_started(resource, 1)
+            {
+                panic!("Resource {} was double-started!", resource.name)
             }
         }
     }
@@ -562,41 +560,40 @@ fn get_ports() -> [u16; 2] {
 }
 
 /// Creates an HA-pair config for use in the ha tests.
-fn ha_config(ports: [u16; 2], test_id: String) -> Config {
-    let mut config = Config {
+fn ha_config(ports: [u16; 2], test_id: String) -> Config2 {
+    let mut config = Config2 {
         hosts: Vec::new(),
-        failover_pairs: Some(vec![vec![
-            format!("127.0.0.1:{}", ports[0]),
-            format!("127.0.0.1:{}", ports[1]),
-        ]]),
+        resources: Vec::new(),
+        resource_groups: Vec::new(),
     };
 
-    for (i, port) in ports.iter().enumerate() {
+    for i in 0..2 {
         let zpool_name = || -> String { format!("zpool_{i}") };
         let lustre_name = || -> String { format!("mdt_{i}") };
+        let my_hostname = || -> String { format!("127.0.0.1:{}", ports[i]) };
+        let partner_hostname =
+            || -> String { format!("127.0.0.1:{}", if i == 0 { ports[1] } else { ports[0] }) };
 
-        let root_resource = config::Resource {
+        let root_resource = config::Resource2 {
+            name: zpool_name(),
             kind: "heartbeat/ZFS".to_string(),
             parameters: HashMap::from([("pool".to_string(), zpool_name())]),
-            requires: None,
+            dependents: vec![lustre_name()],
         };
 
-        let child_resource = config::Resource {
+        let child_resource = config::Resource2 {
+            name: lustre_name(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
                 ("mountpoint".to_string(), lustre_name()),
                 ("target".to_string(), lustre_name()),
                 ("kind".to_string(), "mdt".to_string()),
             ]),
-            requires: Some(zpool_name()),
+            dependents: Vec::new(),
         };
 
-        let host = config::Host {
-            hostname: format!("127.0.0.1:{}", port),
-            resources: HashMap::from([
-                (zpool_name(), root_resource),
-                (lustre_name(), child_resource),
-            ]),
+        let host = config::Host2 {
+            hostname: my_hostname(),
             fence_agent: Some("fence_test".to_string()),
             fence_parameters: Some(HashMap::from([
                 ("target".to_string(), format!("{test_id}_{i}")),
@@ -604,7 +601,16 @@ fn ha_config(ports: [u16; 2], test_id: String) -> Config {
             ])),
         };
 
+        let resource_group = config::ResourceGroup {
+            home_host: my_hostname(),
+            failover_hosts: vec![partner_hostname()],
+            root: zpool_name(),
+        };
+
         config.hosts.push(host);
+        config.resources.push(root_resource);
+        config.resources.push(child_resource);
+        config.resource_groups.push(resource_group);
     }
 
     config

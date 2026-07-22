@@ -62,7 +62,7 @@ pub struct ResourceGroup {
     pub failover_hosts: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Resource2 {
     pub name: String,
     pub kind: String,
@@ -118,37 +118,4 @@ impl Resource2 {
             dependents: vec![],
         })
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Config {
-    pub hosts: Vec<Host>,
-    pub failover_pairs: Option<Vec<Vec<String>>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Host {
-    pub hostname: String,
-
-    /// Resources should be given a unique identifier to identify them in this hashmap.
-    pub resources: HashMap<String, Resource>,
-
-    /// Name of the fence agent binary to use for fencing this host.
-    pub fence_agent: Option<String>,
-
-    /// Fence parameters for this host.
-    pub fence_parameters: Option<HashMap<String, String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Resource {
-    /// An OCF Resource Agent identifier, such as "heartbeat/ZFS" or "lustre/Lustre"
-    pub kind: String,
-
-    /// The resource parameters, which are to be passed to the OCF Resource Agent.
-    pub parameters: HashMap<String, String>,
-
-    /// Each resource is allowed to specify a single dependency. The named resource must be started
-    /// before this one.
-    pub requires: Option<String>,
 }

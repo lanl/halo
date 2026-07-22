@@ -443,24 +443,6 @@ impl ResourceState {
 }
 
 impl Resource {
-    pub fn from_config(
-        res: crate::config::Resource,
-        dependents: Vec<Resource>,
-        id: String,
-        args: manager::Cli,
-        host_list: Vec<String>,
-    ) -> Self {
-        Resource {
-            kind: res.kind,
-            parameters: res.parameters,
-            dependents,
-            _count: 1,
-            state: ResourceState::new(host_list),
-            id,
-            args,
-        }
-    }
-
     pub fn from_config2(
         res: &crate::config::Resource2,
         config: &crate::config::Config2,
