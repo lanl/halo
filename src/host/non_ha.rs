@@ -171,7 +171,7 @@ impl Host {
 
     async fn remote_connected_loop_non_ha(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         cluster: &Cluster,
         state: &mut HostState,
     ) {
@@ -241,12 +241,7 @@ impl Host {
         state.outstanding_resource_tasks.is_empty()
     }
 
-    async fn observe_resource_group(
-        &self,
-        cluster: &Cluster,
-        rg_name: &str,
-        client: &ocf_resource_agent::Client,
-    ) {
+    async fn observe_resource_group(&self, cluster: &Cluster, rg_name: &str, client: &Client) {
         let rg = cluster.get_resource_group(rg_name);
         match rg
             .observe_loop(client, false, Location::Home)
@@ -267,7 +262,7 @@ impl Host {
         &self,
         cluster: &Cluster,
         token: ResourceToken,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         revoke: ResourceTaskCancel,
     ) -> HostMessage {
         let rg = cluster.get_resource_group(&token.id);
