@@ -337,7 +337,7 @@ impl Host {
 
     async fn remote_connected_loop(
         &self,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         cluster: &Cluster,
         state: &mut HostState,
     ) {
@@ -512,7 +512,7 @@ impl Host {
         &self,
         state: &mut HostState,
         cluster: &Arc<Cluster>,
-    ) -> Option<ocf_resource_agent::Client> {
+    ) -> Option<Client> {
         let fence_details =
             take(&mut state.fence_initiated).expect("Fence details must be set at this point.");
 
@@ -728,7 +728,7 @@ impl Host {
     async fn switch_host(
         &self,
         token: &ResourceToken,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         cluster: &Cluster,
     ) -> (WhereTo, Message) {
         let id = token.id.clone();
@@ -771,7 +771,7 @@ impl Host {
         &self,
         token: &ResourceToken,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
     ) -> (WhereTo, Message) {
         let rg = cluster.get_resource_group(&token.id);
 
@@ -820,7 +820,7 @@ impl Host {
         &self,
         cluster: &Cluster,
         token: &ResourceToken,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
     ) -> (WhereTo, Message) {
         let rg = cluster.get_resource_group(&token.id);
 
@@ -863,7 +863,7 @@ impl Host {
         state: &mut HostState,
         cluster: &'a Cluster,
         token: ResourceToken,
-        client: &'a ocf_resource_agent::Client,
+        client: &'a Client,
         task: Task,
     ) {
         if state.fence_in_progress() {
@@ -880,7 +880,7 @@ impl Host {
     async fn run_manage_task_with_cancellation(
         &self,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         token: ResourceToken,
         revoke: ResourceTaskCancel,
         task: Task,
@@ -926,7 +926,7 @@ impl Host {
     async fn run_manage_task(
         &self,
         cluster: &Cluster,
-        client: &ocf_resource_agent::Client,
+        client: &Client,
         token: &ResourceToken,
         task: Task,
     ) -> (WhereTo, Message) {
