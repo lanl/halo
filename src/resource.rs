@@ -474,26 +474,8 @@ impl ResourceState {
 
 impl Resource {
     pub fn from_config(
-        res: crate::config::Resource,
-        dependents: Vec<Resource>,
-        id: String,
-        args: manager::Cli,
-        host_list: Vec<HostId>,
-    ) -> Self {
-        Resource {
-            kind: res.kind,
-            parameters: res.parameters,
-            dependents,
-            count: 1,
-            state: ResourceState::new(host_list),
-            id: ResourceId(id),
-            args,
-        }
-    }
-
-    pub fn from_config2(
-        res: &crate::config::Resource2,
-        config: &crate::config::Config2,
+        res: &crate::config::Resource,
+        config: &crate::config::Config,
         status_list: &HashMap<String, (usize, ResourceState)>,
         args: manager::Cli,
     ) -> Self {
@@ -502,7 +484,7 @@ impl Resource {
             .iter()
             .map(|r| {
                 let r = config.get_resource(r);
-                Self::from_config2(r, config, status_list, args.clone())
+                Self::from_config(r, config, status_list, args.clone())
             })
             .collect();
 

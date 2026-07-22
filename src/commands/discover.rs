@@ -17,7 +17,7 @@ pub struct DiscoverArgs {
 }
 
 pub fn discover(args: &DiscoverArgs) -> HandledResult<()> {
-    let mut config = config::Config2 {
+    let mut config = config::Config {
         hosts: Vec::new(),
         resources: Vec::new(),
         resource_groups: Vec::new(),
@@ -42,8 +42,8 @@ fn discover_one_host(
     hostname: &str,
     verbose: bool,
 ) -> HandledResult<(
-    config::Host2,
-    Vec<config::Resource2>,
+    config::Host,
+    Vec<config::Resource>,
     Vec<config::ResourceGroup>,
 )> {
     let lustre_output = get_lustre_output(hostname, verbose)?;
@@ -75,7 +75,7 @@ fn discover_one_host(
         .chain(lustre_resources)
         .collect();
 
-    let host = config::Host2 {
+    let host = config::Host {
         hostname: hostname.to_string(),
         fence_agent: None,
         fence_parameters: None,
@@ -84,11 +84,11 @@ fn discover_one_host(
     Ok((host, resources, resource_groups))
 }
 
-fn parse_lustre_output(output: String) -> HandledResult<Vec<config::Resource2>> {
+fn parse_lustre_output(output: String) -> HandledResult<Vec<config::Resource>> {
     let mut resources = Vec::new();
 
     for line in output.lines() {
-        resources.push(config::Resource2::new_lustre(line)?);
+        resources.push(config::Resource::new_lustre(line)?);
     }
 
     Ok(resources)
@@ -115,10 +115,10 @@ fn get_lustre_output(hostname: &str, verbose: bool) -> HandledResult<String> {
     Ok(String::from_utf8(output.stdout).unwrap())
 }
 
-fn parse_zpool_output(output: String) -> Vec<config::Resource2> {
+fn parse_zpool_output(output: String) -> Vec<config::Resource> {
     output
         .lines()
-        .map(|line| config::Resource2::new_zpool(line.to_string()))
+        .map(|line| config::Resource::new_zpool(line.to_string()))
         .collect()
 }
 
@@ -157,8 +157,8 @@ mod tests {
         assert_eq!(resources.len(), 2);
 
         let goal = vec![
-            Resource2::new_zpool("zpool_1".to_string()),
-            Resource2::new_zpool("zpool_2".to_string()),
+            Resource::new_zpool("zpool_1".to_string()),
+            Resource::new_zpool("zpool_2".to_string()),
         ];
 
         assert_eq!(resources, goal);
@@ -172,7 +172,7 @@ mod tests {
         let resources = parse_lustre_output(output.to_string()).unwrap();
         assert_eq!(resources.len(), 2);
 
-        let goal_1 = Resource2 {
+        let goal_1 = Resource {
             name: "oss01e0/ost2".to_string(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
@@ -182,7 +182,7 @@ mod tests {
             ]),
             dependents: vec![],
         };
-        let goal_2 = Resource2 {
+        let goal_2 = Resource {
             name: "oss01e1/ost3".to_string(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
