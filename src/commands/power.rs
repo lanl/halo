@@ -73,7 +73,7 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
     let hosts: Vec<Host> = args
         .hostnames
         .iter()
-        .map(|host| Host::new(host, None, Some(fence_agent.clone())))
+        .map(|host| Host::new(host.clone(), Some(fence_agent.clone())))
         .collect();
 
     let mut error_seen = false;

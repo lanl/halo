@@ -84,6 +84,10 @@ pub enum FenceResult {
 #[derive(Debug)]
 pub struct Host {
     address: HostAddress,
+
+    /// The unprocessed host name as it appears in the config file, not split out into separate
+    /// name and port.
+    raw_name: String,
     fence_agent: Option<FenceAgent>,
     failover_partner: OnceLock<Option<Arc<Host>>>,
 
@@ -108,7 +112,8 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(name: &str, port: Option<u16>, fence_agent: Option<FenceAgent>) -> Self {
+    pub fn new(raw_name: String, fence_agent: Option<FenceAgent>) -> Self {
+        let (name, port) = Self::get_host_port(&raw_name);
         let (sender, receiver) = mpsc::channel(1024);
         Host {
             address: HostAddress {
@@ -118,6 +123,7 @@ impl Host {
                     None => crate::remote_port(),
                 },
             },
+            raw_name,
             fence_agent,
             failover_partner: OnceLock::new(),
             sender,
@@ -131,12 +137,11 @@ impl Host {
 
     /// Create a Host object from a given config::Host object.
     pub fn from_config(config: &crate::config::Host) -> Self {
-        let (name, port) = Self::get_host_port(&config.hostname);
         let fence_agent = config
             .fence_agent
             .as_ref()
             .map(|agent| FenceAgent::from_params(agent, &config.fence_parameters));
-        Host::new(name, port, fence_agent)
+        Host::new(config.hostname.clone(), fence_agent)
     }
 
     /// Given a string that may be of the form "<address>:port number>", split it out into the address
@@ -218,6 +223,10 @@ impl Host {
         } else {
             self.name().to_string()
         }
+    }
+
+    pub fn raw_name(&self) -> &str {
+        &self.raw_name
     }
 
     pub fn set_active(&self, active: bool) {
