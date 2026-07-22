@@ -105,12 +105,13 @@ pub struct Resource {
     pub requires: Option<String>,
 }
 
-impl Resource {
+impl Resource2 {
     pub fn new_zpool(pool: String) -> Self {
         Self {
+            name: pool.clone(),
             kind: "heartbeat/ZFS".to_string(),
             parameters: HashMap::from([("pool".to_string(), pool)]),
-            requires: None,
+            dependents: vec![],
         }
     }
 
@@ -119,7 +120,6 @@ impl Resource {
         let mut tokens = mount_output.split_whitespace();
 
         let device = tokens.next().unwrap();
-        let zpool = device.split('/').next().unwrap();
         let mountpoint = tokens.nth(1).unwrap();
 
         let opts = tokens.nth(2).unwrap();
@@ -141,13 +141,14 @@ impl Resource {
             return handled_error();
         };
         Ok(Self {
+            name: device.to_string(),
             kind: "lustre/Lustre".to_string(),
             parameters: HashMap::from([
                 ("mountpoint".to_string(), mountpoint.to_string()),
                 ("target".to_string(), device.to_string()),
                 ("type".to_string(), kind.to_string()),
             ]),
-            requires: Some(zpool.to_string()),
+            dependents: vec![],
         })
     }
 }
