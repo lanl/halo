@@ -80,11 +80,11 @@ impl Cluster {
         // in the cluster.
         let mut unapplied_resources: HashSet<String> = state.delta.resources();
         for cluster_rg in self.resource_groups() {
-            let cluster_rg_id = cluster_rg.id();
+            let ResourceId(cluster_rg_id) = cluster_rg.id();
 
-            if let Some(managed) = state.delta.resources_managed.get(cluster_rg_id) {
+            if let Some(managed) = state.delta.resources_managed.get(&cluster_rg_id) {
                 cluster_rg.set_managed(*managed);
-                unapplied_resources.remove(cluster_rg_id);
+                unapplied_resources.remove(&cluster_rg_id);
             }
         }
         for rg in &unapplied_resources {
@@ -127,10 +127,10 @@ impl Cluster {
             .filter(|rg| std::ptr::eq(Arc::as_ptr(rg.home_node()), host))
     }
 
-    pub fn get_resource_group(&self, id: &str) -> &ResourceGroup {
+    pub fn get_resource_group(&self, id: &ResourceId) -> &ResourceGroup {
         self.resource_groups
             .iter()
-            .find(|rg| rg.id() == id)
+            .find(|rg| &rg.id() == id)
             .unwrap()
     }
 

@@ -18,7 +18,7 @@ use {
 use crate::{
     cluster::Cluster,
     halo_capnp::{self, *},
-    resource::Location,
+    resource::{Location, ResourceId},
     state::{Event, Record},
     Handle, HandledResult,
 };
@@ -376,7 +376,7 @@ impl Host {
         cluster
             .host_home_resource_groups(self)
             .map(|rg| ResourceToken {
-                id: rg.id().to_string(),
+                id: rg.id().clone(),
                 location: Location::Home,
             })
             .collect()
@@ -415,7 +415,7 @@ enum HostMessage {
     /// Normally this would be because the child task passed the ResourceToken over to the partner
     /// host. (If it hadn't passed on the ResourceToken, then the ResourceToken would need to be
     /// returned in a HostMessage::Resource.)
-    TaskDone(String),
+    TaskDone(ResourceId),
 
     /// Used to indicate that a task ended but it sent another message which should be processed.
     MessageFollows,
@@ -471,7 +471,7 @@ enum WhereTo {
 #[derive(Clone)]
 struct ResourceTaskCancel {
     /// The ID of the ResourceGroup that this Cancel object is for.
-    id: String,
+    id: ResourceId,
 
     /// A notification mechanism used to tell a resource group management task to stop because
     /// connection was lost to the remote agent, and a fence action might be initiated.
@@ -483,7 +483,7 @@ struct ResourceTaskCancel {
 }
 
 impl ResourceTaskCancel {
-    fn new(id: String) -> Self {
+    fn new(id: ResourceId) -> Self {
         Self {
             id,
             lost_connection: Rc::new(Notify::new()),
@@ -508,7 +508,7 @@ impl ResourceTaskCancel {
 /// that it is a runtime error for a ResourceGroup to transition to an unexpected state.
 #[derive(Debug)]
 struct ResourceToken {
-    id: String,
+    id: ResourceId,
     location: Location,
 }
 

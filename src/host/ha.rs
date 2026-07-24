@@ -68,10 +68,10 @@ impl HostState {
 
     /// When a ResourceGroup task exits, it needs to remove its ResourceTaskCancel object from
     /// outsanding_resource_tasks.
-    fn resource_task_exited(&mut self, id: &str) {
+    fn resource_task_exited(&mut self, id: &ResourceId) {
         let still_running = take(&mut self.outstanding_resource_tasks)
             .into_iter()
-            .filter(|task| task.id != id)
+            .filter(|task| &task.id != id)
             .collect();
 
         self.outstanding_resource_tasks = still_running;
@@ -107,14 +107,14 @@ impl HostState {
     /// Gets a task cancellation signal struct for a task with the given resource group id.
     /// If there's already a cancellation device in the collection of outstanding tasks, reuse it -
     /// otherwise, create a new one and store it.
-    fn get_cancellation_device(&mut self, id: &str) -> ResourceTaskCancel {
+    fn get_cancellation_device(&mut self, id: &ResourceId) -> ResourceTaskCancel {
         for revoke in &self.outstanding_resource_tasks {
-            if revoke.id == id {
+            if &revoke.id == id {
                 return revoke.clone();
             }
         }
 
-        let revoke = ResourceTaskCancel::new(id.to_string());
+        let revoke = ResourceTaskCancel::new(id.clone());
         self.outstanding_resource_tasks.push(revoke.clone());
         revoke
     }

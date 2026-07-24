@@ -13,6 +13,27 @@ use {
 
 use crate::{halo_capnp::*, host::*, manager, remote::ocf};
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ResourceId(pub String);
+
+impl std::fmt::Display for ResourceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl PartialEq<&str> for ResourceId {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<String> for ResourceId {
+    fn eq(&self, other: &String) -> bool {
+        &self.0 == other
+    }
+}
+
 #[derive(Debug)]
 pub enum ManagementError {
     /// An error that occured due an action failing unexpectedly, typically indicating a
@@ -113,8 +134,8 @@ impl ResourceGroup {
         }
     }
 
-    pub fn id(&self) -> &str {
-        &self.root.id
+    pub fn id(&self) -> ResourceId {
+        ResourceId(self.root.id.to_string())
     }
 
     pub fn home_node(&self) -> &Arc<Host> {
@@ -402,7 +423,7 @@ pub struct Resource {
     dependents: Vec<Resource>,
 
     /// Unique identifier for the resource.
-    pub id: String,
+    pub id: ResourceId,
 
     // TODO: better privacy here
     status: Mutex<ResourceStatus>,
@@ -424,7 +445,7 @@ impl Resource {
             status: Mutex::new(ResourceStatus::Unknown(
                 "Manager is starting up".to_string(),
             )),
-            id,
+            id: ResourceId(id),
             args,
         }
     }
