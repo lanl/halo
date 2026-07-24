@@ -119,7 +119,7 @@ impl ResourceJson {
         .to_string();
 
         Self {
-            id: res.id.clone(),
+            id: res.id.to_string(),
             kind: res.kind.clone(),
             parameters: res.parameters.clone(),
             status,
@@ -232,7 +232,7 @@ async fn set_managed(
     }
 
     for rg in cluster.resource_groups() {
-        if rg.id() == resource_id {
+        if rg.id() == resource_id.as_str() {
             warn!(
                 "Resource group {}: setting managed={}",
                 rg.id(),

@@ -12,7 +12,7 @@ use {
 
 use crate::{
     cluster::Cluster,
-    resource::{Location, ManagementError, ResourceStatus},
+    resource::{Location, ManagementError, ResourceId, ResourceStatus},
 };
 
 use super::*;
@@ -39,19 +39,19 @@ impl HostState {
         }
     }
 
-    fn resource_task_exited(&mut self, id: &str) {
+    fn resource_task_exited(&mut self, id: &ResourceId) {
         let still_running = take(&mut self.outstanding_resource_tasks)
             .into_iter()
-            .filter(|task| task.id != id)
+            .filter(|task| &task.id != id)
             .collect();
 
         self.outstanding_resource_tasks = still_running;
     }
 
-    fn copy_outstanding_cancel_token(&self, id: &str) -> ResourceTaskCancel {
+    fn copy_outstanding_cancel_token(&self, id: &ResourceId) -> ResourceTaskCancel {
         self.outstanding_resource_tasks
             .iter()
-            .find(|tok| tok.id == id)
+            .find(|tok| &tok.id == id)
             .expect("Must be called when a token is already stored for this resource.")
             .clone()
     }
@@ -241,8 +241,13 @@ impl Host {
         state.outstanding_resource_tasks.is_empty()
     }
 
-    async fn observe_resource_group(&self, cluster: &Cluster, rg_name: &str, client: &Client) {
-        let rg = cluster.get_resource_group(rg_name);
+    async fn observe_resource_group(
+        &self,
+        cluster: &Cluster,
+        rg_name: ResourceId,
+        client: &Client,
+    ) {
+        let rg = cluster.get_resource_group(&rg_name);
         match rg
             .observe_loop(client, false, Location::Home)
             .await

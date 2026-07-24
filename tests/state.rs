@@ -7,7 +7,7 @@ mod tests {
 
     use chrono::Local;
 
-    use halo_lib::{state::*, test_env::*};
+    use halo_lib::{resource::ResourceId, state::*, test_env::*};
 
     fn test_env_helper(test_id: &str) -> HaEnvironment {
         HaEnvironment::new(
@@ -70,7 +70,7 @@ mod tests {
 
         let host = cluster.get_host("127.0.0.1").unwrap();
         assert!(!host.active());
-        let rg = cluster.get_resource_group("test_zpool");
+        let rg = cluster.get_resource_group(&ResourceId("test_zpool".to_string()));
         assert!(!rg.get_managed());
     }
 
