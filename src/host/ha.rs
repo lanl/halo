@@ -637,7 +637,7 @@ impl Host {
         };
 
         if cluster
-            .write_record_nonblocking(Record::new(Event::Fence, self.id(), reason))
+            .write_record_nonblocking(Record::new(Event::Fence, self.id().to_string(), reason))
             .await
             .is_err()
         {
