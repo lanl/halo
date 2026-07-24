@@ -29,7 +29,7 @@ pub struct Cluster {
     /// The hosts in the Cluster are mapped by their ID, a unique identifier which is the hostname
     /// normally. However, in the test environment, it is a test-defined identifier since the
     /// hostname would not be a useful unique ID in the test environment.
-    hosts: HashMap<String, Arc<Host>>,
+    hosts: HashMap<HostId, Arc<Host>>,
 
     pub args: manager::Cli,
 
@@ -61,7 +61,7 @@ impl Cluster {
         let mut unapplied_hosts: HashSet<String> = state.delta.hosts();
 
         for cluster_host in self.hosts() {
-            let cluster_host_id = cluster_host.id();
+            let HostId(cluster_host_id) = cluster_host.id();
 
             if let Some(fenced) = state.delta.hosts_fenced.get(&cluster_host_id) {
                 cluster_host.set_fence_attempted(*fenced);
@@ -139,7 +139,7 @@ impl Cluster {
     }
 
     pub fn get_host(&self, name: &str) -> Option<&Arc<Host>> {
-        self.hosts.get(name)
+        self.hosts.get(&HostId(name.to_string()))
     }
 
     /// Create a Cluster given a path to a config file.

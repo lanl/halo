@@ -29,6 +29,15 @@ pub use power::{FenceAgent, FenceCommand, RedfishArgs};
 mod ha;
 mod non_ha;
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct HostId(pub String);
+
+impl std::fmt::Display for HostId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct HostAddress {
     name: String,
@@ -85,7 +94,7 @@ pub struct Client {
     pub client: ocf_resource_agent::Client,
 
     /// The ID (hostname or test ID) of the host.
-    pub name: String,
+    pub name: HostId,
 }
 
 /// A server on which services can run.
@@ -225,12 +234,14 @@ impl Host {
     /// Get a unique identifier for this host. Typically, this will just be the hostname, but in
     /// the test environment, where Hosts do not have a unique hostname, the fencing target is used
     /// instead as a unique ID.
-    pub fn id(&self) -> String {
-        if let Some(FenceAgent::Test(test_args)) = &self.fence_agent {
+    pub fn id(&self) -> HostId {
+        let id = if let Some(FenceAgent::Test(test_args)) = &self.fence_agent {
             test_args.target.to_string()
         } else {
             self.name().to_string()
-        }
+        };
+
+        HostId(id)
     }
 
     pub fn raw_name(&self) -> &str {
@@ -287,7 +298,7 @@ impl Host {
             Event::Deactivate
         };
         cluster
-            .write_record_nonblocking(Record::new(event, self.id(), comment))
+            .write_record_nonblocking(Record::new(event, self.id().to_string(), comment))
             .await?;
         if !activate {
             self.command(HostCommand::Deactivate).await;

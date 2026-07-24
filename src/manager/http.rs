@@ -174,7 +174,7 @@ pub struct HostJson {
 impl HostJson {
     fn build(host: &Host) -> Self {
         Self {
-            id: host.id(),
+            id: host.id().to_string(),
             active: host.active(),
             connected: host.connected(),
             fenced: host.fence_attempted(),
@@ -292,7 +292,11 @@ async fn host_post(
 
         host.set_fence_attempted(false);
         return match cluster
-            .write_record_nonblocking(Record::new(Event::FenceReset, host.id(), payload.comment))
+            .write_record_nonblocking(Record::new(
+                Event::FenceReset,
+                host.id().to_string(),
+                payload.comment,
+            ))
             .await
         {
             Ok(()) => Ok(()),
