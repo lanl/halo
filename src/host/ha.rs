@@ -668,11 +668,13 @@ impl Host {
 
     fn update_resource_groups_stopped(&self, cluster: &Cluster) {
         for rg in cluster.host_home_resource_groups(self) {
+            rg.remove_group_from_host(&self.id());
             rg.root
                 .set_status_recursive(ResourceStatus::Stopped, &self.id());
         }
 
         for rg in cluster.host_home_resource_groups(self.ha_failover_partner()) {
+            rg.remove_group_from_host(&self.id());
             rg.root
                 .set_status_recursive(ResourceStatus::Stopped, &self.id());
         }
