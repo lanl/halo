@@ -113,12 +113,6 @@ impl Cluster {
         self.resource_groups.iter()
     }
 
-    pub fn resources(&self) -> impl Iterator<Item = &Resource> {
-        self.resource_groups
-            .iter()
-            .flat_map(|group| group.resources())
-    }
-
     pub fn host_home_resource_groups<'a>(
         &'a self,
         host: &'a Host,
@@ -196,11 +190,6 @@ impl Cluster {
         }
 
         let new = Cluster::from_config2(&config, args.clone(), state, tls_args);
-
-        if new.resources().any(|res| res.count > 1) {
-            eprintln!("Config has shared resources, which are not yet supported.");
-            return handled_error();
-        }
 
         new.apply_state();
 
