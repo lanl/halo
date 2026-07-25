@@ -3,12 +3,12 @@ hosts:
   fence_agent: fence_test
   fence_parameters:
     target: fence_mds00
-    test_id: failover
+    test_id: lustre
 - hostname: 127.0.0.1:8006
   fence_agent: fence_test
   fence_parameters:
     target: fence_mds01
-    test_id: failover
+    test_id: lustre
 
 resources:
 - name: test_zpool_00

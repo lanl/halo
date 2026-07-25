@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn failover_partners() {
-        let config_path = halo_lib::test_env::test_path("configs/failover.yaml");
+        let config_path = halo_lib::test_env::test_path("configs/lustre.yaml");
         let cluster = halo_lib::cluster::Cluster::from_config(Some(config_path)).unwrap();
 
         let first_host = cluster.hosts().next().unwrap();
