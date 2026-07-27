@@ -20,14 +20,17 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
     let cluster = get_status(cli.socket.as_deref())?;
 
     for res in cluster.resources {
-        if args.exclude_normal && res.status == "Running" {
+        if args.exclude_normal && res.single_host_status().0 == "Running" {
             continue;
         }
 
         print!("{:<20}\t", res.id);
         print!("({})\t", res.kind);
-        print!("{}", res.status);
-        match res.status.as_str() {
+
+        let (status, maybe_comment) = res.single_host_status();
+
+        print!("{}", status);
+        match status {
             "Running" => print!(" on {}", res.home_host),
             "Running (Failed Over)" => print!(
                 " on {}",
@@ -52,7 +55,7 @@ pub fn status(cli: &Cli, args: &StatusArgs) -> HandledResult<()> {
             print!("]");
         }
 
-        if let Some(comment) = res.comment {
+        if let Some(comment) = maybe_comment {
             print!(" {comment} ");
         }
 

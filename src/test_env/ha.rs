@@ -255,6 +255,8 @@ impl Assert {
     #[allow(clippy::collapsible_match, clippy::single_match)]
     fn check(&self, status: &http::ClusterJson) {
         for res in &status.resources {
+            let (resource_status, _) = res.single_host_status();
+
             let check = match self.target {
                 Target::AllResources => true,
                 Target::ResourceGroup0 => res.id.contains("0"),
@@ -266,10 +268,10 @@ impl Assert {
             if check {
                 match &self.what {
                     AssertKind::Status(status) => {
-                        if &res.status != status {
+                        if resource_status != status {
                             panic!(
                                 "Expected status '{}', got '{}', for resource '{}'",
-                                status, res.status, res.id
+                                status, resource_status, res.id
                             );
                         }
                     }
