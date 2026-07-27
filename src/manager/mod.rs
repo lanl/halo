@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::{io, sync::Arc};
 
 use {clap::Parser, log::info};
@@ -19,6 +21,10 @@ pub struct Cli {
     /// Location of the socket used for communicating with the CLI program.
     #[arg(long)]
     pub socket: Option<String>,
+
+    /// Location of unprivileged user socket to use for getting halo status with the CLI program.
+    #[arg(long)]
+    pub user_socket: Option<String>,
 
     /// Location of the file used to store the persistent event log.
     #[arg(long)]
@@ -78,6 +84,51 @@ async fn prepare_unix_socket(addr: &String) -> HandledResult<tokio::net::UnixLis
     // Create new socket
     match tokio::net::UnixListener::bind(addr) {
         Ok(l) => Ok(l),
+        Err(e) => {
+            eprintln!("error binding to socket '{addr}': {e}");
+            handled_error()
+        }
+    }
+}
+
+/// Get a user unix socket listener from a given socket path.
+///
+/// To avoid clobbering an already-in-use unix socket, a connection is attempted to an existing
+/// unix socket first. If this fails, a new socket listener can be returned, since an existing
+/// in-use socket was determined to be absent at the given location.
+async fn _prepare_user_unix_socket(addr: &String) -> HandledResult<tokio::net::UnixListener> {
+    // Check for existing socket in use
+    match tokio::net::UnixStream::connect(&addr).await {
+        Ok(_) => {
+            eprintln!("Address already in use: {addr}");
+            return handled_error();
+        }
+        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => {
+            eprintln!("Unexpected error while preparing unix socket '{addr}': {e}");
+            return handled_error();
+        }
+    };
+    match std::fs::remove_file(addr) {
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => {
+            eprintln!("Error removing old socket: {e}");
+            return handled_error();
+        }
+    };
+    // Create new socket and set permissions
+    match tokio::net::UnixListener::bind(addr) {
+        Ok(l) => match
+            // After sucessfully creating the user socket set its permissions
+            fs::set_permissions(addr, fs::Permissions::from_mode(0o666)) {
+                Ok(()) => Ok(l),
+                Err(e) => {
+                    eprintln!("error setting unpriveleged socket posix permissions: {e}");
+                    handled_error()
+                }
+            },
         Err(e) => {
             eprintln!("error binding to socket '{addr}': {e}");
             handled_error()
