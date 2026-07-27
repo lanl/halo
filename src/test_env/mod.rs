@@ -186,6 +186,7 @@ impl TestEnvironment {
             socket: Some(socket_path),
             use_insecure_port: true,
             statefile: Some(statefile_path),
+            user_socket: None,
             mtls: false,
             verbose: false,
             manage_resources: true,
