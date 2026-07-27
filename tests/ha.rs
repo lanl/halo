@@ -51,12 +51,7 @@ mod tests {
         // Sleep for a second to give the manager enough time to start resources...
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        // Then run the status command to be sure the resources started
-        let cluster_status = env.get_status();
-
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
     }
 
     /// Startup, one agent stopped, all resources stopped.
@@ -70,11 +65,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Unknown");
-        }
+        env.assert([assert_status(Target::AllResources, "Unknown")]);
     }
 
     /// Startup, one agent stopped, one running. Up node resources are running locally, down node
@@ -94,15 +85,10 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Unknown");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Unknown"),
+        ]);
     }
 
     /// Startup, one agent stopped, one running, all resources started on running node.
@@ -119,15 +105,10 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 
     /// Startup, both agents down - there is nothing the manager can do, report resources in error
@@ -143,21 +124,14 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Unknown");
-        }
+        env.assert([assert_status(Target::AllResources, "Unknown")]);
 
         let _a = env.start_agent(0);
         let _b = env.start_agent(1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
 
         // Make sure these drop first, just to avoid noise in the error output...
         drop(_a);
@@ -179,23 +153,16 @@ mod tests {
 
         let _m = env.start_manager(true);
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Unknown");
-        }
+        env.assert([assert_status(Target::AllResources, "Unknown")]);
 
         let _b = env.start_agent(0); // Now start the agent where the resources are running.
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
 
         drop(_b);
     }
@@ -215,14 +182,10 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 
     /// Failover - both resource groups running on same node, both get failed over.
@@ -241,28 +204,20 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
 
         // Stop the remote agent to trigger failover:
         drop(_a);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running (Failed Over)"),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ]);
     }
 
     /// Failover - resource groups start failed over, failback command is used to bring them home.
@@ -280,30 +235,21 @@ mod tests {
         let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running (Failed Over)");
-        }
+        env.assert([assert_status(Target::AllResources, "Running (Failed Over)")]);
 
         env.failback(0).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
 
         env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
     }
 
     /// Failover - failback command should have no effect when resources are not failed over.
@@ -321,10 +267,8 @@ mod tests {
         env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+
+        env.assert([assert_status(Target::AllResources, "Running")]);
     }
 
     /// Failover - after manager triggers failover, if agent starts, failback should bring resources
@@ -353,10 +297,8 @@ mod tests {
         env.failback(1).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+
+        env.assert([assert_status(Target::AllResources, "Running")]);
     }
 
     /// Observe mode - test that a resource stays stopped
@@ -369,10 +311,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Stopped");
-        }
+        env.assert([assert_status(Target::AllResources, "Stopped")]);
     }
 
     /// Observe mode - test that a resource already started shows up as started, and failed over if
@@ -392,14 +331,10 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 
     fn observe_start_and_stop(env: HaEnvironment, manual_fail_over: bool) {
@@ -414,24 +349,17 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
 
         env.stop_resource("mdt_1", 1);
         env.stop_resource("zpool_1", 1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Stopped");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Stopped"),
+        ]);
 
         if manual_fail_over {
             env.start_resource("zpool_1", 0);
@@ -443,16 +371,17 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else if manual_fail_over {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(
+                Target::ResourceGroup1,
+                if manual_fail_over {
+                    "Running (Failed Over)"
+                } else {
+                    "Running"
+                },
+            ),
+        ]);
     }
 
     /// Observe mode - test that a resource started, stopped, and then started on the same node,
@@ -489,14 +418,10 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 
     /// Observe mode - test that when an agent is missing, and its resources are not running on the
@@ -515,28 +440,20 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Unknown");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Unknown"),
+        ]);
 
         env.start_resource("zpool_1", 0);
         env.start_resource("mdt_1", 0);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 
     /// Observe mode - test that when an agent is missing, and its resources are not running on the
@@ -557,22 +474,15 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Unknown");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Unknown"),
+        ]);
 
         let _b = env.start_agent(1);
         std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
     }
 
     /// Observe mode - test that when an agent goes missing, the resource status switches to
@@ -594,21 +504,15 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
 
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Unknown");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Unknown"),
+        ]);
 
         env.stop_resource("zpool_1", 1);
         env.stop_resource("mdt_1", 1);
@@ -616,14 +520,11 @@ mod tests {
         env.start_resource("mdt_1", 0);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 
     /// Observe mode - test that when both agents go missing, resource status switches to unknown.
@@ -643,36 +544,26 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
 
         drop(_a);
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Unknown");
-        }
+
+        env.assert([assert_status(Target::AllResources, "Unknown")]);
 
         let _b = env.start_agent(1);
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Unknown");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Unknown"),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ]);
 
         let _a = env.start_agent(0);
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+
+        env.assert([assert_status(Target::AllResources, "Running")]);
     }
 
     /// Observe mode - test that when a resource stops on host A, and the agent for host B
@@ -697,10 +588,8 @@ mod tests {
         env.stop_resource("mdt_1", 1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Unknown");
-        }
+
+        env.assert([assert_status(Target::AllResources, "Unknown")]);
 
         env.start_resource("zpool_1", 0);
         env.start_resource("mdt_1", 0);
@@ -708,14 +597,11 @@ mod tests {
         let _a = env.start_agent(0);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 
     /// A resource is unmanaged, then manually stopped - status should correctly report that it is
@@ -800,22 +686,17 @@ mod tests {
         env.start_resource("mdt_0", 1);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running (Failed Over)");
-        }
+
+        env.assert([assert_status(Target::AllResources, "Running (Failed Over)")]);
 
         drop(_a);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running (Failed Over)"),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ]);
     }
 
     fn unmanage_then_stop_and_start(env: HaEnvironment, manual_fail_over: bool) {
@@ -836,17 +717,20 @@ mod tests {
         } else {
             env.start_resource("zpool_0", 0);
         }
+
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id == "mdt_0" {
-                assert_eq!(res.status, "Stopped");
-            } else if res.id == "zpool_0" && manual_fail_over {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup1, "Running"),
+            assert_status(Target::Mdt0, "Stopped"),
+            assert_status(
+                Target::Zpool0,
+                if manual_fail_over {
+                    "Running (Failed Over)"
+                } else {
+                    "Running"
+                },
+            ),
+        ]);
 
         // ...then start the child resource.
         if manual_fail_over {
@@ -854,117 +738,20 @@ mod tests {
         } else {
             env.start_resource("mdt_0", 0);
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if manual_fail_over && res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
-    }
-
-    #[test]
-    fn admin_fence1() {
-        let env = test_env_helper("admin_fence1");
-        let _a = env.start_agent(0);
-        let _b = env.start_agent(1);
-        let _m = env.start_manager(true);
-
-        // Sleep for a second to give the manager enough time to start resources...
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
-        env.fence(0, false).unwrap();
-
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
-        for host in cluster_status.hosts {
-            if host.id.ends_with("0") {
-                assert!(!host.connected)
-            } else {
-                assert!(host.connected)
-            }
-        }
-    }
-
-    /// Fence node while holding both its own and partner resources
-    #[test]
-    fn admin_fence2() {
-        let env = test_env_helper("admin_fence2");
-
-        env.start_resource("zpool_0", 0);
-        env.start_resource("mdt_0", 0);
-        env.start_resource("zpool_1", 0);
-        env.start_resource("mdt_1", 0);
-
-        let _a = env.start_agent(0);
-        let _b = env.start_agent(1);
-        let _m = env.start_manager(true);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        env.fence(0, false).unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(2));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
-        for host in cluster_status.hosts {
-            if host.id.ends_with("0") {
-                assert!(!host.connected)
-            } else {
-                assert!(host.connected)
-            }
-        }
-    }
-
-    /// Fence node that is running no resources at all.
-    #[test]
-    fn admin_fence3() {
-        let env = test_env_helper("admin_fence3");
-
-        env.start_resource("zpool_0", 0);
-        env.start_resource("mdt_0", 0);
-        env.start_resource("zpool_1", 0);
-        env.start_resource("mdt_1", 0);
-
-        let _a = env.start_agent(0);
-        let _b = env.start_agent(1);
-        let _m = env.start_manager(true);
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        env.fence(1, false).unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running (Failed Over)");
-            }
-        }
-        for host in cluster_status.hosts {
-            if host.id.ends_with("0") {
-                assert!(host.connected)
-            } else {
-                assert!(!host.connected);
-                assert!(host.fenced);
-            }
-        }
+        env.assert([
+            assert_status(
+                Target::ResourceGroup0,
+                if manual_fail_over {
+                    "Running (Failed Over)"
+                } else {
+                    "Running"
+                },
+            ),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ]);
     }
 
     /// start_failed_over:
@@ -991,15 +778,19 @@ mod tests {
 
         env.manage_resource("zpool_0");
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if start_failed_over == Some(true) && res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        env.assert([
+            assert_status(
+                Target::ResourceGroup0,
+                if start_failed_over == Some(true) {
+                    "Running (Failed Over)"
+                } else {
+                    "Running"
+                },
+            ),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ])
     }
 
     fn unmanage_then_stop(env: &HaEnvironment) {
@@ -1007,27 +798,95 @@ mod tests {
 
         env.unmanage_resource("zpool_0");
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert!(!res.managed);
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+        env.assert([
+            assert_status(Target::AllResources, "Running"),
+            assert_managed(Target::ResourceGroup0, false),
+        ]);
 
         env.stop_resource("mdt_0", 0);
         env.stop_resource("zpool_0", 0);
+
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Stopped");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Stopped"),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ])
+    }
+
+    #[test]
+    fn admin_fence1() {
+        let env = test_env_helper("admin_fence1");
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        // Sleep for a second to give the manager enough time to start resources...
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        env.fence(0, false).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running (Failed Over)"),
+            assert_status(Target::ResourceGroup1, "Running"),
+            assert_connected(Target::Host0, false),
+            assert_connected(Target::Host1, true),
+        ])
+    }
+
+    /// Fence node while holding both its own and partner resources
+    #[test]
+    fn admin_fence2() {
+        let env = test_env_helper("admin_fence2");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.fence(0, false).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running (Failed Over)"),
+            assert_status(Target::ResourceGroup1, "Running"),
+            assert_connected(Target::Host0, false),
+            assert_connected(Target::Host1, true),
+        ])
+    }
+
+    /// Fence node that is running no resources at all.
+    #[test]
+    fn admin_fence3() {
+        let env = test_env_helper("admin_fence3");
+
+        env.start_resource("zpool_0", 0);
+        env.start_resource("mdt_0", 0);
+
+        env.start_resource("zpool_1", 0);
+        env.start_resource("mdt_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.fence(1, false).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+            assert_connected(Target::Host0, true),
+            assert_connected(Target::Host1, false),
+            assert_fenced(Target::Host1, true),
+        ])
     }
 
     /// When a host is deactivated, it should gracefully stop the resources and bring them up on
@@ -1049,13 +908,11 @@ mod tests {
         env.failback(0).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for host in cluster_status.hosts {
-            assert!(host.active)
-        }
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+
+        env.assert([
+            assert_status(Target::AllResources, "Running"),
+            assert_active(Target::AllHosts, true),
+        ])
     }
 
     /// Deactivate a host.
@@ -1075,42 +932,26 @@ mod tests {
         drop(_b);
 
         std::thread::sleep(std::time::Duration::from_secs(3));
-        let cluster_status = env.get_status();
-        for host in cluster_status.hosts {
-            if host.id.contains("0") {
-                assert!(!host.active);
-                assert!(host.connected);
-            } else {
-                assert!(host.active);
-                assert!(!host.connected);
-            }
-        }
 
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Unknown");
-        }
+        env.assert([
+            assert_status(Target::AllResources, "Unknown"),
+            assert_connected(Target::Host0, true),
+            assert_connected(Target::Host1, false),
+            assert_active(Target::Host0, false),
+            assert_active(Target::Host1, true),
+        ]);
 
         let _b = env.start_agent(1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for host in cluster_status.hosts {
-            if host.id.contains("0") {
-                assert!(!host.active);
-                assert!(host.connected);
-            } else {
-                assert!(host.active);
-                assert!(host.connected);
-            }
-        }
 
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+        env.assert([
+            assert_connected(Target::AllHosts, true),
+            assert_active(Target::Host0, false),
+            assert_active(Target::Host1, true),
+            assert_status(Target::ResourceGroup0, "Running (Failed Over)"),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ]);
     }
 
     /// If a host is deactivated, a failback onto that host should not succeed.
@@ -1143,14 +984,11 @@ mod tests {
         let _b = env.start_agent(1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running (Failed Over)"),
+            assert_status(Target::ResourceGroup1, "Running"),
+        ]);
     }
 
     /// Startup - a host is deactivated, but running an unmanaged resource.
@@ -1175,10 +1013,8 @@ mod tests {
         env.deactivate_host(1);
 
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+
+        env.assert([assert_status(Target::AllResources, "Running")]);
     }
 
     fn deactivate_one_host(env: &HaEnvironment) {
@@ -1186,21 +1022,12 @@ mod tests {
         env.deactivate_host(0);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
-        for host in cluster_status.hosts {
-            if host.id.contains("0") {
-                assert!(!host.active)
-            } else {
-                assert!(host.active)
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running (Failed Over)"),
+            assert_status(Target::ResourceGroup1, "Running"),
+            assert_active(Target::Host0, false),
+            assert_active(Target::Host1, true),
+        ]);
     }
 
     // Fencing cannot happen twice without reset happening
@@ -1215,62 +1042,42 @@ mod tests {
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for host in cluster_status.hosts {
-            if host.id.ends_with("1") {
-                assert!(host.fenced)
-            } else {
-                assert!(!host.fenced)
-            }
-        }
+        env.assert([
+            assert_fenced(Target::Host0, false),
+            assert_fenced(Target::Host1, true),
+        ]);
 
         let _b = env.start_agent(1);
         std::thread::sleep(std::time::Duration::from_secs(1));
         env.failback(1).unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Running");
-        }
+        env.assert([assert_status(Target::AllResources, "Running")]);
 
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("1") {
-                assert_eq!(res.status, "Unknown");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Unknown"),
+        ]);
 
         env.reset_host(1);
-        let cluster_status = env.get_status();
-        for host in cluster_status.hosts {
-            assert!(!host.fenced)
-        }
+
+        env.assert([assert_fenced(Target::AllHosts, false)]);
 
         let _b = env.start_agent(1);
         env.failback(1).unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("1") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
-        for host in cluster_status.hosts {
-            if host.id.ends_with("1") {
-                assert!(host.fenced)
-            } else {
-                assert!(!host.fenced)
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+            assert_fenced(Target::Host0, false),
+            assert_fenced(Target::Host1, true),
+        ])
     }
 
     // Fencing - before reset, fence command results in error
@@ -1305,17 +1112,11 @@ mod tests {
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for host in cluster_status.hosts {
-            assert!(!host.fenced)
-        }
-        for res in cluster_status.resources {
-            if res.id.contains("0") {
-                assert_eq!(res.status, "Running");
-            } else {
-                assert_eq!(res.status, "Unknown");
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Unknown"),
+            assert_fenced(Target::AllHosts, false),
+        ]);
     }
 
     /// It is illegal for halo to automatically fence a host when its partner is deactivated.
@@ -1332,12 +1133,9 @@ mod tests {
         drop(_b);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for host in cluster_status.hosts {
-            assert!(!host.fenced)
-        }
-        for res in cluster_status.resources {
-            assert_eq!(res.status, "Unknown");
-        }
+        env.assert([
+            assert_status(Target::AllResources, "Unknown"),
+            assert_fenced(Target::AllHosts, false),
+        ]);
     }
 }

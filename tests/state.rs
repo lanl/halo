@@ -88,22 +88,13 @@ mod tests {
         let _m = env.restart_manager(_m);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("1") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
-        for host in cluster_status.hosts {
-            if host.id.ends_with("1") {
-                assert!(host.fenced);
-                assert!(!host.connected)
-            } else {
-                assert!(!host.fenced)
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+            assert_fenced(Target::Host0, false),
+            assert_fenced(Target::Host1, true),
+            assert_connected(Target::Host1, false),
+        ]);
     }
 
     #[test]
@@ -127,34 +118,22 @@ mod tests {
         let _m = env.start_manager(true);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("1") {
-                assert_eq!(res.status, "Unknown");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
-        for host in cluster_status.hosts {
-            if host.id.ends_with("1") {
-                assert!(host.fenced);
-                assert!(!host.connected)
-            } else {
-                assert!(!host.fenced);
-                assert!(host.connected)
-            }
-        }
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Unknown"),
+            assert_fenced(Target::Host0, false),
+            assert_fenced(Target::Host1, true),
+            assert_connected(Target::Host0, true),
+            assert_connected(Target::Host1, false),
+        ]);
 
         // now fence manually:
         env.fence(1, true).unwrap();
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let cluster_status = env.get_status();
-        for res in cluster_status.resources {
-            if res.id.contains("1") {
-                assert_eq!(res.status, "Running (Failed Over)");
-            } else {
-                assert_eq!(res.status, "Running");
-            }
-        }
+
+        env.assert([
+            assert_status(Target::ResourceGroup0, "Running"),
+            assert_status(Target::ResourceGroup1, "Running (Failed Over)"),
+        ]);
     }
 }
