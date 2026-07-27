@@ -529,10 +529,184 @@ impl HaEnvironment {
         .unwrap();
     }
 
-    pub fn get_status(&self) -> http::ClusterJson {
+    fn get_status(&self) -> http::ClusterJson {
         let status = commands::status::get_status(Some(&self.socket_path())).unwrap();
         eprintln!("{status:?}");
         status
+    }
+
+    #[track_caller]
+    pub fn assert<const N: usize>(&self, assertions: [Assert; N]) {
+        let status = self.get_status();
+        for assertion in assertions {
+            assertion.check(&status);
+        }
+    }
+}
+
+pub struct Assert {
+    target: Target,
+    what: AssertKind,
+}
+
+enum AssertKind {
+    /// A resource status.
+    Status(String),
+
+    /// Whether a resource is managed.
+    Managed(bool),
+
+    /// Whether a host is connected.
+    HostConnected(bool),
+
+    /// Whether a host is fenced.
+    HostFenced(bool),
+
+    /// Whether a host is active.
+    HostActive(bool),
+}
+
+pub enum Target {
+    AllResources,
+    ResourceGroup0,
+    ResourceGroup1,
+    Zpool0,
+    Mdt0,
+
+    Host0,
+    Host1,
+    AllHosts,
+}
+
+pub fn assert_status(target: Target, status: &str) -> Assert {
+    if matches!(&target, Target::Host0 | Target::Host1 | Target::AllHosts) {
+        panic!("Invalid to use a host target with assert_status(), must use a resource target.");
+    }
+
+    Assert {
+        target,
+        what: AssertKind::Status(status.to_owned()),
+    }
+}
+
+pub fn assert_managed(target: Target, managed: bool) -> Assert {
+    if matches!(&target, Target::Host0 | Target::Host1 | Target::AllHosts) {
+        panic!("Invalid to use a host target with assert_managed(), must use a resource target.");
+    }
+
+    Assert {
+        target,
+        what: AssertKind::Managed(managed),
+    }
+}
+
+pub fn assert_connected(target: Target, connected: bool) -> Assert {
+    if !matches!(&target, Target::Host0 | Target::Host1 | Target::AllHosts) {
+        panic!("Invalid to use a resource target with assert_connected(), must use a host target.");
+    }
+
+    Assert {
+        target,
+        what: AssertKind::HostConnected(connected),
+    }
+}
+
+pub fn assert_fenced(target: Target, fenced: bool) -> Assert {
+    if !matches!(&target, Target::Host0 | Target::Host1 | Target::AllHosts) {
+        panic!("Invalid to use a resource target with assert_fenced(), must use a host target.");
+    }
+
+    Assert {
+        target,
+        what: AssertKind::HostFenced(fenced),
+    }
+}
+
+pub fn assert_active(target: Target, active: bool) -> Assert {
+    if !matches!(&target, Target::Host0 | Target::Host1 | Target::AllHosts) {
+        panic!("Invalid to use a resource target with assert_active(), must use a host target.");
+    }
+
+    Assert {
+        target,
+        what: AssertKind::HostActive(active),
+    }
+}
+
+impl Assert {
+    #[track_caller]
+    #[allow(clippy::collapsible_match, clippy::single_match)]
+    fn check(&self, status: &http::ClusterJson) {
+        for res in &status.resources {
+            let check = match self.target {
+                Target::AllResources => true,
+                Target::ResourceGroup0 => res.id.contains("0"),
+                Target::ResourceGroup1 => res.id.contains("1"),
+                Target::Zpool0 => res.id == "zpool_0",
+                Target::Mdt0 => res.id == "mdt_0",
+                _ => false,
+            };
+            if check {
+                match &self.what {
+                    AssertKind::Status(status) => {
+                        if &res.status != status {
+                            panic!(
+                                "Expected status '{}', got '{}', for resource '{}'",
+                                status, res.status, res.id
+                            );
+                        }
+                    }
+                    AssertKind::Managed(managed) => {
+                        if &res.managed != managed {
+                            panic!(
+                                "Expected managed: {managed} but was {}, for resource {}",
+                                res.managed, res.id
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for host in &status.hosts {
+            let check = match self.target {
+                Target::Host0 => host.id.ends_with("0"),
+                Target::Host1 => host.id.ends_with("1"),
+                Target::AllHosts => true,
+                _ => false,
+            };
+
+            if check {
+                match &self.what {
+                    AssertKind::HostConnected(conn) => {
+                        if &host.connected != conn {
+                            panic!(
+                                "Expected connected: {conn} but was {}, for host {}",
+                                host.connected, host.id,
+                            );
+                        }
+                    }
+                    AssertKind::HostFenced(f) => {
+                        if &host.fenced != f {
+                            panic!(
+                                "Expected fenced: {f} but was {}, for host {}",
+                                host.fenced, host.id,
+                            );
+                        }
+                    }
+                    AssertKind::HostActive(a) => {
+                        if &host.active != a {
+                            panic!(
+                                "Expected active: {a} but was {}, for host {}",
+                                host.active, host.id,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
