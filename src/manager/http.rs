@@ -24,7 +24,11 @@ use crate::{
 /// Main entrypoint for the command server.
 ///
 /// This listens for commands on a unix socket and acts on them.
-pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluster>) {
+pub async fn server_main(
+    listener: tokio::net::UnixListener,
+    user_listener: Option<tokio::net::UnixListener>,
+    cluster: Arc<Cluster>,
+) {
     let server = Router::new()
         .route(
             "/status",
@@ -55,6 +59,20 @@ pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluste
             }),
         );
 
+    if let Some(user_listener) = user_listener {
+        let user_server = Router::new()
+            .route(
+                "/status",
+                get({
+                    let cluster = Arc::clone(&cluster);
+                    || get_status(cluster)
+                }),
+            )
+            .fallback(async || StatusCode::UNAUTHORIZED);
+        tokio::spawn(async move {
+            axum::serve(user_listener, user_server).await.unwrap();
+        });
+    };
     axum::serve(listener, server).await.unwrap();
 }
 

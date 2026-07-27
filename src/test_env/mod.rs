@@ -174,6 +174,7 @@ impl TestEnvironment {
             config: Some(config_path),
             socket: Some(socket_path),
             statefile: Some(statefile_path),
+            user_socket: None,
             mtls: false,
             verbose: false,
             manage_resources: true,

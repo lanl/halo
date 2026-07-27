@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::{io, sync::Arc};
 
 use {clap::Parser, log::info};
@@ -19,6 +21,10 @@ pub struct Cli {
     /// Location of the socket used for communicating with the CLI program.
     #[arg(long)]
     pub socket: Option<String>,
+
+    /// Location of unprivileged user socket to use for getting halo status with the CLI program.
+    #[arg(long)]
+    pub user_socket: Option<String>,
 
     /// Location of the file used to store the persistent event log.
     #[arg(long)]
@@ -85,6 +91,18 @@ async fn prepare_unix_socket(addr: &String) -> HandledResult<tokio::net::UnixLis
     }
 }
 
+/// Get a user unix socket listener from a given socket path.
+///
+/// To avoid clobbering an already-in-use unix socket, a connection is attempted to an existing
+/// unix socket first. If this fails, a new socket listener can be returned, since an existing
+/// in-use socket was determined to be absent at the given location.
+async fn prepare_user_unix_socket(addr: &String) -> HandledResult<tokio::net::UnixListener> {
+    let listener = prepare_unix_socket(addr).await?;
+    fs::set_permissions(addr, fs::Permissions::from_mode(0o666))
+        .handle_err(|e| eprintln!("error setting unpriveleged socket posix permissions: {e}"))?;
+    Ok(listener)
+}
+
 /// Main entrypoint for the management service, which monitors and controls the state of
 /// the cluster.
 async fn manager_main(cluster: Arc<cluster::Cluster>) {
@@ -114,12 +132,17 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
         };
 
         let listener = prepare_unix_socket(addr).await?;
+        let user_listener = match cluster.args.user_socket.as_ref() {
+            Some(user_addr) => Some(prepare_user_unix_socket(user_addr).await?),
+            None => None,
+        };
+        //let user_lister = cluster.args.user_socket.as_ref().map(|path| prepare_user_unix_socket(path).await?);
         info!("listening on socket '{addr}'");
 
         let cluster = Arc::new(cluster);
 
         futures::join!(
-            http::server_main(listener, Arc::clone(&cluster)),
+            http::server_main(listener, user_listener, Arc::clone(&cluster)),
             manager_main(cluster)
         );
 
