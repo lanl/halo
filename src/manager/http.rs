@@ -87,11 +87,76 @@ pub struct ResourceJson {
     pub id: String,
     pub kind: String,
     pub parameters: HashMap<String, String>,
-    pub status: String,
-    pub comment: Option<String>,
+    pub status: HashMap<String, StatusJson>,
     pub managed: bool,
     pub home_host: String,
     pub failover_host: Option<String>,
+}
+
+enum StatusWhere {
+    Nowhere,
+    Home(Option<String>),
+    Failover(Option<String>),
+}
+
+impl ResourceJson {
+    fn is_stopped_everywhere(&self) -> bool {
+        self.status.values().all(|st| st.status == "Stopped")
+    }
+
+    fn has_status(&self, requested: &str) -> StatusWhere {
+        let st = self.status.get(&self.home_host).unwrap();
+        if st.status == requested {
+            return StatusWhere::Home(st.comment.clone());
+        }
+
+        if let Some(failover_host) = &self.failover_host {
+            let st = self.status.get(failover_host).unwrap();
+            if st.status == requested {
+                return StatusWhere::Failover(st.comment.clone());
+            }
+        }
+
+        StatusWhere::Nowhere
+    }
+
+    /// Returns a single status value together with an optional comment.
+    pub fn single_host_status(&self) -> (&'static str, Option<String>) {
+        match self.has_status("Running") {
+            StatusWhere::Home(_) => return ("Running", None),
+            StatusWhere::Failover(_) => return ("Running (Failed Over)", None),
+            _ => {}
+        };
+
+        if self.is_stopped_everywhere() {
+            return ("Stopped", None);
+        }
+
+        for status in ["Error", "Unknown"] {
+            match self.has_status(status) {
+                StatusWhere::Home(comment) => return (status, comment),
+                StatusWhere::Failover(comment) => return (status, comment),
+                _ => {}
+            }
+        }
+
+        ("Unexpected", None)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StatusJson {
+    pub status: String,
+    pub comment: Option<String>,
+}
+
+impl StatusJson {
+    fn build(status: &str, reason: Option<&str>) -> Self {
+        Self {
+            status: status.to_owned(),
+            comment: reason.map(|c| c.to_owned()),
+        }
+    }
 }
 
 impl ResourceJson {
@@ -101,53 +166,29 @@ impl ResourceJson {
         home_host: &HostId,
         failover_host: &Option<HostId>,
     ) -> Self {
-        let mut comment = None;
-        let status: &str;
-
-        let status_map = res.status();
-
-        'status: {
-            if *status_map.get(home_host).unwrap() == ResourceStatus::Running {
-                status = "Running";
-                break 'status;
-            };
-
-            if let Some(failover_host) = &failover_host {
-                if *status_map.get(failover_host).unwrap() == ResourceStatus::Running {
-                    status = "Running (Failed Over)";
-                    break 'status;
-                }
-            }
-
-            for st in status_map.values() {
-                if let ResourceStatus::Error(reason) = st {
-                    comment = Some(reason.clone());
-                    status = "Error";
-                    break 'status;
-                }
-            }
-
-            for st in status_map.values() {
-                if let ResourceStatus::Unknown(reason) = st {
-                    comment = Some(reason.clone());
-                    status = "Unknown";
-                    break 'status;
-                }
-            }
-
-            if status_map.values().all(|st| *st == ResourceStatus::Stopped) {
-                status = "Stopped";
-            } else {
-                status = "Unexpected (BUG)";
-            }
-        }
+        let status = res
+            .status()
+            .iter()
+            .map(|(host, status)| {
+                (
+                    host.to_string(),
+                    match status {
+                        ResourceStatus::Running => StatusJson::build("Running", None),
+                        ResourceStatus::Stopped => StatusJson::build("Stopped", None),
+                        ResourceStatus::Unknown(reason) => {
+                            StatusJson::build("Unknown", Some(reason))
+                        }
+                        ResourceStatus::Error(reason) => StatusJson::build("Error", Some(reason)),
+                    },
+                )
+            })
+            .collect();
 
         Self {
             id: res.id.to_string(),
             kind: res.kind.clone(),
             parameters: res.parameters.clone(),
-            status: status.to_string(),
-            comment,
+            status,
             managed,
             home_host: home_host.to_string(),
             failover_host: failover_host.as_ref().map(|h| h.to_string()),
