@@ -178,19 +178,14 @@ impl ResourceGroup {
 
     /// Observe some resources.
     ///
-    /// Exits either when an error was observed, or if the exit_if_resource_stopped flag is set, it
-    /// will exit with Ok(()) if the entire resource group has stopped.
+    /// Exits only when an error occurs.
     pub async fn observe_loop(
         &self,
         client: &Client,
-        exit_if_resource_stopped: bool,
         loc: Location,
     ) -> Result<(), ManagementError> {
         loop {
             self.update_resources(client, loc).await?;
-            if exit_if_resource_stopped && !self.resources().any(|res| res.is_running()) {
-                return Ok(());
-            }
 
             tokio::time::sleep(tokio::time::Duration::from_millis(self.args.sleep_time)).await;
         }

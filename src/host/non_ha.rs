@@ -249,7 +249,7 @@ impl Host {
     ) {
         let rg = cluster.get_resource_group(&rg_name);
         match rg
-            .observe_loop(client, false, Location::Home)
+            .observe_loop(client, Location::Home)
             .await
             .expect_err("observe_loop() should not exit until an error occurs in this usage.")
         {
