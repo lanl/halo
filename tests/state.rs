@@ -7,7 +7,11 @@ mod tests {
 
     use chrono::Local;
 
-    use halo_lib::{resource::ResourceId, state::*, test_env::*};
+    use halo_lib::{
+        resource::ResourceId,
+        state::*,
+        test_env::{ha::*, *},
+    };
 
     fn test_env_helper(test_id: &str) -> HaEnvironment {
         HaEnvironment::new(

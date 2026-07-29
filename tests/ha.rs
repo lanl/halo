@@ -3,7 +3,7 @@
 
 #[cfg(test)]
 mod tests {
-    use halo_lib::test_env::*;
+    use halo_lib::test_env::ha::*;
 
     /// Create a TestEnvironment for a test.
     ///
