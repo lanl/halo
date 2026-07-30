@@ -39,7 +39,8 @@ mod tests {
     #[test]
     fn state() {
         let env = TestEnvironment::new(
-            "state".to_string(),
+            "ha",
+            "state",
             env!("CARGO_BIN_EXE_halo_remote"),
             env!("CARGO_BIN_EXE_halo_manager"),
         );
