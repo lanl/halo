@@ -80,6 +80,13 @@ systemctl restart halo.service
 on the management server is *always* safe
 and never interferes with the availability of the managed filesystem.
 
+== Backwards and Forwards Compatibility Policy
+
+HALO does not support mixed-vesion deployments. The CLI utility, management service,
+and remote service must all come from the same version.
+The RPC and HTTP interfaces that these components communicate over are allowed
+to change in incompatible ways, such that a mixed-version deployment can break.
+
 = Configuration File
 
 The HALO management daemon expects a configuration file in YAML format.
