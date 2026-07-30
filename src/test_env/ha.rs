@@ -24,7 +24,20 @@ impl HaEnvironment {
     pub fn new_ha(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
         let ports = get_ports();
         let env = TestEnvironment::new("ha", &test_id, agent_binary_path, manager_binary_path);
-        let config = ha_config(ports, test_id.clone());
+        let config = ha_config(ports, &test_id);
+        env.write_out_config(&config);
+        Self {
+            env,
+            test_id,
+            ports,
+            config,
+        }
+    }
+
+    pub fn new_shared(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
+        let ports = get_ports();
+        let env = TestEnvironment::new("shared", &test_id, agent_binary_path, manager_binary_path);
+        let config = shared_config(ports, &test_id);
         env.write_out_config(&config);
         Self {
             env,
@@ -146,7 +159,7 @@ impl HaEnvironment {
         .unwrap();
     }
 
-    fn get_status(&self) -> http::ClusterJson {
+    pub fn get_status(&self) -> http::ClusterJson {
         let status = commands::status::get_status(Some(&self.socket_path())).unwrap();
         eprintln!("{status:#?}");
         status
@@ -334,6 +347,16 @@ impl Drop for HaEnvironment {
     /// is, started on both hosts in a pair.
     fn drop(&mut self) {
         for resource in self.config.resources.iter() {
+            // The following resource types are not exclusive and are allowed to be double-started.
+            // XXX: Come up with a more robust way to detect this in arbitrary configs rather than
+            // just hard-coding this list?
+            if matches!(
+                resource.kind.as_str(),
+                "heartbeat/route" | "heartbeat/filesystem" | "heartbeat/export"
+            ) {
+                continue;
+            }
+
             if self.env.resource_is_started(resource, 0)
                 && self.env.resource_is_started(resource, 1)
             {
@@ -344,7 +367,7 @@ impl Drop for HaEnvironment {
 }
 
 /// Creates an HA-pair config for use in the ha tests.
-fn ha_config(ports: [u16; 2], test_id: String) -> Config {
+fn ha_config(ports: [u16; 2], test_id: &str) -> Config {
     let mut config = Config {
         hosts: Vec::new(),
         resources: Vec::new(),
@@ -394,6 +417,44 @@ fn ha_config(ports: [u16; 2], test_id: String) -> Config {
         config.hosts.push(host);
         config.resources.push(root_resource);
         config.resources.push(child_resource);
+        config.resource_groups.push(resource_group);
+    }
+
+    config
+}
+
+fn shared_config(ports: [u16; 2], test_id: &str) -> Config {
+    let path = test_path("configs/nfs.yaml");
+    let config = std::fs::read_to_string(path).unwrap();
+
+    // Use the existing NFS example config...
+    let mut config: Config = serde_yaml::from_str(&config).unwrap();
+    // ...but the hosts and resource groups need to be fixed up to reference the specific test
+    // ports. so strip them out, just keeping the resources.
+    std::mem::take(&mut config.hosts);
+    std::mem::take(&mut config.resource_groups);
+
+    for (i, port) in ports.iter().enumerate() {
+        let my_hostname = || -> String { format!("127.0.0.1:{}", port) };
+        let partner_hostname =
+            || -> String { format!("127.0.0.1:{}", if i == 0 { ports[1] } else { ports[0] }) };
+
+        let host = config::Host {
+            hostname: my_hostname(),
+            fence_agent: Some("fence_test".to_string()),
+            fence_parameters: Some(HashMap::from([
+                ("target".to_string(), format!("{test_id}_{i}")),
+                ("test_id".to_string(), format!("shared/{test_id}")),
+            ])),
+        };
+
+        let resource_group = config::ResourceGroup {
+            home_host: my_hostname(),
+            failover_hosts: vec![partner_hostname()],
+            root: format!("ip_addr_{i}"),
+        };
+
+        config.hosts.push(host);
         config.resource_groups.push(resource_group);
     }
 
