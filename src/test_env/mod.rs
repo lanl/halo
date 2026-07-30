@@ -313,17 +313,25 @@ impl TestEnvironment {
     /// Get the path to the "resource state file" used in a test -- that is, the file whose
     /// presence indicates the resource is running and whose absence indicates it is stopped.
     fn get_resource_path(&self, resource: &config::Resource, agent: usize) -> String {
+        let fix_path = |path: &String| path.replace("/", "_");
+
         let path = match resource.kind.as_str() {
-            "heartbeat/ZFS" => &format!("zfs.{}", resource.parameters.get("pool").unwrap()),
-            "lustre/Lustre" => &format!(
+            "heartbeat/ZFS" => format!("zfs.{}", resource.parameters.get("pool").unwrap()),
+            "lustre/Lustre" => format!(
                 "lustre.{}",
-                resource
-                    .parameters
-                    .get("mountpoint")
-                    .unwrap()
-                    .replace("/", "_")
+                fix_path(resource.parameters.get("mountpoint").unwrap())
             ),
-            _ => unreachable!(),
+            "heartbeat/ip" => format!("ip.{}", resource.parameters.get("ip").unwrap()),
+            "heartbeat/route" => format!("route.{}", resource.parameters.get("route").unwrap()),
+            "heartbeat/filesystem" => format!(
+                "fs.{}",
+                fix_path(resource.parameters.get("directory").unwrap())
+            ),
+            "heartbeat/export" => format!(
+                "export.{}",
+                fix_path(resource.parameters.get("directory").unwrap())
+            ),
+            _ => todo!("Need to add resource kind '{}' to list.", resource.kind),
         };
         let path = format!("{}_{agent}.{}", self.test_id, path);
         self.private_dir_path.clone() + "/" + &path
