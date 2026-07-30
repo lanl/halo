@@ -21,7 +21,7 @@ pub struct HaEnvironment {
 }
 
 impl HaEnvironment {
-    pub fn new(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
+    pub fn new_ha(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
         let ports = get_ports();
         let env = TestEnvironment::new("ha", &test_id, agent_binary_path, manager_binary_path);
         let config = ha_config(ports, test_id.clone());

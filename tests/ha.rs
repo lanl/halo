@@ -11,7 +11,7 @@ mod tests {
     /// TestEnvironment constructor because the environment variable is only defined when compiling
     /// tests.
     fn test_env_helper(test_id: &str) -> HaEnvironment {
-        HaEnvironment::new(
+        HaEnvironment::new_ha(
             test_id.to_string(),
             env!("CARGO_BIN_EXE_halo_remote"),
             env!("CARGO_BIN_EXE_halo_manager"),
