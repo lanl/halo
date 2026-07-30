@@ -109,9 +109,14 @@ impl TestEnvironment {
     ///
     /// Creates a specific unique subdirectory for the test and sets up the necessary environment
     /// variables for the remote agents.
-    pub fn new(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
+    pub fn new(
+        group_id: &str,
+        test_id: &str,
+        agent_binary_path: &str,
+        manager_binary_path: &str,
+    ) -> Self {
         // Each test gets a "private" directory named after its test_id.
-        let private_dir_path = test_path(&format!("test_output/{test_id}"));
+        let private_dir_path = test_path(&format!("test_output/{group_id}/{test_id}"));
         // Start by emptying out the test's private directory, so that files from a previous test
         // run don't impact this run:
         match std::fs::remove_dir_all(&private_dir_path) {
@@ -120,13 +125,13 @@ impl TestEnvironment {
             Err(e) => panic!("Could not clean up test directory: {e}"),
         };
 
-        let log_file_path = test_path(&format!("test_output/{test_id}/test_log"));
+        let log_file_path = test_path(&format!("test_output/{group_id}/{test_id}/test_log"));
 
         std::fs::create_dir(test_path("test_output"))
             .ignore_eexist()
             .unwrap();
 
-        std::fs::create_dir(&private_dir_path).unwrap();
+        std::fs::create_dir_all(&private_dir_path).unwrap();
 
         let _ = std::fs::File::create(&log_file_path).unwrap();
         // Since create() opens the file in write-only mode, ignore that handle and re-open a
@@ -134,7 +139,7 @@ impl TestEnvironment {
         let log_file = std::fs::File::open(&log_file_path).unwrap();
 
         Self {
-            test_id,
+            test_id: test_id.to_owned(),
             private_dir_path,
             log_file_path,
             log_file,
@@ -321,7 +326,7 @@ impl TestEnvironment {
             _ => unreachable!(),
         };
         let path = format!("{}_{agent}.{}", self.test_id, path);
-        test_path(&format!("test_output/{}/", self.test_id)) + &path
+        self.private_dir_path.clone() + "/" + &path
     }
 }
 

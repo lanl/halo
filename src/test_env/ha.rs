@@ -23,7 +23,7 @@ pub struct HaEnvironment {
 impl HaEnvironment {
     pub fn new(test_id: String, agent_binary_path: &str, manager_binary_path: &str) -> Self {
         let ports = get_ports();
-        let env = TestEnvironment::new(test_id.clone(), agent_binary_path, manager_binary_path);
+        let env = TestEnvironment::new("ha", &test_id, agent_binary_path, manager_binary_path);
         let config = ha_config(ports, test_id.clone());
         env.write_out_config(&config);
         Self {
@@ -381,7 +381,7 @@ fn ha_config(ports: [u16; 2], test_id: String) -> Config {
             fence_agent: Some("fence_test".to_string()),
             fence_parameters: Some(HashMap::from([
                 ("target".to_string(), format!("{test_id}_{i}")),
-                ("test_id".to_string(), test_id.clone()),
+                ("test_id".to_string(), format!("ha/{test_id}")),
             ])),
         };
 

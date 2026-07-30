@@ -3,7 +3,7 @@ hosts:
   fence_agent: fence_test
   fence_parameters:
     target: fence_mds00
-    test_id: fencing
+    test_id: simple/fencing
 
 resources:
 - name: test_zpool

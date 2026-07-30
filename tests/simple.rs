@@ -14,7 +14,8 @@ mod tests {
     /// tests.
     fn test_env_helper(test_id: &str) -> TestEnvironment {
         TestEnvironment::new(
-            test_id.to_string(),
+            "simple",
+            test_id,
             env!("CARGO_BIN_EXE_halo_remote"),
             env!("CARGO_BIN_EXE_halo_manager"),
         )
