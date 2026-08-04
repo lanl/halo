@@ -10,7 +10,7 @@ use std::{
 use {futures::future, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
 
 use crate::{
-    config,
+    config, handled_error,
     host::*,
     manager,
     resource::*,
@@ -184,7 +184,24 @@ impl Cluster {
             None
         };
 
+        for rg in &config.resource_groups {
+            if rg.failover_hosts.len() > 1 {
+                eprintln!(
+                    "Resource group {} has too many failover hosts (only 1 supported).",
+                    rg.root
+                );
+
+                return handled_error();
+            }
+        }
+
         let new = Cluster::from_config2(&config, args.clone(), state, tls_args);
+
+        if new.resources().any(|res| res.count > 1) {
+            eprintln!("Config has shared resources, which are not yet supported.");
+            return handled_error();
+        }
+
         new.apply_state();
 
         // If the cluster is running in "observe-only" mode, mark every resource group as unmanaged
