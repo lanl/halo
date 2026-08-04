@@ -116,31 +116,38 @@ The command recognizes nodeset syntax.
 
 For example:
 ```bash
-$ halo discover lu-mds[00-01],lu-oss[00-05]
+$ halo discover lu-mds0[0,1],lu-oss0[0,1]
 hosts:
-- hostname: lu-mds00 resources:
-    mds00e0/mgt:
-      kind: lustre/Lustre
-      parameters:
-        target: mds00e0/mgt
-        mountpoint: /mnt/mgt
-        kind: mgs
-      requires: mds00e0
-    mds00e0:
-      kind: heartbeat/ZFS
-      parameters:
-        pool: mds00e0
-      requires: null
-    mds00e0/mdt:
-      kind: lustre/Lustre
-      parameters:
-        target: mds00e0/mdt
-        mountpoint: /mnt/mdt0
-        kind: mdt
-      requires: mds00e0
+- hostname: lu-mds00
   fence_agent: null
   fence_parameters: null
-...
+- hostname: lu-mds01
+  fence_agent: null
+  fence_parameters: null
+[ ... ]
+resources:
+- name: mds00e0
+  kind: heartbeat/ZFS
+  parameters:
+    pool: mds00e0
+  dependents:
+  - mds00e0/mgt
+  - mds00e0/mdt
+- name: mds00e0/mgt
+  kind: lustre/Lustre
+  parameters:
+    target: mds00e0/mgt
+    mountpoint: /mnt/mgt
+    type: mgs
+  dependents: []
+- name: mds00e0/mdt
+  kind: lustre/Lustre
+  parameters:
+    target: mds00e0/mdt
+    mountpoint: /mnt/mdt0
+    type: mdt
+  dependents: []
+[ ... ]
 ```
 The command writes out a YAML file to stdout.
 The generated YAML file will typically require some manual editing to add fencing information,
@@ -148,11 +155,13 @@ since the `discover` command is not designed to detect that information.
 
 == File Format
 
-The YAML file consists of a list of hosts.
-Each host consists of a list of resources, along with the resources' parameters,
-and fencing information for the host.
+The YAML file consists of a list of hosts, a list of resources, and a list of resource groups.
 
-=== Fencing information
+=== Hosts
+
+Each host specifies a hostname and the fencing information needed to fence the host.
+
+==== Fencing information
 
 Fencing information for hosts is specified in the `fence_agent` and `fence_parameters` fields.
 HALO supports a set of common fence agents, for example, `fence_powerman` and `fence_redfish`.
@@ -165,30 +174,24 @@ and `fence_parameters` needs to include `username` and `password` fields.
 
 === Resources
 
+Each resource specifies the resource name,
+its "kind" (the path to the OCF resource agent script used to manage it),
+and the parameters which are passed to the OCF script.
+
 Resources are logically structured as trees based on resource dependencies.
 It is common for one resource, like a zpool,
 to have resources that depend on it, like a lustre mgt and mdt service.
-Those dependencies are specified using the `requires` field,
-in which a "child" resource specifies the name of its "parent" resource.
+Those dependencies are specified using the `dependents` field,
+in which a "parent" resource specifies the names of its "child" resources.
 
 Resources are managed using OCF Resource Agent scripts.
 Those scripts expect parameters that describe the resource to be managed,
 and those parameters are specified in the `parameters` field.
 
-=== Failover Pairs
+=== Resource Groups
 
-If HALO is being used to manage a cluster in which nodes are arranged in failover pairs,
-those pairs must be specified in the config file:
-```yaml
-failover_pairs:
-- - lu-mds00
-  - lu-mds01
-- - lu-oss00
-  - lu-oss01
-- - lu-oss02
-  - lu-oss03
-...
-```
+Each resource group specifies the root of a dependency tree of resources.
+The group also specifies its home host and a list of failover hosts.
 
 = Remote Agent
 
