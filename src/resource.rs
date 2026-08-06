@@ -704,6 +704,10 @@ impl Resource {
 
         self.set_status(status, host);
     }
+
+    pub fn dependents_names(&self) -> Vec<String> {
+        self.dependents.iter().map(|r| r.id.to_string()).collect()
+    }
 }
 
 /// The ordering on ResourceStatus is used to rank statuses from "worst" to "best". Statuses that

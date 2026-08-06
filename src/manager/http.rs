@@ -91,6 +91,8 @@ pub struct ResourceJson {
     pub managed: bool,
     pub home_host: String,
     pub failover_host: Option<String>,
+    pub dependents: Vec<String>,
+    pub exclusive: bool,
 }
 
 enum StatusWhere {
@@ -132,6 +134,8 @@ impl ResourceJson {
             managed,
             home_host: home_host.to_string(),
             failover_host: failover_host.as_ref().map(|h| h.to_string()),
+            dependents: res.dependents_names(),
+            exclusive: res.count == 1,
         }
     }
 
