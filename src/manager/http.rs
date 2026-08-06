@@ -100,6 +100,41 @@ enum StatusWhere {
 }
 
 impl ResourceJson {
+    fn build(
+        res: &Resource,
+        managed: bool,
+        home_host: &HostId,
+        failover_host: &Option<HostId>,
+    ) -> Self {
+        let status = res
+            .status()
+            .iter()
+            .map(|(host, status)| {
+                (
+                    host.to_string(),
+                    match status {
+                        ResourceStatus::Running => StatusJson::build("Running", None),
+                        ResourceStatus::Stopped => StatusJson::build("Stopped", None),
+                        ResourceStatus::Unknown(reason) => {
+                            StatusJson::build("Unknown", Some(reason))
+                        }
+                        ResourceStatus::Error(reason) => StatusJson::build("Error", Some(reason)),
+                    },
+                )
+            })
+            .collect();
+
+        Self {
+            id: res.id.to_string(),
+            kind: res.kind.clone(),
+            parameters: res.parameters.clone(),
+            status,
+            managed,
+            home_host: home_host.to_string(),
+            failover_host: failover_host.as_ref().map(|h| h.to_string()),
+        }
+    }
+
     fn is_stopped_everywhere(&self) -> bool {
         self.status.values().all(|st| st.status == "Stopped")
     }
@@ -155,43 +190,6 @@ impl StatusJson {
         Self {
             status: status.to_owned(),
             comment: reason.map(|c| c.to_owned()),
-        }
-    }
-}
-
-impl ResourceJson {
-    fn build(
-        res: &Resource,
-        managed: bool,
-        home_host: &HostId,
-        failover_host: &Option<HostId>,
-    ) -> Self {
-        let status = res
-            .status()
-            .iter()
-            .map(|(host, status)| {
-                (
-                    host.to_string(),
-                    match status {
-                        ResourceStatus::Running => StatusJson::build("Running", None),
-                        ResourceStatus::Stopped => StatusJson::build("Stopped", None),
-                        ResourceStatus::Unknown(reason) => {
-                            StatusJson::build("Unknown", Some(reason))
-                        }
-                        ResourceStatus::Error(reason) => StatusJson::build("Error", Some(reason)),
-                    },
-                )
-            })
-            .collect();
-
-        Self {
-            id: res.id.to_string(),
-            kind: res.kind.clone(),
-            parameters: res.parameters.clone(),
-            status,
-            managed,
-            home_host: home_host.to_string(),
-            failover_host: failover_host.as_ref().map(|h| h.to_string()),
         }
     }
 }
