@@ -82,7 +82,7 @@ pub struct ClusterJson {
 
 /// The representation of Resource state that is communicated back to the admin using the status
 /// command.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ResourceJson {
     pub id: String,
     pub kind: String,
@@ -181,9 +181,42 @@ impl ResourceJson {
 
         ("Unexpected", None)
     }
+
+    pub fn shared_host_status(&self) -> (String, Option<String>) {
+        let running_on_hosts: Vec<_> = self
+            .status
+            .iter()
+            .filter(|(_, st)| st.status == "Running")
+            .map(|(host, _)| host)
+            .collect();
+
+        if !running_on_hosts.is_empty() {
+            let mut hosts = "".to_owned();
+            for host in running_on_hosts {
+                hosts += &format!("{host},");
+            }
+            let hosts: nodeset::NodeSet = hosts.parse().expect("unable to parse nodeset.");
+
+            return (format!("Running on {hosts}"), None);
+        }
+
+        if self.is_stopped_everywhere() {
+            return ("Stopped".to_owned(), None);
+        }
+
+        for status in ["Error", "Unknown"] {
+            match self.has_status(status) {
+                StatusWhere::Home(comment) => return (status.to_owned(), comment),
+                StatusWhere::Failover(comment) => return (status.to_owned(), comment),
+                _ => {}
+            }
+        }
+
+        ("Unexpected".to_owned(), None)
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct StatusJson {
     pub status: String,
     pub comment: Option<String>,
