@@ -2,7 +2,7 @@
 // Copyright 2025. Triad National Security, LLC.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex},
 };
 
@@ -146,6 +146,18 @@ impl ResourceGroup {
         self.failover_node.as_ref().map(|h| &h.host)
     }
 
+    /// When beginning to manage a resource group on a given Host, add the Host ID to each
+    /// resource's list of Hosts that the resource should be running on.
+    fn apply_group_to_host(&self, host: &HostId) {
+        self.root.apply_group_to_host(host, &self.id());
+    }
+
+    /// When beginning to manage a resource group on a given Host, add the Host ID to each
+    /// resource's list of Hosts that the resource should be running on.
+    fn remove_group_from_host(&self, host: &HostId) {
+        self.root.remove_group_from_host(host, &self.id());
+    }
+
     /// The host-driven resource management loop manages resources on a given location until
     /// either:
     ///
@@ -156,6 +168,8 @@ impl ResourceGroup {
     ///     returns back to the host management code so that the host can begin checing the
     ///     failover partner to see if the resource was started there (manual failover).
     pub async fn manage_loop(&self, client: &Client, loc: Location) -> Result<(), ManagementError> {
+        self.apply_group_to_host(&client.name);
+
         loop {
             self.update_resources(client).await?;
             match self.get_overall_status_on_host(&client.name) {
@@ -163,6 +177,7 @@ impl ResourceGroup {
                     if self.get_managed() {
                         self.start_resources(client, loc).await?;
                     } else if !self.root.is_running() {
+                        self.remove_group_from_host(&client.name);
                         return Ok(());
                     }
                 }
@@ -202,6 +217,8 @@ impl ResourceGroup {
 
     /// Attempt to stop the resources in this resource group.
     pub async fn stop_resources(&self, client: &Client) -> Result<(), ManagementError> {
+        self.remove_group_from_host(&client.name);
+
         let res = self.root.stop_recursive(client).await;
 
         match res {
@@ -213,6 +230,9 @@ impl ResourceGroup {
         res
     }
 
+    // TODO: this could have a clearer name. Maybe break it up into multiple methods:
+    //   - any_resource_in_group_stopped() -> bool
+    //   - all_resources_in_group_started() -> bool
     pub fn get_overall_status_on_host(&self, host: &HostId) -> ResourceStatus {
         let statuses = self.resources().map(|r| r.status_on_host(host));
 
@@ -243,6 +263,8 @@ impl ResourceGroup {
             if let Some(ref failover_node) = self.failover_node {
                 *failover_node.state.lock().unwrap() = State::Unknown;
             }
+
+            self.root.clear_started_count(&self.id());
         }
 
         *managed_status = managed;
@@ -250,6 +272,7 @@ impl ResourceGroup {
 
     pub fn has_been_stopped(&self, host: &HostId) {
         self.set_host_state(State::Stopped, host);
+        self.remove_group_from_host(host);
     }
 
     pub fn is_running_nowhere(&self) -> bool {
@@ -338,6 +361,7 @@ impl ResourceGroup {
         get_worst_error(future::join_all(futures).await.into_iter()).inspect_err(|e| {
             if matches!(e, ManagementError::Connection) {
                 self.set_host_state(State::Unknown, &client.name);
+                self.remove_group_from_host(&client.name);
                 self.root.set_status_recursive(
                     ResourceStatus::Unknown("Connection to remote host lost.".to_string()),
                     &client.name,
@@ -409,7 +433,13 @@ pub type HostStatusMap = HashMap<HostId, ResourceStatus>;
 
 #[derive(Clone, Debug, Default)]
 struct PerHostStatus {
+    /// The resource's status on this Host.
     status: ResourceStatus,
+
+    /// The set of parents of this Resource which are running on this Host. This determines whether
+    /// the resource is supposed to be started / stopped on this Host. When the set is empty, the
+    /// resource should be stopped. When the set is nonempty, the resource should be started.
+    started_groups: HashSet<ResourceId>,
 }
 
 /// A Resource's state is represented by a map from Hosts to Statuses.
@@ -470,6 +500,29 @@ impl ResourceState {
         ent.status = new_status;
         old_status.status
     }
+
+    /// How many times this resource is supposed to be started across a single host. If the result
+    /// is > 1, it means that multiple parents of this resource are both supposed to be running on
+    /// this host.
+    fn started_count_on_host(&self, host: &HostId) -> usize {
+        self.inner
+            .lock()
+            .unwrap()
+            .get(host)
+            .expect("Host {host} must have an entry in the status map")
+            .started_groups
+            .len()
+    }
+
+    /// How many times this resource is supposed to be started across the entire cluster.
+    fn started_count(&self) -> usize {
+        self.inner
+            .lock()
+            .unwrap()
+            .values()
+            .map(|h| h.started_groups.len())
+            .sum()
+    }
 }
 
 impl Resource {
@@ -498,6 +551,52 @@ impl Resource {
             state: state.clone(),
             id: ResourceId(res.name.clone()),
             args,
+        }
+    }
+
+    fn apply_group_to_host(&self, host: &HostId, root: &ResourceId) {
+        {
+            let mut map = self.state.inner.lock().unwrap();
+            let ent = map
+                .get_mut(host)
+                .expect("Host {host} must have an entry in the status map");
+            ent.started_groups.insert(root.clone());
+        }
+
+        let started_count = self.state.started_count();
+
+        if started_count > self.count {
+            panic!(
+                "Resource {} is managed too many times: {}, maximum allowed: {}",
+                self.id, started_count, self.count
+            );
+        }
+
+        for child in &self.dependents {
+            child.apply_group_to_host(host, root);
+        }
+    }
+
+    fn remove_group_from_host(&self, host: &HostId, root: &ResourceId) {
+        let mut map = self.state.inner.lock().unwrap();
+        let ent = map
+            .get_mut(host)
+            .expect("Host {host} must have an entry in the status map");
+        // TODO: assert that the group is already in the list?
+        ent.started_groups.remove(root);
+
+        for child in &self.dependents {
+            child.remove_group_from_host(host, root);
+        }
+    }
+
+    fn clear_started_count(&self, resource_group: &ResourceId) {
+        for per_host_map in self.state.inner.lock().unwrap().values_mut() {
+            per_host_map.started_groups.remove(resource_group);
+        }
+
+        for child in &self.dependents {
+            child.clear_started_count(resource_group);
         }
     }
 
@@ -593,6 +692,12 @@ impl Resource {
         let results = self.dependents.iter().map(|r| r.stop_recursive(client));
 
         get_worst_error(future::join_all(results).await.into_iter())?;
+
+        if self.state.started_count_on_host(&client.name) > 0 {
+            // If this resource still has a started parent on this host, then it shouldn't be
+            // stopped.
+            return Ok(());
+        }
 
         match self.stop(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
