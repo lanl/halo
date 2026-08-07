@@ -458,12 +458,8 @@ impl Resource {
         // If this resource is already running, don't bother doing anything:
         if !self.is_running_on_loc(&client.name) {
             warn!(
-                "Attempting to start resource {} on {}.",
-                self.id,
-                match loc {
-                    Location::Home => "its home node",
-                    Location::Away => "its failover node",
-                }
+                "event=start_resource  resource={}  host={}",
+                self.id, client.name,
             );
             match self.start(client).await {
                 // Agent replies that the resource was started succesfully.
@@ -579,9 +575,9 @@ impl Resource {
 
         if old_status != new_status {
             warn!(
-                "Updating status of resource {} on host {} from {:?} to {:?}",
-                self.id, host, old_status, new_status
-            )
+                "event=status_change  host={}  resource={}  from={:?}  to={:?}",
+                host, self.id, old_status, new_status
+            );
         }
     }
 

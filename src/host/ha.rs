@@ -7,7 +7,7 @@ use std::{io, mem::take};
 
 use {
     futures::{stream::FuturesUnordered, StreamExt},
-    log::{debug, warn},
+    log::{debug, error, warn},
 };
 
 use crate::{
@@ -361,7 +361,7 @@ impl Host {
         }
 
         while let Some(event) = tasks.next().await {
-            debug!("Host {} got event: {event:?}", self.id());
+            debug!("event=message  host={}  message={event:?}", self.id());
             match event {
                 HostMessage::Command(command) => {
                     match command {
@@ -617,6 +617,7 @@ impl Host {
 
         if self.do_fence_nonblocking(FenceCommand::Off).await.is_err() {
             // Fencing failed: cannot do anything further with these resources :(
+            error!("event=fence  host={}  result=failed", self.id());
             self.finish_admin_fence_request(FenceResult::PowerCommandFailed);
 
             for token in tokens_to_send {
@@ -657,7 +658,7 @@ impl Host {
         self.set_connected(false);
         self.update_resource_groups_stopped(cluster);
 
-        warn!("Host {} has been powered off.", self.id());
+        warn!("event=fence  host={}  result=success", self.id());
 
         for token in tokens_to_send {
             self.send_message_to_partner(token, Message::ManageResourceGroup)
