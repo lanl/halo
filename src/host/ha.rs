@@ -276,7 +276,7 @@ impl Host {
                     // If the host is known down (i.e., was previously fenced), then we know that
                     // the resource is stopped, and any requests to manage it here can be bounced
                     // back to the partner to manage it there.
-                    if rg.is_stopped_at_location(message.resource_group.location) {
+                    if rg.is_stopped_at_location(&self.id()) {
                         self.send_message_to_partner_delayed(
                             message.resource_group,
                             Message::ManageResourceGroup,
@@ -660,11 +660,6 @@ impl Host {
         warn!("Host {} has been powered off.", self.id());
 
         for token in tokens_to_send {
-            let rg = cluster.get_resource_group(&token.id);
-            // We know resource is stopped if fencing succeeded:
-            rg.root
-                .set_status_recursive(ResourceStatus::Stopped, &self.id());
-
             self.send_message_to_partner(token, Message::ManageResourceGroup)
                 .await;
         }
@@ -672,11 +667,13 @@ impl Host {
 
     fn update_resource_groups_stopped(&self, cluster: &Cluster) {
         for rg in cluster.host_home_resource_groups(self) {
-            rg.has_been_stopped(&self.id());
+            rg.root
+                .set_status_recursive(ResourceStatus::Stopped, &self.id());
         }
 
         for rg in cluster.host_home_resource_groups(self.ha_failover_partner()) {
-            rg.has_been_stopped(&self.id());
+            rg.root
+                .set_status_recursive(ResourceStatus::Stopped, &self.id());
         }
     }
 

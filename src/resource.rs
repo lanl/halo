@@ -84,40 +84,9 @@ pub struct ResourceGroup {
     pub root: Resource,
     managed: Mutex<bool>,
     args: manager::Cli,
-    home_node: HostKnowledge,
-    failover_node: Option<HostKnowledge>,
+    home_node: Arc<Host>,
+    failover_node: Option<Arc<Host>>,
 }
-
-#[derive(Debug)]
-struct HostKnowledge {
-    host: Arc<Host>,
-    state: Mutex<State>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum State {
-    Running,
-    Stopped,
-    Unknown,
-}
-
-impl HostKnowledge {
-    fn new(host: Arc<Host>) -> Self {
-        Self {
-            host,
-            state: Mutex::new(State::Unknown),
-        }
-    }
-
-    fn state(&self) -> State {
-        *self.state.lock().unwrap()
-    }
-
-    fn set_state(&self, state: State) {
-        *self.state.lock().unwrap() = state;
-    }
-}
-
 impl ResourceGroup {
     pub fn new(
         root: Resource,
@@ -129,8 +98,8 @@ impl ResourceGroup {
             root,
             managed: Mutex::new(true),
             args,
-            home_node: HostKnowledge::new(home_node),
-            failover_node: failover_node.map(HostKnowledge::new),
+            home_node,
+            failover_node,
         }
     }
 
@@ -139,11 +108,11 @@ impl ResourceGroup {
     }
 
     pub fn home_node(&self) -> &Arc<Host> {
-        &self.home_node.host
+        &self.home_node
     }
 
     pub fn failover_node(&self) -> Option<&Arc<Host>> {
-        self.failover_node.as_ref().map(|h| &h.host)
+        self.failover_node.as_ref()
     }
 
     /// The host-driven resource management loop manages resources on a given location until
@@ -189,28 +158,12 @@ impl ResourceGroup {
 
     /// Attempt to start the resources in this resource group on the given location.
     async fn start_resources(&self, client: &Client, loc: Location) -> Result<(), ManagementError> {
-        let res = self.root.start_if_needed_recursive(client, loc).await;
-
-        match res {
-            Ok(()) => self.set_host_state(State::Running, &client.name),
-            Err(ManagementError::Connection) => self.set_host_state(State::Unknown, &client.name),
-            _ => {}
-        };
-
-        res
+        self.root.start_if_needed_recursive(client, loc).await
     }
 
     /// Attempt to stop the resources in this resource group.
     pub async fn stop_resources(&self, client: &Client) -> Result<(), ManagementError> {
-        let res = self.root.stop_recursive(client).await;
-
-        match res {
-            Ok(()) => self.set_host_state(State::Stopped, &client.name),
-            Err(ManagementError::Connection) => self.set_host_state(State::Unknown, &client.name),
-            _ => {}
-        }
-
-        res
+        self.root.stop_recursive(client).await
     }
 
     pub fn get_overall_status_on_host(&self, host: &HostId) -> ResourceStatus {
@@ -239,64 +192,33 @@ impl ResourceGroup {
         // its state MUST be revalidated before the manager can take any actions on it. Therefore,
         // clear any out of date knowledge on whether it was known to be running somewhere.
         if !*managed_status && managed {
-            *self.home_node.state.lock().unwrap() = State::Unknown;
-            if let Some(ref failover_node) = self.failover_node {
-                *failover_node.state.lock().unwrap() = State::Unknown;
+            self.root.set_status_recursive(
+                ResourceStatus::Unknown("Manager is beginning management of resource.".to_string()),
+                &self.home_node.id(),
+            );
+            if let Some(failover_node) = &self.failover_node {
+                self.root.set_status_recursive(
+                    ResourceStatus::Unknown(
+                        "Manager is beginning management of resource.".to_string(),
+                    ),
+                    &failover_node.id(),
+                );
             }
         }
 
         *managed_status = managed;
     }
 
-    pub fn has_been_stopped(&self, host: &HostId) {
-        self.set_host_state(State::Stopped, host);
-    }
-
     pub fn is_running_nowhere(&self) -> bool {
-        self.home_node.state() == State::Stopped
-            && self.failover_node.as_ref().unwrap().state() == State::Stopped
+        self.root
+            .state
+            .get()
+            .values()
+            .all(|st| *st == ResourceStatus::Stopped)
     }
 
-    pub fn is_stopped_at_location(&self, loc: Location) -> bool {
-        let state = match loc {
-            Location::Home => self.home_node.state(),
-            Location::Away => self.failover_node.as_ref().expect("must be set").state(),
-        };
-
-        state == State::Stopped
-    }
-
-    fn set_host_state(&self, state: State, host_id: &HostId) {
-        let host = if host_id == &self.home_node.host.id() {
-            &self.home_node
-        } else {
-            let failover_host = self
-                .failover_node
-                .as_ref()
-                .expect("Failover node must be set.");
-            if host_id != &failover_host.host.id() {
-                panic!(
-                    "Unexpeced host id: {host_id} for setting resource state of {}",
-                    self.id()
-                );
-            }
-            failover_host
-        };
-
-        host.set_state(state);
-
-        self.assert_knowledge_invariant();
-    }
-
-    fn assert_knowledge_invariant(&self) {
-        if let Some(ref failover_node) = self.failover_node {
-            let home_state = self.home_node.state();
-            let failover_state = failover_node.state();
-            if home_state == State::Running && failover_state == State::Running {
-                panic!("Resource group {} violated invariant: system believes it to be running on both nodes.",
-                    self.id());
-            }
-        }
+    pub fn is_stopped_at_location(&self, id: &HostId) -> bool {
+        self.root.status_on_host(id) == ResourceStatus::Stopped
     }
 
     fn assert_not_running_elsewhere(&self, host: &HostId) {
@@ -337,7 +259,6 @@ impl ResourceGroup {
 
         get_worst_error(future::join_all(futures).await.into_iter()).inspect_err(|e| {
             if matches!(e, ManagementError::Connection) {
-                self.set_host_state(State::Unknown, &client.name);
                 self.root.set_status_recursive(
                     ResourceStatus::Unknown("Connection to remote host lost.".to_string()),
                     &client.name,
@@ -346,10 +267,8 @@ impl ResourceGroup {
         })?;
 
         if self.root.is_running_on_loc(&client.name) {
-            self.set_host_state(State::Running, &client.name);
             Ok(true)
         } else {
-            self.set_host_state(State::Stopped, &client.name);
             Ok(false)
         }
     }
