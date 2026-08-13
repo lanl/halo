@@ -33,6 +33,10 @@ pub struct Cli {
     #[arg(long)]
     pub port: Option<u16>,
 
+    /// Accept connections only from privileged clients.
+    #[arg(long)]
+    pub allow_insecure_ports: bool,
+
     #[arg(short, long)]
     pub verbose: bool,
 
@@ -98,6 +102,7 @@ async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
     } else {
         None
     };
+    let allow_insecure_ports = args.allow_insecure_ports;
 
     tokio::task::LocalSet::new()
         .run_until(async move {
@@ -111,10 +116,17 @@ async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
                 capnp_rpc::new_client(OcfResourceAgentImpl { cli: args });
 
             loop {
-                let Ok((stream, _)) = listener.accept().await else {
+                let Ok((stream, socket)) = listener.accept().await else {
                     warn!("Error accepting connection. Dropping connection.");
                     continue;
                 };
+                if !allow_insecure_ports {
+                    let port = socket.port();
+                    if port >= 1024 {
+                        warn!("Rejecting connection from insecure port {port}");
+                        continue;
+                    }
+                }
                 let Ok(_) = stream.set_nodelay(true) else {
                     warn!("Error setting nodelay on connection. Dropping connection.");
                     continue;
