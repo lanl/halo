@@ -20,6 +20,10 @@ pub struct Cli {
     #[arg(long)]
     pub socket: Option<String>,
 
+    /// Use a tcp port >1024 to communicate with hosts.
+    #[arg(long)]
+    pub use_insecure_port: bool,
+
     /// Location of the file used to store the persistent event log.
     #[arg(long)]
     pub statefile: Option<String>,
