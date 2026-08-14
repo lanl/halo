@@ -270,7 +270,7 @@ impl Host {
     }
 
     async fn get_client(&self, cluster: &Cluster) -> io::Result<Client> {
-        let client = halo_capnp::get_client(&self.address(), cluster.tls_args.as_ref()).await;
+        let client = halo_capnp::get_client(&self.address(), cluster).await;
         match client {
             Ok(_) => self.set_connected(true),
             Err(_) => self.set_connected(false),

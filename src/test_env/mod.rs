@@ -173,6 +173,7 @@ impl TestEnvironment {
         manager::Cli {
             config: Some(config_path),
             socket: Some(socket_path),
+            use_insecure_port: true,
             statefile: Some(statefile_path),
             mtls: false,
             verbose: false,
