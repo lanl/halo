@@ -148,7 +148,7 @@ impl HaEnvironment {
 
     fn get_status(&self) -> http::ClusterJson {
         let status = commands::status::get_status(Some(&self.socket_path())).unwrap();
-        eprintln!("{status:?}");
+        eprintln!("{status:#?}");
         status
     }
 
