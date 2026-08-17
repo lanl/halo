@@ -333,7 +333,7 @@ impl ResourceGroup {
     pub async fn update_resources(&self, client: &Client) -> Result<bool, ManagementError> {
         self.assert_not_running_elsewhere(&client.name);
 
-        let futures = self.resources().map(|r| r.update_status(client));
+        let futures = self.resources().map(|r| r.check_and_update_status(client));
 
         get_worst_error(future::join_all(futures).await.into_iter()).inspect_err(|e| {
             if matches!(e, ManagementError::Connection) {
@@ -502,7 +502,7 @@ impl Resource {
     }
 
     /// This method checks if the resource is running on the system connected via the given Client.
-    pub async fn update_status(&self, client: &Client) -> Result<(), ManagementError> {
+    async fn check_and_update_status(&self, client: &Client) -> Result<(), ManagementError> {
         match self.monitor(client).await {
             Ok(AgentReply::Success(ocf::Status::Success)) => {
                 self.set_running_on_loc(&client.name);
