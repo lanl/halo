@@ -115,6 +115,11 @@ impl ResourceGroup {
         self.failover_node.as_ref()
     }
 
+    /// Get an iterator over the hosts of this ResourceGroup.
+    fn hosts(&self) -> impl Iterator<Item = &Arc<Host>> {
+        std::iter::once(&self.home_node).chain(self.failover_node.iter())
+    }
+
     /// When beginning to manage a resource group on a given Host, add the Host ID to each
     /// resource's list of Hosts that the resource should be running on.
     fn apply_group_to_host(&self, host: &HostId) {
@@ -212,16 +217,12 @@ impl ResourceGroup {
         // its state MUST be revalidated before the manager can take any actions on it. Therefore,
         // clear any out of date knowledge on whether it was known to be running somewhere.
         if !*managed_status && managed {
-            self.root.set_status_recursive(
-                ResourceStatus::Unknown("Manager is beginning management of resource.".to_string()),
-                &self.home_node.id(),
-            );
-            if let Some(failover_node) = &self.failover_node {
+            for host in self.hosts() {
                 self.root.set_status_recursive(
                     ResourceStatus::Unknown(
                         "Manager is beginning management of resource.".to_string(),
                     ),
-                    &failover_node.id(),
+                    &host.id(),
                 );
             }
 
