@@ -325,6 +325,7 @@ impl Host {
                     // Deactivate message: nothing to do because the remote is disconnected. No
                     // ability to stop resources even if they happened to be running on the remote.
                     HostCommand::Deactivate => {}
+                    HostCommand::Remanage(id) => self.remanage_resource_group(state, id),
                 },
                 HostMessage::TaskDone(id) => {
                     panic!("Unexpected message type 'None({id})' in client disconnected routine.")
@@ -368,6 +369,7 @@ impl Host {
                         HostCommand::Failback => self.do_failback(state, cluster),
                         HostCommand::Deactivate => self.deactivate(state),
                         HostCommand::Fence => self.admin_fence_request(state),
+                        HostCommand::Remanage(id) => self.remanage_resource_group(state, id),
                     };
 
                     tasks.push(Box::pin(self.receive_message()));
@@ -431,6 +433,16 @@ impl Host {
         unreachable!(
             "Tasks loop should not exit, a receive message task should always be registered."
         )
+    }
+
+    fn remanage_resource_group(&self, state: &mut HostState, which_one: String) {
+        for task in &state.outstanding_resource_tasks {
+            if task.id != which_one {
+                continue;
+            }
+
+            task.remanage.notify_one();
+        }
     }
 
     /// Deactivate this Host:
@@ -901,6 +913,11 @@ impl Host {
 
             _ = revoke.switch_host.notified() => {
                 self.send_message_to_self(token, Message::SwitchHost).await;
+                HostMessage::MessageFollows
+            }
+
+            _ = revoke.remanage.notified() => {
+                self.send_message_to_self(token, Message::CheckResourceGroup).await;
                 HostMessage::MessageFollows
             }
 
