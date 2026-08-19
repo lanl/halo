@@ -84,7 +84,7 @@ impl Cluster {
             let ResourceId(cluster_rg_id) = cluster_rg.id();
 
             if let Some(managed) = state.delta.resources_managed.get(&cluster_rg_id) {
-                cluster_rg.set_managed(*managed);
+                cluster_rg.set_initial_managed(*managed);
                 unapplied_resources.remove(&cluster_rg_id);
             }
         }
@@ -202,7 +202,7 @@ impl Cluster {
         // If the cluster is running in "observe-only" mode, mark every resource group as unmanaged
         if !args.manage_resources {
             for rg in new.resource_groups() {
-                rg.set_managed(false);
+                rg.set_initial_managed(false);
             }
         }
 
