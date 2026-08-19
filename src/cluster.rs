@@ -420,7 +420,7 @@ pub fn get_failover_partner<'pairs>(
 /// Attempt to create a TCP socket using a local address and privileged port <=1024.
 fn reserve_local_privileged_port() -> HandledResult<(SocketAddr, TcpSocket)> {
     for i in 500..=1024 {
-        let addr = format!("127.0.0.1:{i}").parse().unwrap();
+        let addr = format!("0.0.0.0:{i}").parse().unwrap();
         let socket = TcpSocket::new_v4().unwrap();
         socket.set_reuseaddr(true).unwrap();
         match socket.bind(addr) {
