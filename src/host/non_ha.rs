@@ -144,9 +144,10 @@ impl Host {
                 HostMessage::Resource(message) => {
                     panic!("Unexpected to receive message '{message:?}' in non-HA mode.")
                 }
-                HostMessage::Command(command) => {
-                    warn!("Unexpected to receive command '{command:?}' in non-HA mode.")
-                }
+                HostMessage::Command(command) => match command {
+                    HostCommand::Remanage(_) => {}
+                    other => warn!("Unexpected to receive command '{other:?}' in non-HA mode."),
+                },
                 HostMessage::TaskDone(id) => {
                     panic!("Unexpected to receive message 'None({id})' in non-HA mode.")
                 }
@@ -195,9 +196,10 @@ impl Host {
         while let Some(event) = tasks.next().await {
             debug!("Host {} got event: {event:?}", self.id());
             match event {
-                HostMessage::Command(command) => {
-                    panic!("Unexpected to receive command '{command:?}' in non-HA mode.")
-                }
+                HostMessage::Command(command) => match command {
+                    HostCommand::Remanage(_) => {}
+                    other => warn!("Unexpected to receive command '{other:?}' in non-HA mode."),
+                },
                 HostMessage::Resource(event) => {
                     let id = &event.resource_group.id;
                     match event.kind {
