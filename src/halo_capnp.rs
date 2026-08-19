@@ -91,52 +91,30 @@ fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource
     }
 }
 
-/// Attempt to establish a TCP stream to the given socket address from the source address.
-async fn tcp_try_connect_one(
+/// Create a SocketAddr from a string slice.
+fn str2sockaddr(addr: &str) -> io::Result<std::net::SocketAddr> {
+    addr.parse().map_err(|e| {
+        log::warn!("could not parse as valid tcp address: '{addr}': {e}");
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid tcp address '{addr}'"),
+        )
+    })
+}
+
+/// Attempt to establish a TCP stream to the given socket address from the given source address.
+async fn tcp_try_connect(
     from_addr: std::net::SocketAddr,
     to_addr: std::net::SocketAddr,
 ) -> io::Result<tokio::net::TcpStream> {
     let sock = tokio::net::TcpSocket::new_v4().inspect_err(|e| {
-        log::debug!("could not create new tcpv4 socket: {e}");
+        log::warn!("could not create new tcpv4 socket: {e}");
     })?;
     sock.set_reuseaddr(true).unwrap();
-    sock.bind(from_addr).map_err(|e| {
-        log::debug!("could not bind to address {from_addr}: {e}");
-        e
+    sock.bind(from_addr).inspect_err(|e| {
+        log::warn!("could not bind to address '{from_addr}': {e}");
     })?;
-    log::debug!("connecting to address: {to_addr}");
     sock.connect(to_addr).await
-}
-
-/// Attempt to establish a TCP stream to the given TCP address that may resolve to multiple IP addresses.
-async fn tcp_try_connect(
-    from_addr: std::net::SocketAddr,
-    to_addr: &str,
-) -> io::Result<tokio::net::TcpStream> {
-    let to_addrs = tokio::net::lookup_host(to_addr).await.inspect_err(|e| {
-        log::debug!("cannot parse host '{to_addr}' as an address: {e}");
-    })?;
-    let mut stream = None;
-    for addr in to_addrs {
-        match tcp_try_connect_one(from_addr, addr).await {
-            Ok(s) => {
-                stream = Some(s);
-                break;
-            }
-            Err(e) => {
-                log::debug!("could not connect to host '{addr}': {e}");
-            }
-        }
-    }
-    let stream = stream.ok_or_else(|| {
-        log::debug!("could not connect to any address for host '{to_addr}'");
-        io::Error::new(
-            io::ErrorKind::AddrNotAvailable,
-            format!("connection failed to host '{to_addr}'"),
-        )
-    })?;
-
-    Ok(stream)
 }
 
 pub async fn get_client(
@@ -148,7 +126,9 @@ pub async fn get_client(
         let Some(cluster_sock) = &cluster.address else {
             panic!("cluster.address should be Some when cluster.args.use_insecure_port == false");
         };
-        tcp_try_connect(cluster_sock.address(), address).await?
+        let from_addr = cluster_sock.address();
+        let to_addr = str2sockaddr(address)?;
+        tcp_try_connect(from_addr, to_addr).await?
     } else {
         tokio::net::TcpStream::connect(address).await?
     };
