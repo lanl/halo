@@ -209,14 +209,29 @@ impl ResourceGroup {
         *managed_status
     }
 
-    /// Sets resources group's managed status
-    pub fn set_managed(&self, managed: bool) {
+
+    /// Set the managed status for the first time when the manager is starting up.
+    pub fn set_initial_managed(&self, managed: bool) {
         let mut managed_status = self.managed.lock().unwrap();
+
+        *managed_status = managed;
+    }
+
+    /// Update resources group's managed status during runtime.
+    pub fn update_managed(&self, managed: bool) {
+        let remanaged = {
+            let mut managed_status = self.managed.lock().unwrap();
+            let was_managed = *managed_status;
+
+            *managed_status = managed;
+
+            !was_managed && managed
+        };
 
         // When a resource transitions from being unmanaged to being managed, any assumptions about
         // its state MUST be revalidated before the manager can take any actions on it. Therefore,
         // clear any out of date knowledge on whether it was known to be running somewhere.
-        if !*managed_status && managed {
+        if remanaged {
             for host in self.hosts() {
                 self.root.set_status_recursive(
                     ResourceStatus::Unknown(
@@ -228,8 +243,6 @@ impl ResourceGroup {
 
             self.root.clear_resource_group_knowledge(&self.id());
         }
-
-        *managed_status = managed;
     }
 
     pub fn is_running_nowhere(&self) -> bool {

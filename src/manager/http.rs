@@ -332,7 +332,7 @@ async fn set_managed(
                 rg.id(),
                 if payload.managed { "true" } else { "false" }
             );
-            rg.set_managed(payload.managed);
+            rg.update_managed(payload.managed).await;
             let event = if payload.managed {
                 Event::Manage
             } else {
