@@ -159,10 +159,7 @@ impl Host {
 
     /// Create a Host object from a given config::Host object.
     pub fn from_config(config: &crate::config::Host) -> Self {
-        let fence_agent = config
-            .fence_agent
-            .as_ref()
-            .map(|agent| FenceAgent::from_params(agent, &config.fence_parameters));
+        let fence_agent = FenceAgent::from_config(config);
         Host::new(config.hostname.clone(), fence_agent)
     }
 
