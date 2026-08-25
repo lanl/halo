@@ -35,16 +35,10 @@ pub struct Cli {
     pub config: Option<String>,
 
     #[arg(long, global = true)]
-    pub statefile: Option<String>,
-
-    #[arg(long, global = true)]
     pub socket: Option<String>,
 
     #[arg(short, long, global = true)]
     pub verbose: bool,
-
-    #[arg(long)]
-    pub mtls: bool,
 
     #[command(subcommand)]
     pub command: Commands,
