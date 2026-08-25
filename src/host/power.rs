@@ -103,7 +103,7 @@ impl FenceAgent {
     }
 
     /// Gets the name of the executable file used for a given fence agent.
-    fn get_executable(&self) -> &str {
+    pub fn get_executable(&self) -> &str {
         match self {
             FenceAgent::Powerman => "fence_powerman",
             FenceAgent::Redfish(_) => "fence_redfish",
@@ -113,7 +113,7 @@ impl FenceAgent {
 
     /// Fence agents take their arguments on stdin. This function generates the input arguments to
     /// send to a fence agent to do a fence action on the given host.
-    fn generate_command_bytes(&self, host_id: &str, command: FenceCommand) -> Vec<u8> {
+    pub fn generate_command_bytes(&self, host_id: &str, command: FenceCommand) -> Vec<u8> {
         let args = match self {
             FenceAgent::Powerman => {
                 format!("ipaddr=localhost\naction={0}\nplug={1}\n", command, host_id)
@@ -247,42 +247,6 @@ impl super::Host {
 
         if status.success() {
             Ok(())
-        } else {
-            Err(Box::new(FenceError {}))
-        }
-    }
-
-    /// Attempt to check this host's power status.
-    ///
-    /// If self.fence_agent is not set, then panics.
-    pub fn is_powered_on(&self) -> Result<bool, Box<dyn Error>> {
-        let agent = self.fence_agent.as_ref().unwrap();
-
-        let mut child = Command::new(agent.get_executable())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
-
-        let command_bytes = agent.generate_command_bytes(&self.address.name, FenceCommand::Status);
-
-        child
-            .stdin
-            .as_mut()
-            .expect("stdin should have been captured")
-            .write_all(&command_bytes)?;
-        let status = child.wait()?;
-
-        if !status.success() {
-            return Err(Box::new(FenceError {}));
-        }
-
-        let mut out = String::new();
-        child.stdout.unwrap().read_to_string(&mut out)?;
-
-        if out.contains("is ON") {
-            Ok(true)
-        } else if out.contains("is OFF") {
-            Ok(false)
         } else {
             Err(Box::new(FenceError {}))
         }

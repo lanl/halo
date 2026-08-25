@@ -3,7 +3,13 @@
 
 use clap::Args;
 
-use crate::{cluster::Cluster, handled_error, host::*, HandledResult};
+use std::{
+    error::Error,
+    io::{Read, Write},
+    process::{Command, Stdio},
+};
+
+use crate::{cluster::Cluster, handled_error, host::*, Handle, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct PowerArgs {
@@ -115,15 +121,65 @@ fn status_all_hosts_in_config(args: &PowerArgs) -> HandledResult<()> {
         }
     };
 
-    let cluster = Cluster::from_config(args.config.clone())?;
+    let config_path = args
+        .config
+        .as_ref()
+        .map(|h| h.to_owned())
+        .unwrap_or(crate::default_config_path());
+    let config = std::fs::read_to_string(&config_path).handle_err(|e| {
+        eprintln!("Could not open config file \"{config_path}\": {e}");
+    })?;
 
-    for host in cluster.hosts() {
-        match host.is_powered_on() {
-            Ok(true) => println!("{} is on", host),
-            Ok(false) => println!("{} is off", host),
-            Err(e) => println!("Could not determine power status for {}, {e}", host),
+    let config: crate::config::Config = serde_yaml::from_str(&config).handle_err(|e| {
+        eprintln!("Could not parse config file \"{config_path}\": {e}");
+    })?;
+
+    for host in &config.hosts {
+        let agent = FenceAgent::from_config(host).unwrap();
+
+        // The host name might have a ":port" suffix; remove that.
+        let hostname = host.hostname.split(":").next().unwrap();
+
+        match is_host_powered_on(hostname, agent) {
+            Ok(true) => println!("{} is on", hostname),
+            Ok(false) => println!("{} is off", hostname),
+            Err(e) => println!("Could not determine power status for {}: {e}", hostname),
         }
     }
 
     Ok(())
+}
+
+/// Attempt to check this host's power status.
+///
+/// If self.fence_agent is not set, then panics.
+fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> Result<bool, Box<dyn Error>> {
+    let mut child = Command::new(agent.get_executable())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let command_bytes = agent.generate_command_bytes(hostname, FenceCommand::Status);
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should have been captured")
+        .write_all(&command_bytes)?;
+    let status = child.wait()?;
+
+    if !status.success() {
+        return Err(Box::new(power::FenceError {}));
+    }
+
+    let mut out = String::new();
+    child.stdout.unwrap().read_to_string(&mut out)?;
+
+    if out.contains("is ON") {
+        Ok(true)
+    } else if out.contains("is OFF") {
+        Ok(false)
+    } else {
+        Err(Box::new(power::FenceError {}))
+    }
 }
