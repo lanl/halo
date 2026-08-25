@@ -22,6 +22,7 @@ use {
     power::PowerArgs,
     reset::ResetArgs,
     status::StatusArgs,
+    validate::ValidateArgs,
 };
 
 use crate::{Handle, HandledResult};
@@ -31,9 +32,6 @@ use clap::{Parser, Subcommand};
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-    #[arg(long, global = true)]
-    pub config: Option<String>,
-
     #[arg(long, global = true)]
     pub socket: Option<String>,
 
@@ -53,7 +51,7 @@ pub enum Commands {
     Fence(FenceArgs),
     Power(PowerArgs),
     Reset(ResetArgs),
-    Validate,
+    Validate(ValidateArgs),
     Manage(ManageArgs),
     Unmanage(UnManageArgs),
     Activate(ActivateArgs),
@@ -66,8 +64,8 @@ pub fn main(cli: &Cli) -> HandledResult<()> {
         Commands::Events(args) => events::events(cli, args),
         Commands::Failback(args) => failback::failback(cli, args),
         Commands::Fence(args) => fence::fence(cli, args),
-        Commands::Power(args) => power::power(cli, args),
-        Commands::Validate => validate::validate(cli),
+        Commands::Power(args) => power::power(args),
+        Commands::Validate(args) => validate::validate(args),
         Commands::Status(args) => status::status(cli, args),
         Commands::Manage(args) => manage::manage(cli, args),
         Commands::Unmanage(args) => manage::unmanage(cli, args),
