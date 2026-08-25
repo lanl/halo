@@ -15,6 +15,8 @@ use {
     tokio::io::{AsyncReadExt, AsyncWriteExt},
 };
 
+use crate::config;
+
 #[derive(Debug)]
 pub struct FenceError {}
 
@@ -53,6 +55,13 @@ pub enum FenceAgent {
 }
 
 impl FenceAgent {
+    /// Create a fence agent from a config::Host object.
+    pub fn from_config(host: &config::Host) -> Option<Self> {
+        host.fence_agent
+            .as_ref()
+            .map(|agent| Self::from_params(agent, &host.fence_parameters))
+    }
+
     /// Create a fence agent given the agent name and its configuration parameters.
     ///
     /// The agent name corresponds to the executable file used to run the agent, and the params are
@@ -62,7 +71,7 @@ impl FenceAgent {
     /// run with an unusable fence agent. Note that the parameters are not required for powerman,
     /// since the hostname is the only needed parameter, and that is already stored on the Host
     /// object. However, the other fence agents need additional parameters.
-    pub fn from_params(agent: &str, params: &Option<HashMap<String, String>>) -> Self {
+    fn from_params(agent: &str, params: &Option<HashMap<String, String>>) -> Self {
         if agent == "powerman" {
             return Self::Powerman;
         }
