@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use crate::{cluster::Cluster, commands::Cli, handled_error, HandledResult};
+use clap::Args;
 
-pub fn validate(args: &Cli) -> HandledResult<()> {
+use crate::{cluster::Cluster, handled_error, HandledResult};
+
+#[derive(Args, Debug, Clone)]
+pub struct ValidateArgs {
+    /// The location of the config file.
+    #[arg(long)]
+    pub config: Option<String>,
+}
+
+pub fn validate(args: &ValidateArgs) -> HandledResult<()> {
     match &args.config {
         Some(config) => {
             let cluster = Cluster::from_config(Some(config.to_string()))?;

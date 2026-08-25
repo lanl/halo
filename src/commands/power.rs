@@ -3,10 +3,14 @@
 
 use clap::Args;
 
-use crate::{cluster::Cluster, commands::Cli, handled_error, host::*, HandledResult};
+use crate::{cluster::Cluster, handled_error, host::*, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct PowerArgs {
+    /// The location of the config file.
+    #[arg(long)]
+    pub config: Option<String>,
+
     /// The fencing action to perform.
     action: FenceCommand,
 
@@ -27,9 +31,9 @@ pub struct PowerArgs {
     password: Option<String>,
 }
 
-pub fn power(main_args: &Cli, args: &PowerArgs) -> HandledResult<()> {
+pub fn power(args: &PowerArgs) -> HandledResult<()> {
     if args.hostnames.is_empty() {
-        return status_all_hosts_in_config(main_args, args);
+        return status_all_hosts_in_config(args);
     }
 
     if let Some(fence_agent) = args.fence_agent.as_ref() {
@@ -39,7 +43,7 @@ pub fn power(main_args: &Cli, args: &PowerArgs) -> HandledResult<()> {
     // If the user has not specified a fence agent, then assume that the fence parameters for the
     // requested host(s) are found in the config file.
 
-    let cluster = Cluster::from_config(main_args.config.clone())?;
+    let cluster = Cluster::from_config(args.config.clone())?;
 
     for hostname in args.hostnames.iter() {
         let host = cluster.get_host(hostname).unwrap();
@@ -102,7 +106,7 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
 
 /// When no hostnames are specified, it is assumed that the user is requesting the power status of
 /// every host in the config.
-fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> HandledResult<()> {
+fn status_all_hosts_in_config(args: &PowerArgs) -> HandledResult<()> {
     match &args.action {
         FenceCommand::Status => {}
         other => {
@@ -111,7 +115,7 @@ fn status_all_hosts_in_config(main_args: &Cli, args: &PowerArgs) -> HandledResul
         }
     };
 
-    let cluster = Cluster::from_config(main_args.config.clone())?;
+    let cluster = Cluster::from_config(args.config.clone())?;
 
     for host in cluster.hosts() {
         match host.is_powered_on() {
