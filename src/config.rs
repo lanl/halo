@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{handled_error, HandledResult};
+use crate::{handled_error, Handle, HandledResult};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
@@ -15,6 +15,23 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn from_file(path: Option<&str>) -> HandledResult<Self> {
+        let path = match path {
+            Some(path) => path,
+            None => &crate::default_config_path(),
+        };
+
+        let config = std::fs::read_to_string(path).handle_err(|e| {
+            eprintln!("Could not open config file \"{path}\": {e}");
+        })?;
+
+        let config: crate::config::Config = serde_yaml::from_str(&config).handle_err(|e| {
+            eprintln!("Could not parse config file \"{path}\": {e}");
+        })?;
+
+        Ok(config)
+    }
+
     pub fn get_resource(&self, name: &str) -> &Resource {
         for res in &self.resources {
             if res.name == name {

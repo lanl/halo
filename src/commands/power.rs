@@ -121,18 +121,7 @@ fn status_all_hosts_in_config(args: &PowerArgs) -> HandledResult<()> {
         }
     };
 
-    let config_path = args
-        .config
-        .as_ref()
-        .map(|h| h.to_owned())
-        .unwrap_or(crate::default_config_path());
-    let config = std::fs::read_to_string(&config_path).handle_err(|e| {
-        eprintln!("Could not open config file \"{config_path}\": {e}");
-    })?;
-
-    let config: crate::config::Config = serde_yaml::from_str(&config).handle_err(|e| {
-        eprintln!("Could not parse config file \"{config_path}\": {e}");
-    })?;
+    let config = crate::config::Config::from_file(args.config.as_deref())?;
 
     for host in &config.hosts {
         let agent = FenceAgent::from_config(host).unwrap();

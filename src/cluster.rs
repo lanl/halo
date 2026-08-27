@@ -149,17 +149,7 @@ impl Cluster {
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
     pub fn new(args: manager::Cli) -> HandledResult<Self> {
-        let configpath = match &args.config {
-            Some(path) => path,
-            None => &crate::default_config_path(),
-        };
-        let config = std::fs::read_to_string(configpath).handle_err(|e| {
-            eprintln!("Could not open config file \"{configpath}\": {e}");
-        })?;
-
-        let config: crate::config::Config = serde_yaml::from_str(&config).handle_err(|e| {
-            eprintln!("Could not parse config file \"{configpath}\": {e}");
-        })?;
+        let config = crate::config::Config::from_file(args.config.as_deref())?;
 
         let state = match &args.statefile {
             Some(f) => Some(State::new(f)?),
