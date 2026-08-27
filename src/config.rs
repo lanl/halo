@@ -42,6 +42,12 @@ impl Config {
         panic!("Resource {name} referenced but not defined anywhere. Invalid config.");
     }
 
+    pub fn get_host(&self, name: &str) -> Option<&Host> {
+        self.hosts
+            .iter()
+            .find(|h| h.hostname.split(":").next().unwrap() == name)
+    }
+
     /// Get all the failover pairs from this config.
     pub fn get_failover_partners(&self) -> HashMap<String, String> {
         self.resource_groups

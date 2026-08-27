@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{
-    collections::HashMap,
-    error::Error,
-    fmt,
-    io::{Read, Write},
-    process::{Command, Stdio},
-};
+use std::{collections::HashMap, error::Error, fmt, process::Stdio};
 
 use {
     clap::ValueEnum,
@@ -171,44 +165,6 @@ impl fmt::Debug for RedfishArgs {
 }
 
 impl super::Host {
-    /// Attempt to power on or off this host.
-    ///
-    /// If self.fence_agent is not set, then panics.
-    ///
-    /// This is the blocking variant - it is safe to use in commands, but should not be called from
-    /// the management service.
-    pub fn do_fence(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
-        let agent = self.fence_agent.as_ref().unwrap();
-
-        if matches!(command, FenceCommand::Status) {
-            panic!("Please use is_powered_on() for power status.");
-        }
-
-        let mut child = Command::new(agent.get_executable())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
-
-        let command_bytes = agent.generate_command_bytes(&self.address.name, command);
-
-        child
-            .stdin
-            .as_mut()
-            .expect("stdin should have been captured")
-            .write_all(&command_bytes)?;
-        let status = child.wait()?;
-
-        let mut out = String::new();
-        child.stdout.unwrap().read_to_string(&mut out)?;
-        debug!("out: {out}");
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err(Box::new(FenceError {}))
-        }
-    }
-
     /// Do a fence operation using the non-blocking APIs for spawning a command and waiting for its
     /// result. Suitable to be called by the management service.
     pub async fn do_fence_nonblocking(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
