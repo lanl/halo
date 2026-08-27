@@ -9,7 +9,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::{cluster::Cluster, handled_error, host::*, Handle, HandledResult};
+use crate::{handled_error, host::*, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct PowerArgs {
@@ -49,16 +49,21 @@ pub fn power(args: &PowerArgs) -> HandledResult<()> {
     // If the user has not specified a fence agent, then assume that the fence parameters for the
     // requested host(s) are found in the config file.
 
-    let cluster = Cluster::from_config(args.config.clone())?;
+    let config = crate::config::Config::from_file(args.config.as_deref())?;
 
     for hostname in args.hostnames.iter() {
-        let host = cluster.get_host(hostname).unwrap();
-        match host.do_fence(args.action) {
+        let host = config.get_host(hostname).unwrap();
+
+        let agent = FenceAgent::from_config(host).unwrap();
+        // The host name might have a ":port" suffix; remove that.
+        let hostname = host.hostname.split(":").next().unwrap();
+
+        match do_fence(hostname, &agent, args.action) {
             Ok(()) => {
-                eprintln!("{} Fence: Success", host.name());
+                eprintln!("{hostname} Fence: Success");
             }
             Err(e) => {
-                eprintln!("{} Fence result: Failure: {e}", host.name());
+                eprintln!("{hostname} Fence result: Failure: {e}");
             }
         }
     }
@@ -80,24 +85,19 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
         other => panic!("unsupported fence agent {other}"),
     };
 
-    let hosts: Vec<Host> = args
-        .hostnames
-        .iter()
-        .map(|host| Host::new(host.clone(), Some(fence_agent.clone())))
-        .collect();
-
     let mut error_seen = false;
 
-    for host in hosts {
+    for host in &args.hostnames {
         if args.verbose {
-            eprintln!("Fencing Host: {}", host.name());
+            eprintln!("Fencing Host: {}", host);
         }
-        match host.do_fence(args.action) {
+
+        match do_fence(host, &fence_agent, args.action) {
             Ok(()) => {
-                eprintln!("{} Fence: Success", host.name());
+                eprintln!("{} Fence: Success", host);
             }
             Err(e) => {
-                eprintln!("{} Fence result: Failure: {e}", host.name());
+                eprintln!("{} Fence result: Failure: {e}", host);
                 error_seen = true;
             }
         }
@@ -168,6 +168,46 @@ fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> Result<bool, Box<dyn
         Ok(true)
     } else if out.contains("is OFF") {
         Ok(false)
+    } else {
+        Err(Box::new(power::FenceError {}))
+    }
+}
+
+/// Attempt to power on or off this host.
+///
+/// If self.fence_agent is not set, then panics.
+///
+/// This is the blocking variant - it is safe to use in commands, but should not be called from
+/// the management service.
+fn do_fence(
+    hostname: &str,
+    agent: &FenceAgent,
+    command: FenceCommand,
+) -> Result<(), Box<dyn Error>> {
+    if matches!(command, FenceCommand::Status) {
+        panic!("Please use is_powered_on() for power status.");
+    }
+
+    let mut child = Command::new(agent.get_executable())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let command_bytes = agent.generate_command_bytes(hostname, command);
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should have been captured")
+        .write_all(&command_bytes)?;
+    let status = child.wait()?;
+
+    let mut out = String::new();
+    child.stdout.unwrap().read_to_string(&mut out)?;
+    log::debug!("out: {out}");
+
+    if status.success() {
+        Ok(())
     } else {
         Err(Box::new(power::FenceError {}))
     }
