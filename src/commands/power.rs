@@ -37,10 +37,6 @@ pub struct PowerArgs {
 }
 
 pub fn power(args: &PowerArgs) -> HandledResult<()> {
-    if args.hostnames.is_empty() {
-        return status_all_hosts_in_config(args);
-    }
-
     if let Some(fence_agent) = args.fence_agent.as_ref() {
         return do_fence_given_agent(fence_agent, args);
     }
@@ -50,9 +46,16 @@ pub fn power(args: &PowerArgs) -> HandledResult<()> {
 
     let config = crate::config::Config::from_file(args.config.as_deref())?;
 
-    for hostname in args.hostnames.iter() {
-        let host = config.get_host(hostname).unwrap();
+    let hosts: Vec<&crate::config::Host> = if args.hostnames.is_empty() {
+        config.hosts.iter().collect()
+    } else {
+        args.hostnames
+            .iter()
+            .map(|name| config.get_host(name).unwrap())
+            .collect()
+    };
 
+    for host in hosts {
         let agent = FenceAgent::from_config(host).unwrap();
         // The host name might have a ":port" suffix; remove that.
         let hostname = host.hostname.split(":").next().unwrap();
@@ -103,42 +106,13 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
     }
 }
 
-/// When no hostnames are specified, it is assumed that the user is requesting the power status of
-/// every host in the config.
-fn status_all_hosts_in_config(args: &PowerArgs) -> HandledResult<()> {
-    match &args.action {
-        FenceCommand::Status => {}
-        other => {
-            eprintln!("Must specify host names to perform action \"{other}\".");
-            return handled_error();
-        }
-    };
-
-    let config = crate::config::Config::from_file(args.config.as_deref())?;
-
-    for host in &config.hosts {
-        let agent = FenceAgent::from_config(host).unwrap();
-
-        // The host name might have a ":port" suffix; remove that.
-        let hostname = host.hostname.split(":").next().unwrap();
-
-        match is_host_powered_on(hostname, agent) {
-            Ok(true) => println!("{} is on", hostname),
-            Ok(false) => println!("{} is off", hostname),
-            Err(_) => {}
-        }
-    }
-
-    Ok(())
-}
-
 /// Attempt to check this host's power status.
 ///
 /// If self.fence_agent is not set, then panics.
-fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> HandledResult<bool> {
+fn is_host_powered_on(hostname: &str, agent: &FenceAgent) -> HandledResult<bool> {
     let prog = agent.get_executable();
 
-    let (status, child) = run_fence_binary(hostname, &agent, FenceCommand::Status)?;
+    let (status, child) = run_fence_binary(hostname, agent, FenceCommand::Status)?;
 
     let mut out = String::new();
     child
@@ -181,7 +155,11 @@ fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> HandledResult<bool> 
 /// the management service.
 fn do_fence(hostname: &str, agent: &FenceAgent, command: FenceCommand) -> HandledResult<()> {
     if matches!(command, FenceCommand::Status) {
-        panic!("Please use is_powered_on() for power status.");
+        return is_host_powered_on(hostname, agent)
+            .inspect(|powered_on| {
+                println!("{hostname} is {}", if *powered_on { "on" } else { "off" })
+            })
+            .map(|_| ());
     }
 
     let (status, child) = run_fence_binary(hostname, agent, command)?;
