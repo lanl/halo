@@ -55,17 +55,23 @@ pub fn power(args: &PowerArgs) -> HandledResult<()> {
             .collect()
     };
 
+    let mut error_seen = false;
+
     for host in hosts {
         let agent = FenceAgent::from_config(host).unwrap();
         // The host name might have a ":port" suffix; remove that.
         let hostname = host.hostname.split(":").next().unwrap();
 
-        if do_fence(hostname, &agent, args.action).is_ok() {
-            eprintln!("{hostname} Fence: Success");
-        };
+        if do_fence(hostname, &agent, args.action).is_err() {
+            error_seen = true;
+        }
     }
 
-    Ok(())
+    if error_seen {
+        handled_error()
+    } else {
+        Ok(())
+    }
 }
 
 /// Perform a fence action, with the fence agent specified on the command line. In this case, the
@@ -174,6 +180,7 @@ fn do_fence(hostname: &str, agent: &FenceAgent, command: FenceCommand) -> Handle
     log::debug!("out: {out}");
 
     if status.success() {
+        eprintln!("{hostname} Fence: Success");
         Ok(())
     } else {
         handled_error()
