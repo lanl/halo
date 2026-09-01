@@ -161,9 +161,9 @@ fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> HandledResult<bool> 
         return handled_error();
     }
 
-    if out.contains("is ON") {
+    if out.contains("ON") {
         Ok(true)
-    } else if out.contains("is OFF") {
+    } else if out.contains("OFF") {
         Ok(false)
     } else {
         eprintln!("Fence binary '{prog}' gave unexpected output; cannot determine power status.");
