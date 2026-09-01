@@ -4,12 +4,11 @@
 use clap::Args;
 
 use std::{
-    error::Error,
     io::{Read, Write},
     process::{Command, Stdio},
 };
 
-use crate::{handled_error, host::*, HandledResult};
+use crate::{handled_error, host::*, Handle, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct PowerArgs {
@@ -58,14 +57,9 @@ pub fn power(args: &PowerArgs) -> HandledResult<()> {
         // The host name might have a ":port" suffix; remove that.
         let hostname = host.hostname.split(":").next().unwrap();
 
-        match do_fence(hostname, &agent, args.action) {
-            Ok(()) => {
-                eprintln!("{hostname} Fence: Success");
-            }
-            Err(e) => {
-                eprintln!("{hostname} Fence result: Failure: {e}");
-            }
-        }
+        if do_fence(hostname, &agent, args.action).is_ok() {
+            eprintln!("{hostname} Fence: Success");
+        };
     }
 
     Ok(())
@@ -96,8 +90,7 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
             Ok(()) => {
                 eprintln!("{} Fence: Success", host);
             }
-            Err(e) => {
-                eprintln!("{} Fence result: Failure: {e}", host);
+            Err(_) => {
                 error_seen = true;
             }
         }
@@ -132,7 +125,7 @@ fn status_all_hosts_in_config(args: &PowerArgs) -> HandledResult<()> {
         match is_host_powered_on(hostname, agent) {
             Ok(true) => println!("{} is on", hostname),
             Ok(false) => println!("{} is off", hostname),
-            Err(e) => println!("Could not determine power status for {}: {e}", hostname),
+            Err(_) => {}
         }
     }
 
@@ -142,34 +135,41 @@ fn status_all_hosts_in_config(args: &PowerArgs) -> HandledResult<()> {
 /// Attempt to check this host's power status.
 ///
 /// If self.fence_agent is not set, then panics.
-fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> Result<bool, Box<dyn Error>> {
-    let mut child = Command::new(agent.get_executable())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
+fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> HandledResult<bool> {
+    let prog = agent.get_executable();
 
-    let command_bytes = agent.generate_command_bytes(hostname, FenceCommand::Status);
-
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin should have been captured")
-        .write_all(&command_bytes)?;
-    let status = child.wait()?;
-
-    if !status.success() {
-        return Err(Box::new(power::FenceError {}));
-    }
+    let (status, child) = run_fence_binary(hostname, &agent, FenceCommand::Status)?;
 
     let mut out = String::new();
-    child.stdout.unwrap().read_to_string(&mut out)?;
+    child
+        .stdout
+        .unwrap()
+        .read_to_string(&mut out)
+        .handle_err(|e| eprintln!("Could not read stdout of fence binary: {e}"))?;
+
+    let mut err = String::new();
+    child
+        .stderr
+        .unwrap()
+        .read_to_string(&mut err)
+        .handle_err(|e| eprintln!("Could not read stderr of fence binary: {e}"))?;
+
+    if !status.success() {
+        eprintln!("Fence binary '{prog}' failed.");
+        eprintln!("stdout: '{out}'");
+        eprintln!("stderr: '{err}'");
+        return handled_error();
+    }
 
     if out.contains("is ON") {
         Ok(true)
     } else if out.contains("is OFF") {
         Ok(false)
     } else {
-        Err(Box::new(power::FenceError {}))
+        eprintln!("Fence binary '{prog}' gave unexpected output; cannot determine power status.");
+        eprintln!("stdout: '{out}'");
+        eprintln!("stderr: '{err}'");
+        handled_error()
     }
 }
 
@@ -179,19 +179,42 @@ fn is_host_powered_on(hostname: &str, agent: FenceAgent) -> Result<bool, Box<dyn
 ///
 /// This is the blocking variant - it is safe to use in commands, but should not be called from
 /// the management service.
-fn do_fence(
-    hostname: &str,
-    agent: &FenceAgent,
-    command: FenceCommand,
-) -> Result<(), Box<dyn Error>> {
+fn do_fence(hostname: &str, agent: &FenceAgent, command: FenceCommand) -> HandledResult<()> {
     if matches!(command, FenceCommand::Status) {
         panic!("Please use is_powered_on() for power status.");
     }
 
-    let mut child = Command::new(agent.get_executable())
+    let (status, child) = run_fence_binary(hostname, agent, command)?;
+
+    let mut out = String::new();
+    child
+        .stdout
+        .unwrap()
+        .read_to_string(&mut out)
+        .handle_err(|e| eprintln!("Could not read stdout of fence binary: {e}"))?;
+
+    log::debug!("out: {out}");
+
+    if status.success() {
+        Ok(())
+    } else {
+        handled_error()
+    }
+}
+
+fn run_fence_binary(
+    hostname: &str,
+    agent: &FenceAgent,
+    command: FenceCommand,
+) -> HandledResult<(std::process::ExitStatus, std::process::Child)> {
+    let prog = agent.get_executable();
+
+    let mut child = Command::new(prog)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .stderr(Stdio::piped())
+        .spawn()
+        .handle_err(|e| eprintln!("Could not spawn fence binary '{prog}': {e}"))?;
 
     let command_bytes = agent.generate_command_bytes(hostname, command);
 
@@ -199,16 +222,12 @@ fn do_fence(
         .stdin
         .as_mut()
         .expect("stdin should have been captured")
-        .write_all(&command_bytes)?;
-    let status = child.wait()?;
+        .write_all(&command_bytes)
+        .handle_err(|e| eprintln!("Could not write to stdin of fence binary '{prog}': {e}"))?;
 
-    let mut out = String::new();
-    child.stdout.unwrap().read_to_string(&mut out)?;
-    log::debug!("out: {out}");
+    let status = child
+        .wait()
+        .handle_err(|e| eprintln!("Could not get exit status of fence binary '{prog}': {e}"))?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Box::new(power::FenceError {}))
-    }
+    Ok((status, child))
 }
