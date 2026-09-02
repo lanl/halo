@@ -4,10 +4,15 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
+    io::ErrorKind,
+    net::SocketAddr,
     sync::Arc,
 };
 
-use {futures::future, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
+use {
+    futures::future, rustls::pki_types::ServerName, tokio::net::TcpSocket,
+    tokio_rustls::TlsConnector,
+};
 
 use crate::{
     config, handled_error,
@@ -17,6 +22,26 @@ use crate::{
     state::{Record, State},
     Handle, HandledResult,
 };
+
+/// ClusterAddress holds a bound socket that should stay bound for the lifetime of this object, but
+/// does not need to be referenced, as well as the corresponding address that can continually be
+/// used to make connections.
+pub struct ClusterAddress {
+    address: SocketAddr,
+    _socket: TcpSocket,
+}
+
+impl ClusterAddress {
+    pub fn new() -> Self {
+        let (address, _socket) = reserve_local_privileged_port().unwrap();
+        Self { address, _socket }
+    }
+
+    /// Get a string representation of the address.
+    pub fn address(&self) -> SocketAddr {
+        self.address
+    }
+}
 
 /// Cluster is the model used to represent the dynamic state of a cluster in memory.
 /// Unlike the persistent model which views a cluster as made up of nodes, which own services,
@@ -40,6 +65,10 @@ pub struct Cluster {
     /// File to use to store/load cluster state. This must be specified on the manager side where
     /// state must be considered; otherwise, this does not need to be specified.
     state: Option<State>,
+
+    /// The address used to connect to clients through. Currently, this is only needed when using
+    /// privileged ports (the default), since they must be manually assigned.
+    pub address: Option<ClusterAddress>,
 
     pub tls_args: Option<TlsArgs>,
 }
@@ -168,6 +197,12 @@ impl Cluster {
             None
         };
 
+        let address = if !args.use_insecure_port {
+            Some(ClusterAddress::new())
+        } else {
+            None
+        };
+
         for rg in &config.resource_groups {
             if rg.failover_hosts.len() > 1 {
                 eprintln!(
@@ -179,7 +214,7 @@ impl Cluster {
             }
         }
 
-        let new = Cluster::from_config2(&config, args.clone(), state, tls_args);
+        let new = Cluster::from_config2(&config, args.clone(), state, address, tls_args);
 
         if new.resource_groups.iter().any(|rg| rg.root.count > 1) {
             eprintln!("Config has a shared root resource, which is not supported.");
@@ -203,6 +238,7 @@ impl Cluster {
         config: &config::Config,
         args: manager::Cli,
         state: Option<State>,
+        address: Option<ClusterAddress>,
         tls_args: Option<TlsArgs>,
     ) -> Self {
         let hosts: HashMap<_, _> = config
@@ -317,6 +353,7 @@ impl Cluster {
             args,
             failover,
             state,
+            address,
             tls_args,
         }
     }
@@ -378,4 +415,21 @@ pub fn get_failover_partner<'pairs>(
         }
     }
     None
+}
+
+/// Attempt to create a TCP socket using a local address and privileged port <=1024.
+fn reserve_local_privileged_port() -> HandledResult<(SocketAddr, TcpSocket)> {
+    for i in 500..=1024 {
+        let addr = format!("0.0.0.0:{i}").parse().unwrap();
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.set_reuseaddr(true).unwrap();
+        match socket.bind(addr) {
+            Ok(()) => return Ok((addr, socket)),
+            Err(e) if e.kind() == ErrorKind::AddrInUse => continue,
+            Err(other) => eprintln!("{other}"),
+        }
+    }
+
+    eprintln!("Could not bind to a local privileged port. Add the `--use-insecure-port` manager option if you want to bind to an unprivileged port instead.");
+    handled_error()
 }

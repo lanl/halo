@@ -5,6 +5,7 @@ use std::{
     fmt,
     future::Future,
     io,
+    net::IpAddr,
     pin::Pin,
     rc::Rc,
     sync::{Arc, OnceLock},
@@ -41,6 +42,7 @@ impl std::fmt::Display for HostId {
 #[derive(Debug, Clone)]
 struct HostAddress {
     name: String,
+    ip: IpAddr,
     port: u16,
 }
 
@@ -132,13 +134,22 @@ impl Host {
     pub fn new(raw_name: String, fence_agent: Option<FenceAgent>) -> Self {
         let (name, port) = Self::get_host_port(&raw_name);
         let (sender, receiver) = mpsc::channel(1024);
+        let port = match port {
+            Some(p) => p,
+            None => crate::remote_port(),
+        };
+        use std::net::ToSocketAddrs;
+        let ip = (name, port)
+            .to_socket_addrs()
+            .unwrap()
+            .nth(0)
+            .expect(format!("could not resolve host: '{name}'").as_str())
+            .ip();
         Host {
             address: HostAddress {
                 name: name.to_string(),
-                port: match port {
-                    Some(p) => p,
-                    None => crate::remote_port(),
-                },
+                ip,
+                port,
             },
             raw_name,
             fence_agent,
@@ -220,12 +231,16 @@ impl Host {
         &self.address.name
     }
 
+    pub fn ip(&self) -> &IpAddr {
+        &self.address.ip
+    }
+
     pub fn port(&self) -> u16 {
         self.address.port
     }
 
     pub fn address(&self) -> String {
-        format!("{}:{}", self.name(), self.port())
+        format!("{}:{}", self.ip(), self.port())
     }
 
     /// Get a unique identifier for this host. Typically, this will just be the hostname, but in
@@ -270,7 +285,7 @@ impl Host {
     }
 
     async fn get_client(&self, cluster: &Cluster) -> io::Result<Client> {
-        let client = halo_capnp::get_client(&self.address(), cluster.tls_args.as_ref()).await;
+        let client = halo_capnp::get_client(&self.address(), cluster).await;
         match client {
             Ok(_) => self.set_connected(true),
             Err(_) => self.set_connected(false),

@@ -173,6 +173,7 @@ impl TestEnvironment {
         manager::Cli {
             config: Some(config_path),
             socket: Some(socket_path),
+            use_insecure_port: true,
             statefile: Some(statefile_path),
             mtls: false,
             verbose: false,
@@ -206,6 +207,7 @@ impl TestEnvironment {
                     handle: std::process::Command::new(&self.agent_binary_path)
                         .args(vec![
                             "--verbose",
+                            "--allow-insecure-ports",
                             "--test-id",
                             &agent.id.as_ref().unwrap_or(&self.test_id),
                         ])
@@ -255,6 +257,7 @@ impl TestEnvironment {
             &socket_path,
             "--sleep-time",
             "500",
+            "--use-insecure-port",
         ];
 
         if manage_resources {
