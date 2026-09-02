@@ -100,6 +100,7 @@ fn get_http_client(socket_path: Option<&str>) -> HandledResult<reqwest::blocking
 
     let client = reqwest::blocking::ClientBuilder::new()
         .unix_socket(addr)
+        .timeout(None)
         .build()
         .handle_err(|e| eprintln!("Could not create HTTP client at {}: {}", addr, e))?;
 
