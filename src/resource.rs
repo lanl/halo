@@ -148,7 +148,7 @@ impl ResourceGroup {
             self.update_resources(client).await?;
             match self.get_overall_status_on_host(&client.name) {
                 ResourceStatus::Stopped => {
-                    if self.get_managed() {
+                    if self.get_managed() && (self.root.is_running() || self.is_running_nowhere()) {
                         self.start_resources(client, loc).await?;
                     } else if !self.root.is_running() {
                         self.remove_group_from_host(&client.name);
