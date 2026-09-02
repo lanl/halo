@@ -367,10 +367,7 @@ impl Host {
             .take()
             .expect("Fence event must be set in order for admin fence request to be in progress.");
 
-        fence_event
-            .result
-            .send(res)
-            .expect("Sending on oneshot channel should not fail.");
+        let _ = fence_event.result.send(res);
     }
 
     async fn remote_liveness_check(&self, cluster: &Cluster) {
