@@ -240,9 +240,6 @@ impl ResourceGroup {
                     ),
                     &host.id(),
                 );
-
-                host.command(HostCommand::Remanage(self.id().to_string()))
-                    .await;
             }
         }
     }

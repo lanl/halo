@@ -62,11 +62,6 @@ pub enum HostCommand {
     /// deactivated.
     Deactivate,
     Fence,
-
-    /// Remanage a resource group whose ID is the given string. This requires the manager to forget
-    /// any knowledge on where the resource group may have been running, because it may have been
-    /// migrated.
-    Remanage(String),
 }
 
 #[derive(Debug)]
@@ -490,10 +485,6 @@ struct ResourceTaskCancel {
     /// A notification mechanism to tell a resource group management task to stop so that
     /// management can be handed over to the partner host.
     switch_host: Rc<Notify>,
-
-    /// A notification to tell the resource group that it switched from unmanaged to managed
-    /// status, so the manager needs to rediscover its location.
-    remanage: Rc<Notify>,
 }
 
 impl ResourceTaskCancel {
@@ -502,7 +493,6 @@ impl ResourceTaskCancel {
             id,
             lost_connection: Rc::new(Notify::new()),
             switch_host: Rc::new(Notify::new()),
-            remanage: Rc::new(Notify::new()),
         }
     }
 }
