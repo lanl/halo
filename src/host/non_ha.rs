@@ -167,10 +167,8 @@ impl Host {
         self.do_fence_nonblocking(FenceCommand::Off)
             .await
             .expect("fence off failed...");
-        match self.do_fence_nonblocking(FenceCommand::On).await {
-            Ok(()) => warn!("Turning on host {} succeeded.", self.id()),
-            Err(e) => warn!("Turning on host {} failed: {e}", self.id()),
-        };
+
+        let _ = self.do_fence_nonblocking(FenceCommand::On).await;
 
         todo!("Finish reboot logic...");
     }

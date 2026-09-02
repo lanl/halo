@@ -5,11 +5,11 @@ use std::{collections::HashMap, error::Error, fmt, process::Stdio};
 
 use {
     clap::ValueEnum,
-    log::debug,
+    log::{error, warn},
     tokio::io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::config;
+use crate::{config, handled_error, Handle, HandledResult};
 
 #[derive(Debug)]
 pub struct FenceError {}
@@ -167,19 +167,22 @@ impl fmt::Debug for RedfishArgs {
 impl super::Host {
     /// Do a fence operation using the non-blocking APIs for spawning a command and waiting for its
     /// result. Suitable to be called by the management service.
-    pub async fn do_fence_nonblocking(&self, command: FenceCommand) -> Result<(), Box<dyn Error>> {
+    pub async fn do_fence_nonblocking(&self, command: FenceCommand) -> HandledResult<()> {
+        let agent = self.fence_agent.as_ref().unwrap();
+        let prog = agent.get_executable();
+
         if let FenceCommand::Off = command {
             // Mark the host as "fenced" even if fencing ends up failing, to prevent multiple
             // attempts in a row.
             self.set_fence_attempted(true);
         }
 
-        let agent = self.fence_agent.as_ref().unwrap();
-
-        let mut child = tokio::process::Command::new(agent.get_executable())
+        let mut child = tokio::process::Command::new(prog)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped())
+            .spawn()
+            .handle_err(|e| error!("Failed to spawn fence binary '{prog}': {e}"))?;
 
         let command_bytes = agent.generate_command_bytes(&self.address.name, command);
 
@@ -188,23 +191,41 @@ impl super::Host {
             .as_mut()
             .unwrap()
             .write_all(&command_bytes)
-            .await?;
+            .await
+            .handle_err(|e| error!("Failed to write to stdin for fence binary '{prog}': {e}"))?;
 
-        let status = child.wait().await?;
+        let status = child
+            .wait()
+            .await
+            .handle_err(|e| error!("Failed to wait on child fence binary '{prog}': {e}"))?;
 
         let mut out = String::new();
         child
             .stdout
-            .take()
             .unwrap()
             .read_to_string(&mut out)
-            .await?;
-        debug!("out: {out}");
+            .await
+            .handle_err(|e| error!("Failed to read fence binary '{prog}' stdout: {e}"))?;
+
+        let mut err = String::new();
+        child
+            .stderr
+            .unwrap()
+            .read_to_string(&mut err)
+            .await
+            .handle_err(|e| error!("Failed to read fence binary '{prog}' stderr: {e}"))?;
 
         if status.success() {
+            warn!("Fencing host {} succeded.", self.id());
             Ok(())
         } else {
-            Err(Box::new(FenceError {}))
+            error!(
+                "Fencing host {} failed (fence binary '{prog}' returned nonzero).",
+                self.id()
+            );
+            error!("stdout: '{out}'");
+            error!("stderr: '{err}'");
+            handled_error()
         }
     }
 }
