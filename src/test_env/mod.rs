@@ -180,6 +180,7 @@ impl TestEnvironment {
             manage_resources: true,
             fence_on_connection_close: true,
             sleep_time: 5000,
+            disable_socket_perm_check: true,
         }
     }
 
