@@ -1,17 +1,14 @@
 %undefine _debugsource_packages
 
 Name:		halo
-Version:	@@VERSION@@
-Release:	@@RELEASE@@%{?dist}
-Summary:	HALO is a cluster management system designed for managing Lustre HA and similar use cases.
+Version:	%{version}
+Release:	1%{?dist}
+Summary:	A cluster management system designed for Lustre and similar systems
 
 License:	MIT
 URL:		https://github.com/lanl/halo
-Source0:	%{name}-%{version}.tgz
+Source0:	%{name}-%{version}.tar
 
-BuildRequires: cargo
-BuildRequires: rust
-BuildRequires: capnproto
 BuildRequires: systemd-rpm-macros
 
 Requires: systemd
@@ -42,13 +39,9 @@ install -D -p -m 0644 docs/man/halo_remote.1 %{buildroot}%{_mandir}/man1/halo_re
 install -D -p -m 0644 docs/man/halo_manager.1 %{buildroot}%{_mandir}/man1/halo_manager.1
 
 install -D -p -m 0644 sysconfig/halo %{buildroot}%{_sysconfdir}/sysconfig/halo
-
-%check
-cargo test || :
+install -d -m 0755 %{buildroot}%{_sysconfdir}/halo
 
 %files
-%license LICENSE
-%doc README.md
 %{_sbindir}/halo
 %{_sbindir}/halo_remote
 %{_sbindir}/halo_manager
@@ -60,6 +53,7 @@ cargo test || :
 %{_mandir}/man1/halo_remote.1*
 %{_mandir}/man1/halo_manager.1*
 
+%dir %{_sysconfdir}/halo
 %config(noreplace) %{_sysconfdir}/sysconfig/halo
 
 %post

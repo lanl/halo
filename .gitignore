@@ -11,3 +11,4 @@ patches.tar
 tests/test_output
 test_agent*
 *.pdf
+/packaging/rpmbuild
