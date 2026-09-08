@@ -33,7 +33,7 @@ pub struct Cli {
     #[arg(long)]
     pub port: Option<u16>,
 
-    /// Accept connections only from privileged clients.
+    /// Allow connections from unprivileged clients.
     #[arg(long)]
     pub allow_insecure_ports: bool,
 
