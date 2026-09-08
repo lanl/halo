@@ -91,14 +91,38 @@ fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource
     }
 }
 
+/// Attempt to establish a TCP stream to the given socket address from the given source address.
+async fn tcp_try_connect(
+    from_addr: std::net::SocketAddr,
+    to_addr: std::net::SocketAddr,
+) -> io::Result<tokio::net::TcpStream> {
+    let sock = tokio::net::TcpSocket::new_v4().inspect_err(|e| {
+        log::warn!("could not create new tcpv4 socket: {e}");
+    })?;
+    sock.set_reuseaddr(true).unwrap();
+    sock.bind(from_addr).inspect_err(|e| {
+        log::warn!("could not bind to address '{from_addr}': {e}");
+    })?;
+    sock.connect(to_addr).await
+}
+
 pub async fn get_client(
-    address: &str,
-    tls_args: Option<&cluster::TlsArgs>,
+    client_addr: std::net::SocketAddr,
+    cluster: &cluster::Cluster,
 ) -> io::Result<ocf_resource_agent::Client> {
-    let stream = tokio::net::TcpStream::connect(address).await?;
+    // Bind to specific cluster address if it has been specified.
+    let stream = if !cluster.args.use_insecure_port {
+        let Some(cluster_sock) = &cluster.address else {
+            panic!("cluster.address should be Some when cluster.args.use_insecure_port == false");
+        };
+        let from_addr = cluster_sock.address();
+        tcp_try_connect(from_addr, client_addr).await?
+    } else {
+        tokio::net::TcpStream::connect(client_addr).await?
+    };
     stream.set_nodelay(true).expect("setting nodelay failed.");
 
-    match tls_args {
+    match &cluster.tls_args {
         Some(args) => {
             // Perform mtls handshake
             let mtls_stream = args

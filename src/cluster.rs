@@ -4,10 +4,15 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
+    io::{self, ErrorKind},
+    net::SocketAddr,
     sync::Arc,
 };
 
-use {futures::future, rustls::pki_types::ServerName, tokio_rustls::TlsConnector};
+use {
+    futures::future, rustls::pki_types::ServerName, tokio::net::TcpSocket,
+    tokio_rustls::TlsConnector,
+};
 
 use crate::{
     config, handled_error,
@@ -17,6 +22,26 @@ use crate::{
     state::{Record, State},
     Handle, HandledResult,
 };
+
+/// RpcSourceAddress holds the local socket address used to make connections to the remote clients.
+pub struct RpcSourceAddress {
+    /// The local socket address used as the source address in connections to remote clients.
+    address: SocketAddr,
+    /// This socket is held open to "reserve" the address for the lifetime of this object.
+    _socket: TcpSocket,
+}
+
+impl RpcSourceAddress {
+    pub fn new() -> HandledResult<Self> {
+        let (address, _socket) = reserve_local_privileged_port()?;
+        Ok(Self { address, _socket })
+    }
+
+    /// Get a string representation of the address.
+    pub fn address(&self) -> SocketAddr {
+        self.address
+    }
+}
 
 /// Cluster is the model used to represent the dynamic state of a cluster in memory.
 /// Unlike the persistent model which views a cluster as made up of nodes, which own services,
@@ -41,6 +66,10 @@ pub struct Cluster {
     /// state must be considered; otherwise, this does not need to be specified.
     state: Option<State>,
 
+    /// The address used to connect to clients through. Currently, this is only needed when using
+    /// privileged ports (the default), since they must be manually assigned.
+    pub address: Option<RpcSourceAddress>,
+
     pub tls_args: Option<TlsArgs>,
 }
 
@@ -48,6 +77,13 @@ pub struct TlsArgs {
     pub tls_connector: TlsConnector,
 
     pub domain: ServerName<'static>,
+}
+
+fn host_from_config_host(config_host: &config::Host) -> HandledResult<(String, Arc<Host>)> {
+    match Host::from_config(config_host) {
+        Ok(h) => Ok((config_host.hostname.clone(), Arc::new(h))),
+        Err(_) => handled_error(),
+    }
 }
 
 impl Cluster {
@@ -168,6 +204,12 @@ impl Cluster {
             None
         };
 
+        let address = if !args.use_insecure_port {
+            Some(RpcSourceAddress::new()?)
+        } else {
+            None
+        };
+
         for rg in &config.resource_groups {
             if rg.failover_hosts.len() > 1 {
                 eprintln!(
@@ -179,7 +221,7 @@ impl Cluster {
             }
         }
 
-        let new = Cluster::from_config2(&config, args.clone(), state, tls_args);
+        let new = Cluster::from_config2(&config, args.clone(), state, address, tls_args)?;
 
         if new.resource_groups.iter().any(|rg| rg.root.count > 1) {
             eprintln!("Config has a shared root resource, which is not supported.");
@@ -203,13 +245,12 @@ impl Cluster {
         config: &config::Config,
         args: manager::Cli,
         state: Option<State>,
+        address: Option<RpcSourceAddress>,
         tls_args: Option<TlsArgs>,
-    ) -> Self {
-        let hosts: HashMap<_, _> = config
-            .hosts
-            .iter()
-            .map(|h| (h.hostname.clone(), Arc::new(Host::from_config(h))))
-            .collect();
+    ) -> HandledResult<Self> {
+        let hosts: Result<HashMap<_, _>, _> =
+            config.hosts.iter().map(host_from_config_host).collect();
+        let hosts = hosts?;
 
         // Set failover partners:
         let failover_partners = config.get_failover_partners();
@@ -311,14 +352,15 @@ impl Cluster {
         // right value:
         let hosts = hosts.into_values().map(|host| (host.id(), host)).collect();
 
-        Self {
+        Ok(Self {
             resource_groups,
             hosts,
             args,
             failover,
             state,
+            address,
             tls_args,
-        }
+        })
     }
 
     /// Write a Record entry into the Cluster's statefile.
@@ -378,4 +420,23 @@ pub fn get_failover_partner<'pairs>(
         }
     }
     None
+}
+
+/// Attempt to create a TCP socket using a local address and privileged port <=1024.
+fn reserve_local_privileged_port() -> HandledResult<(SocketAddr, TcpSocket)> {
+    let mut last_err = io::Error::from(ErrorKind::Other);
+    for i in 500..1024 {
+        let addr = format!("0.0.0.0:{i}").parse().unwrap();
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.set_reuseaddr(true).unwrap();
+        match socket.bind(addr) {
+            Ok(()) => return Ok((addr, socket)),
+            Err(e) if e.kind() == ErrorKind::AddrInUse => continue,
+            Err(other) => last_err = other,
+        }
+    }
+
+    eprintln!("Could not bind to a local privileged port. Add the `--use-insecure-port` manager option if you want to bind to an unprivileged port instead.");
+    eprintln!("Last error detected: {last_err}");
+    handled_error()
 }

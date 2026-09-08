@@ -5,6 +5,7 @@ use std::{
     fmt,
     future::Future,
     io,
+    net::{SocketAddr, ToSocketAddrs},
     pin::Pin,
     rc::Rc,
     sync::{Arc, OnceLock},
@@ -18,6 +19,7 @@ use {
 use crate::{
     cluster::Cluster,
     halo_capnp::{self, *},
+    handled_error,
     resource::{Location, ResourceId},
     state::{Event, Record},
     Handle, HandledResult,
@@ -41,6 +43,7 @@ impl std::fmt::Display for HostId {
 #[derive(Debug, Clone)]
 struct HostAddress {
     name: String,
+    addr: SocketAddr,
     port: u16,
 }
 
@@ -97,6 +100,19 @@ pub struct Client {
     pub name: HostId,
 }
 
+/// Create a SocketAddr given a resolvable hostname and port. The hostname will try to be resolved
+/// to the first IP address that resolves before becoming a component of the SocketAddr.
+pub fn resolve_host_address(name: &str, port: u16) -> HandledResult<SocketAddr> {
+    let maybe_sockaddr = (name, port).to_socket_addrs().unwrap().next();
+    match maybe_sockaddr {
+        Some(sockaddr) => Ok(sockaddr),
+        None => {
+            eprintln!("could not resolve host: '{name}'");
+            handled_error()
+        }
+    }
+}
+
 /// A server on which services can run.
 #[derive(Debug)]
 pub struct Host {
@@ -129,16 +145,19 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(raw_name: String, fence_agent: Option<FenceAgent>) -> Self {
+    pub fn new(raw_name: String, fence_agent: Option<FenceAgent>) -> HandledResult<Self> {
         let (name, port) = Self::get_host_port(&raw_name);
         let (sender, receiver) = mpsc::channel(1024);
-        Host {
+        let port = match port {
+            Some(p) => p,
+            None => crate::remote_port(),
+        };
+        let addr = resolve_host_address(name, port)?;
+        Ok(Host {
             address: HostAddress {
                 name: name.to_string(),
-                port: match port {
-                    Some(p) => p,
-                    None => crate::remote_port(),
-                },
+                addr,
+                port,
             },
             raw_name,
             fence_agent,
@@ -149,16 +168,16 @@ impl Host {
             connected: std::sync::Mutex::new(false),
             fence_attempted: std::sync::Mutex::new(false),
             fence_event: std::sync::Mutex::new(None),
-        }
+        })
     }
 
     /// Create a Host object from a given config::Host object.
-    pub fn from_config(config: &crate::config::Host) -> Self {
+    pub fn from_config(config: &crate::config::Host) -> HandledResult<Self> {
         let fence_agent = FenceAgent::from_config(config);
         Host::new(config.hostname.clone(), fence_agent)
     }
 
-    /// Given a string that may be of the form "<address>:port number>", split it out into the address
+    /// Given a string that may be of the form "<address>:<port number>", split it out into the address
     /// and port number portions.
     fn get_host_port(host_str: &str) -> (&str, Option<u16>) {
         let mut split = host_str.split(':');
@@ -224,6 +243,10 @@ impl Host {
         self.address.port
     }
 
+    pub fn sockaddr(&self) -> SocketAddr {
+        self.address.addr
+    }
+
     pub fn address(&self) -> String {
         format!("{}:{}", self.name(), self.port())
     }
@@ -270,7 +293,7 @@ impl Host {
     }
 
     async fn get_client(&self, cluster: &Cluster) -> io::Result<Client> {
-        let client = halo_capnp::get_client(&self.address(), cluster.tls_args.as_ref()).await;
+        let client = halo_capnp::get_client(self.sockaddr(), cluster).await;
         match client {
             Ok(_) => self.set_connected(true),
             Err(_) => self.set_connected(false),

@@ -8,6 +8,7 @@ use crate::{
     config::{self, Config},
     manager,
     resource::Resource,
+    HandledResult,
 };
 
 pub mod ha;
@@ -16,6 +17,16 @@ pub mod ha;
 /// full path to the test directory.
 pub fn test_path(path: &str) -> String {
     std::env::var("CARGO_MANIFEST_DIR").unwrap() + "/tests/" + path
+}
+
+/// Similar to Cluster::from_config(), save for using a port > 1023 for client communication.
+pub fn cluster_from_config(config: Option<String>) -> HandledResult<Cluster> {
+    let args = manager::Cli {
+        config,
+        use_insecure_port: true,
+        ..Default::default()
+    };
+    Cluster::new(args)
 }
 
 trait IgnoreEexist {
@@ -173,6 +184,7 @@ impl TestEnvironment {
         manager::Cli {
             config: Some(config_path),
             socket: Some(socket_path),
+            use_insecure_port: true,
             statefile: Some(statefile_path),
             mtls: false,
             verbose: false,
@@ -206,6 +218,7 @@ impl TestEnvironment {
                     handle: std::process::Command::new(&self.agent_binary_path)
                         .args(vec![
                             "--verbose",
+                            "--allow-insecure-ports",
                             "--test-id",
                             &agent.id.as_ref().unwrap_or(&self.test_id),
                         ])
@@ -255,6 +268,7 @@ impl TestEnvironment {
             &socket_path,
             "--sleep-time",
             "500",
+            "--use-insecure-port",
         ];
 
         if manage_resources {
