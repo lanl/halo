@@ -23,18 +23,18 @@ use crate::{
     Handle, HandledResult,
 };
 
-/// ClusterAddress holds a bound socket that should stay bound for the lifetime of this object, but
-/// does not need to be referenced, as well as the corresponding address that can continually be
-/// used to make connections.
-pub struct ClusterAddress {
+/// RpcSourceAddress holds the local socket address used to make connections to the remote clients.
+pub struct RpcSourceAddress {
+    /// The local socket address used as the source address in connections to remote clients.
     address: SocketAddr,
+    /// This socket is held open to "reserve" the address for the lifetime of this object.
     _socket: TcpSocket,
 }
 
-impl ClusterAddress {
-    pub fn new() -> Self {
-        let (address, _socket) = reserve_local_privileged_port().unwrap();
-        Self { address, _socket }
+impl RpcSourceAddress {
+    pub fn new() -> HandledResult<Self> {
+        let (address, _socket) = reserve_local_privileged_port()?;
+        Ok(Self { address, _socket })
     }
 
     /// Get a string representation of the address.
@@ -68,7 +68,7 @@ pub struct Cluster {
 
     /// The address used to connect to clients through. Currently, this is only needed when using
     /// privileged ports (the default), since they must be manually assigned.
-    pub address: Option<ClusterAddress>,
+    pub address: Option<RpcSourceAddress>,
 
     pub tls_args: Option<TlsArgs>,
 }
@@ -198,7 +198,7 @@ impl Cluster {
         };
 
         let address = if !args.use_insecure_port {
-            Some(ClusterAddress::new())
+            Some(RpcSourceAddress::new()?)
         } else {
             None
         };
@@ -238,7 +238,7 @@ impl Cluster {
         config: &config::Config,
         args: manager::Cli,
         state: Option<State>,
-        address: Option<ClusterAddress>,
+        address: Option<RpcSourceAddress>,
         tls_args: Option<TlsArgs>,
     ) -> Self {
         let hosts: HashMap<_, _> = config
