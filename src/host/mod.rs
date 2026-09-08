@@ -5,7 +5,7 @@ use std::{
     fmt,
     future::Future,
     io,
-    net::IpAddr,
+    net::{IpAddr, ToSocketAddrs},
     pin::Pin,
     rc::Rc,
     sync::{Arc, OnceLock},
@@ -138,7 +138,6 @@ impl Host {
             Some(p) => p,
             None => crate::remote_port(),
         };
-        use std::net::ToSocketAddrs;
         let ip = (name, port)
             .to_socket_addrs()
             .unwrap()
