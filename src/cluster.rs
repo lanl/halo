@@ -79,6 +79,13 @@ pub struct TlsArgs {
     pub domain: ServerName<'static>,
 }
 
+fn host_from_config_host(config_host: &config::Host) -> HandledResult<(String, Arc<Host>)> {
+    match Host::from_config(config_host) {
+        Ok(h) => Ok((config_host.hostname.clone(), Arc::new(h))),
+        Err(_) => handled_error(),
+    }
+}
+
 impl Cluster {
     /// Apply a state Delta to this Cluster's Hosts.
     pub fn apply_state(&self) {
@@ -214,7 +221,7 @@ impl Cluster {
             }
         }
 
-        let new = Cluster::from_config2(&config, args.clone(), state, address, tls_args);
+        let new = Cluster::from_config2(&config, args.clone(), state, address, tls_args)?;
 
         if new.resource_groups.iter().any(|rg| rg.root.count > 1) {
             eprintln!("Config has a shared root resource, which is not supported.");
@@ -240,12 +247,10 @@ impl Cluster {
         state: Option<State>,
         address: Option<RpcSourceAddress>,
         tls_args: Option<TlsArgs>,
-    ) -> Self {
-        let hosts: HashMap<_, _> = config
-            .hosts
-            .iter()
-            .map(|h| (h.hostname.clone(), Arc::new(Host::from_config(h))))
-            .collect();
+    ) -> HandledResult<Self> {
+        let hosts: Result<HashMap<_, _>, _> =
+            config.hosts.iter().map(host_from_config_host).collect();
+        let hosts = hosts?;
 
         // Set failover partners:
         let failover_partners = config.get_failover_partners();
@@ -347,7 +352,7 @@ impl Cluster {
         // right value:
         let hosts = hosts.into_values().map(|host| (host.id(), host)).collect();
 
-        Self {
+        Ok(Self {
             resource_groups,
             hosts,
             args,
@@ -355,7 +360,7 @@ impl Cluster {
             state,
             address,
             tls_args,
-        }
+        })
     }
 
     /// Write a Record entry into the Cluster's statefile.
