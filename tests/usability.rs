@@ -45,6 +45,7 @@ mod tests {
         let invalid_socket = "bad_dir/socket";
         let result = std::process::Command::new(env!("CARGO_BIN_EXE_halo_manager"))
             .args(vec![
+                "--use-insecure-port",
                 "--config",
                 &good_config_path,
                 "--socket",
