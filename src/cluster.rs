@@ -4,7 +4,7 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
-    io::ErrorKind,
+    io::{self, ErrorKind},
     net::SocketAddr,
     sync::Arc,
 };
@@ -419,17 +419,19 @@ pub fn get_failover_partner<'pairs>(
 
 /// Attempt to create a TCP socket using a local address and privileged port <=1024.
 fn reserve_local_privileged_port() -> HandledResult<(SocketAddr, TcpSocket)> {
-    for i in 500..=1024 {
+    let mut last_err = io::Error::from(ErrorKind::Other);
+    for i in 500..1024 {
         let addr = format!("0.0.0.0:{i}").parse().unwrap();
         let socket = TcpSocket::new_v4().unwrap();
         socket.set_reuseaddr(true).unwrap();
         match socket.bind(addr) {
             Ok(()) => return Ok((addr, socket)),
             Err(e) if e.kind() == ErrorKind::AddrInUse => continue,
-            Err(other) => eprintln!("{other}"),
+            Err(other) => last_err = other,
         }
     }
 
     eprintln!("Could not bind to a local privileged port. Add the `--use-insecure-port` manager option if you want to bind to an unprivileged port instead.");
+    eprintln!("Last error detected: {last_err}");
     handled_error()
 }
