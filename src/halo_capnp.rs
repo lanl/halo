@@ -91,17 +91,6 @@ fn prep_request(request: &mut OperationRequest, res: &Resource, op: ocf_resource
     }
 }
 
-/// Create a SocketAddr from a string slice.
-fn str2sockaddr(addr: &str) -> io::Result<std::net::SocketAddr> {
-    addr.parse().map_err(|e| {
-        log::warn!("could not parse as valid tcp address: '{addr}': {e}");
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("invalid tcp address '{addr}'"),
-        )
-    })
-}
-
 /// Attempt to establish a TCP stream to the given socket address from the given source address.
 async fn tcp_try_connect(
     from_addr: std::net::SocketAddr,
@@ -118,7 +107,7 @@ async fn tcp_try_connect(
 }
 
 pub async fn get_client(
-    address: &str,
+    client_addr: std::net::SocketAddr,
     cluster: &cluster::Cluster,
 ) -> io::Result<ocf_resource_agent::Client> {
     // Bind to specific cluster address if it has been specified.
@@ -127,10 +116,9 @@ pub async fn get_client(
             panic!("cluster.address should be Some when cluster.args.use_insecure_port == false");
         };
         let from_addr = cluster_sock.address();
-        let to_addr = str2sockaddr(address)?;
-        tcp_try_connect(from_addr, to_addr).await?
+        tcp_try_connect(from_addr, client_addr).await?
     } else {
-        tokio::net::TcpStream::connect(address).await?
+        tokio::net::TcpStream::connect(client_addr).await?
     };
     stream.set_nodelay(true).expect("setting nodelay failed.");
 

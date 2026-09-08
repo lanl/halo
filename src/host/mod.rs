@@ -243,6 +243,10 @@ impl Host {
         self.address.port
     }
 
+    pub fn sockaddr(&self) -> SocketAddr {
+        self.address.addr
+    }
+
     pub fn address(&self) -> String {
         format!("{}:{}", self.name(), self.port())
     }
@@ -289,7 +293,7 @@ impl Host {
     }
 
     async fn get_client(&self, cluster: &Cluster) -> io::Result<Client> {
-        let client = halo_capnp::get_client(&self.address(), cluster).await;
+        let client = halo_capnp::get_client(self.sockaddr(), cluster).await;
         match client {
             Ok(_) => self.set_connected(true),
             Err(_) => self.set_connected(false),
