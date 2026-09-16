@@ -15,7 +15,7 @@ jobs:
     steps:
     - name: Setup Build Dependencies + Environment
       run: sudo apt-get install capnproto
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Build
       run: cargo build --verbose
     - name: Run tests
