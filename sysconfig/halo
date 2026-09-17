@@ -1,6 +1,12 @@
 # Define the location to search for the configuration file
 # HALO_CONFIG=/etc/halo/halo.conf
 
+# Define the location of the event log
+# HALO_STATEFILE=/etc/halo/halo.state
+
+# Define the location of the CLI socket
+# HALO_SOCKET=/run/halo.socket
+
 # Define port for the daemon to listen on
 # HALO_PORT=8000
 
