@@ -1,6 +1,6 @@
 [Unit]
 Description=HALO Management Server
-After=network.target
+After=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
