@@ -10,6 +10,8 @@ URL:		https://github.com/lanl/halo
 Source0:	%{name}-%{version}.tar
 
 BuildRequires: systemd-rpm-macros
+BuildRequires: cargo
+BuildRequires: capnproto
 
 Requires: systemd
 
