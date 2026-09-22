@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{io, sync::Arc};
+use std::{
+    fs, io,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use {clap::Parser, log::info};
 
@@ -19,6 +24,10 @@ pub struct Cli {
     /// Location of the socket used for communicating with the CLI program.
     #[arg(long)]
     pub socket: Option<String>,
+
+    /// Location of unprivileged user socket to use for getting halo status with the CLI program.
+    #[arg(long)]
+    pub unprivileged_socket: Option<String>,
 
     /// Location of the file used to store the persistent event log.
     #[arg(long)]
@@ -46,6 +55,10 @@ pub struct Cli {
     /// How many milliseconds to sleep between each iteration of the resource management loops.
     #[arg(long, hide = true, default_value_t = 5000)]
     pub sleep_time: u64,
+
+    /// Disable permissions check when creating unprivileged socket
+    #[arg(long, hide = true)]
+    pub disable_socket_perm_check: bool,
 }
 
 /// Get a unix socket listener from a given socket path.
@@ -53,7 +66,36 @@ pub struct Cli {
 /// To avoid clobbering an already-in-use unix socket, a connection is attempted to an existing
 /// unix socket first. If this fails, a new socket listener can be returned, since an existing
 /// in-use socket was determined to be absent at the given location.
-async fn prepare_unix_socket(addr: &String) -> HandledResult<tokio::net::UnixListener> {
+async fn prepare_unix_socket(
+    disable_socket_perm_check: bool,
+    addr: &String,
+) -> HandledResult<tokio::net::UnixListener> {
+    //Permission and security check for parent directory of socket
+    //Convert socket addr to pathbuf to grab parent directory cleanly
+    if !disable_socket_perm_check {
+        let socket_path: PathBuf = PathBuf::from(addr);
+        if let Some(socket_parent_dir) = socket_path.parent() {
+            //Grab metadata for the parent dir to evaluation permissions
+            let parent_metadata = fs::metadata(socket_parent_dir)
+                .handle_err(|e| eprintln!("Failed to stat {}: {e}", socket_parent_dir.display()))?;
+            //Ensure that the directory is not world writable and that it is owned by root
+            if (parent_metadata.permissions().mode() & 0o002) != 0 {
+                eprintln!(
+                    "Socket directory {} is world-writable; it must not be world-writable.",
+                    socket_parent_dir.display()
+                );
+                return handled_error();
+            }
+            if parent_metadata.uid() != 0 {
+                eprintln!(
+                    "Socket directory {} is not owned by root; it must be owned by root.",
+                    socket_parent_dir.display()
+                );
+                return handled_error();
+            }
+        }
+    }
+
     // Check for existing socket in use
     match tokio::net::UnixStream::connect(&addr).await {
         Ok(_) => {
@@ -85,6 +127,17 @@ async fn prepare_unix_socket(addr: &String) -> HandledResult<tokio::net::UnixLis
     }
 }
 
+/// Get a user unix socket listener from a given socket path.
+async fn prepare_user_unix_socket(
+    disable_socket_perm_check: bool,
+    addr: &String,
+) -> HandledResult<tokio::net::UnixListener> {
+    let listener = prepare_unix_socket(disable_socket_perm_check, addr).await?;
+    fs::set_permissions(addr, fs::Permissions::from_mode(0o666))
+        .handle_err(|e| eprintln!("error setting unpriveleged socket posix permissions: {e}"))?;
+    Ok(listener)
+}
+
 /// Main entrypoint for the management service, which monitors and controls the state of
 /// the cluster.
 async fn manager_main(cluster: Arc<cluster::Cluster>) {
@@ -113,13 +166,19 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
             None => &crate::default_socket(),
         };
 
-        let listener = prepare_unix_socket(addr).await?;
+        let listener = prepare_unix_socket(true, addr).await?;
+        let user_listener = match cluster.args.unprivileged_socket.as_ref() {
+            Some(user_addr) => Some(
+                prepare_user_unix_socket(cluster.args.disable_socket_perm_check, user_addr).await?,
+            ),
+            None => None,
+        };
         info!("listening on socket '{addr}'");
 
         let cluster = Arc::new(cluster);
 
         futures::join!(
-            http::server_main(listener, Arc::clone(&cluster)),
+            http::server_main(listener, user_listener, Arc::clone(&cluster)),
             manager_main(cluster)
         );
 

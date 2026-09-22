@@ -174,11 +174,13 @@ impl TestEnvironment {
             config: Some(config_path),
             socket: Some(socket_path),
             statefile: Some(statefile_path),
+            unprivileged_socket: None,
             mtls: false,
             verbose: false,
             manage_resources: true,
             fence_on_connection_close: true,
             sleep_time: 5000,
+            disable_socket_perm_check: true,
         }
     }
 
