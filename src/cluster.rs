@@ -80,10 +80,10 @@ pub struct TlsArgs {
 }
 
 fn host_from_config_host(config_host: &config::Host) -> HandledResult<(String, Arc<Host>)> {
-    match Host::from_config(config_host) {
-        Ok(h) => Ok((config_host.hostname.clone(), Arc::new(h))),
-        Err(_) => handled_error(),
-    }
+    Ok((
+        config_host.hostname.clone(),
+        Arc::new(Host::from_config(config_host)?),
+    ))
 }
 
 impl Cluster {
