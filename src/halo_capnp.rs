@@ -107,7 +107,7 @@ async fn tcp_try_connect(
 }
 
 pub async fn get_client(
-    client_addr: std::net::SocketAddr,
+    to_addr: std::net::SocketAddr,
     cluster: &cluster::Cluster,
 ) -> io::Result<ocf_resource_agent::Client> {
     // Bind to specific cluster address if it has been specified.
@@ -116,9 +116,9 @@ pub async fn get_client(
             panic!("cluster.address should be Some when cluster.args.use_insecure_port == false");
         };
         let from_addr = cluster_sock.address();
-        tcp_try_connect(from_addr, client_addr).await?
+        tcp_try_connect(from_addr, to_addr).await?
     } else {
-        tokio::net::TcpStream::connect(client_addr).await?
+        tokio::net::TcpStream::connect(to_addr).await?
     };
     stream.set_nodelay(true).expect("setting nodelay failed.");
 
