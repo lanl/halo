@@ -103,7 +103,9 @@ pub struct Client {
 /// Create a SocketAddr given a resolvable hostname and port. The hostname will try to be resolved
 /// to the first IP address that resolves before becoming a component of the SocketAddr.
 pub fn resolve_host_address(name: &str, port: u16) -> HandledResult<SocketAddr> {
-    let maybe_sockaddr = (name, port).to_socket_addrs().unwrap().next();
+    let maybe_sockaddr = (name, port).to_socket_addrs().handle_err(|e| {
+        eprintln!("address resolution failed for '{name}:{port}': {e}");
+    })?.next();
     match maybe_sockaddr {
         Some(sockaddr) => Ok(sockaddr),
         None => {
