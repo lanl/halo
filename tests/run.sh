@@ -6,6 +6,7 @@ agent () {
 	HALO_TEST_DIRECTORY=tests/test_output/$cluster_type cargo run --bin halo_remote -- \
 		--network 127.0.0.0/24 \
 		--port $port \
+		--allow-insecure-ports \
 		--test-id $agent_id \
 		--ocf-root tests/ocf_resources
 }
@@ -19,7 +20,8 @@ manager () {
 		--sleep-time 2000 \
 		--fence-on-connection-close \
 		--statefile halo_$cluster_type.state \
-		--manage-resources
+		--manage-resources \
+		--use-insecure-port
 }
 
 lustre () {
