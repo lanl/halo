@@ -73,17 +73,27 @@ pub struct Cli {
 async fn prepare_unix_socket(
     disable_socket_perm_check: bool,
     addr: &String,
+    umask: u32,
 ) -> HandledResult<tokio::net::UnixListener> {
     //Permission and security check for parent directory of socket
     //Convert socket addr to pathbuf to grab parent directory cleanly
     if !disable_socket_perm_check {
         let socket_path: PathBuf = PathBuf::from(addr);
+        //If a relative path has been passed return an error
+        if socket_path.is_relative(){
+            eprintln!(
+                "Socket path passed is relative, an absolute is requried \
+                for production environments to ensure proper POSIX permissions: {}",
+                socket_path.display()
+            );
+            return handled_error();
+        }
         if let Some(socket_parent_dir) = socket_path.parent() {
             //Grab metadata for the parent dir to evaluation permissions
             let parent_metadata = fs::metadata(socket_parent_dir)
                 .handle_err(|e| eprintln!("Failed to stat {}: {e}", socket_parent_dir.display()))?;
             //Ensure that the directory is not world writable and that it is owned by root
-            if (parent_metadata.permissions().mode() & 0o002) != 0 {
+            if (parent_metadata.permissions().mode() & 0o022) != 0 {
                 eprintln!(
                     "Socket directory {} is world-writable; it must not be world-writable.",
                     socket_parent_dir.display()
@@ -99,6 +109,7 @@ async fn prepare_unix_socket(
             }
         }
     }
+
 
     // Check for existing socket in use
     match tokio::net::UnixStream::connect(&addr).await {
@@ -121,25 +132,23 @@ async fn prepare_unix_socket(
             return handled_error();
         }
     };
+
     // Create new socket
-    match tokio::net::UnixListener::bind(addr) {
+    // Now that we know we're creating a new socket we need to generate our umask based on the passed umask value
+    // This determines if we are creating a privileged or unprivileged socket as well as returning our old/current umask to be restored later
+    let old = nix::sys::stat::umask(nix::sys::stat::Mode::from_bits(umask).unwrap());
+
+    let res = match tokio::net::UnixListener::bind(addr) {
         Ok(l) => Ok(l),
         Err(e) => {
             eprintln!("error binding to socket '{addr}': {e}");
             handled_error()
         }
-    }
-}
+    };
 
-/// Get a user unix socket listener from a given socket path.
-async fn prepare_user_unix_socket(
-    disable_socket_perm_check: bool,
-    addr: &String,
-) -> HandledResult<tokio::net::UnixListener> {
-    let listener = prepare_unix_socket(disable_socket_perm_check, addr).await?;
-    fs::set_permissions(addr, fs::Permissions::from_mode(0o666))
-        .handle_err(|e| eprintln!("error setting unpriveleged socket posix permissions: {e}"))?;
-    Ok(listener)
+    nix::sys::stat::umask(old);
+
+    res
 }
 
 /// Main entrypoint for the management service, which monitors and controls the state of
@@ -170,10 +179,10 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
             None => &crate::default_socket(),
         };
 
-        let listener = prepare_unix_socket(true, addr).await?;
+        let listener = prepare_unix_socket(cluster.args.disable_socket_perm_check, addr, 0o077).await?;
         let user_listener = match cluster.args.unprivileged_socket.as_ref() {
             Some(user_addr) => Some(
-                prepare_user_unix_socket(cluster.args.disable_socket_perm_check, user_addr).await?,
+                prepare_unix_socket(cluster.args.disable_socket_perm_check, user_addr, 0o000).await?
             ),
             None => None,
         };
