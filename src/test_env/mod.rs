@@ -271,6 +271,7 @@ impl TestEnvironment {
             "--sleep-time",
             "500",
             "--use-insecure-port",
+            "--disable-socket-perm-check",
         ];
 
         if manage_resources {
