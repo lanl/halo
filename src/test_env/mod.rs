@@ -186,11 +186,13 @@ impl TestEnvironment {
             socket: Some(socket_path),
             use_insecure_port: true,
             statefile: Some(statefile_path),
+            unprivileged_socket: None,
             mtls: false,
             verbose: false,
             manage_resources: true,
             fence_on_connection_close: true,
             sleep_time: 5000,
+            disable_socket_perm_check: true,
         }
     }
 
@@ -269,6 +271,7 @@ impl TestEnvironment {
             "--sleep-time",
             "500",
             "--use-insecure-port",
+            "--disable-socket-perm-check",
         ];
 
         if manage_resources {
