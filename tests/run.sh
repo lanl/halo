@@ -21,7 +21,8 @@ manager () {
 		--fence-on-connection-close \
 		--statefile halo_$cluster_type.state \
 		--manage-resources \
-		--use-insecure-port
+		--use-insecure-port \
+		--disable-socket-perm-check
 }
 
 lustre () {
