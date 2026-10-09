@@ -28,7 +28,7 @@ pub struct Cli {
     /// Use a tcp port >=1024 to communicate with hosts.
     #[arg(long)]
     pub use_insecure_port: bool,
-    
+
     /// Location of unprivileged user socket to use for getting halo status with the CLI program.
     #[arg(long)]
     pub unprivileged_socket: Option<String>,
