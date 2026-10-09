@@ -80,7 +80,7 @@ async fn prepare_unix_socket(
     if !disable_socket_perm_check {
         let socket_path: PathBuf = PathBuf::from(addr);
         //If a relative path has been passed return an error
-        if socket_path.is_relative(){
+        if socket_path.is_relative() {
             eprintln!(
                 "Socket path passed is relative, an absolute is requried \
                 for production environments to ensure proper POSIX permissions: {}",
@@ -109,7 +109,6 @@ async fn prepare_unix_socket(
             }
         }
     }
-
 
     // Check for existing socket in use
     match tokio::net::UnixStream::connect(&addr).await {
@@ -179,10 +178,12 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
             None => &crate::default_socket(),
         };
 
-        let listener = prepare_unix_socket(cluster.args.disable_socket_perm_check, addr, 0o077).await?;
+        let listener =
+            prepare_unix_socket(cluster.args.disable_socket_perm_check, addr, 0o077).await?;
         let user_listener = match cluster.args.unprivileged_socket.as_ref() {
             Some(user_addr) => Some(
-                prepare_unix_socket(cluster.args.disable_socket_perm_check, user_addr, 0o000).await?
+                prepare_unix_socket(cluster.args.disable_socket_perm_check, user_addr, 0o000)
+                    .await?,
             ),
             None => None,
         };
