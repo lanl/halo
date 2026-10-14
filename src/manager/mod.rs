@@ -50,6 +50,10 @@ pub struct Cli {
     /// How many milliseconds to sleep between each iteration of the resource management loops.
     #[arg(long, hide = true, default_value_t = 5000)]
     pub sleep_time: u64,
+
+    /// Accept commands like "fence" or "failback" from unprivileged users (UID != 0).
+    #[arg(long)]
+    pub accept_unprivileged_commands: bool,
 }
 
 /// Get a unix socket listener from a given socket path.
