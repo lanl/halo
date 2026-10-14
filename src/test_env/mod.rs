@@ -191,6 +191,7 @@ impl TestEnvironment {
             manage_resources: true,
             fence_on_connection_close: true,
             sleep_time: 5000,
+            accept_unprivileged_commands: true,
         }
     }
 
@@ -269,6 +270,7 @@ impl TestEnvironment {
             "--sleep-time",
             "500",
             "--use-insecure-port",
+            "--accept-unprivileged-commands",
         ];
 
         if manage_resources {

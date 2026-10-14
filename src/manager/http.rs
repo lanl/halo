@@ -5,13 +5,17 @@ use std::{collections::HashMap, sync::Arc};
 
 use {
     axum::{
-        extract::Path,
+        extract::{connect_info::Connected, ConnectInfo, Path, Request},
         http::StatusCode,
+        middleware::{self, Next},
+        response::Response,
         routing::{get, patch, post},
+        serve::IncomingStream,
         Json, Router,
     },
     log::{trace, warn},
     serde::{Deserialize, Serialize},
+    tokio::net::UnixListener,
 };
 
 use crate::{
@@ -21,18 +25,41 @@ use crate::{
     state::{Event, Record},
 };
 
+#[derive(Clone)]
+struct PeerCred {
+    uid: Option<u32>,
+}
+
+impl Connected<IncomingStream<'_, UnixListener>> for PeerCred {
+    fn connect_info(stream: IncomingStream<'_, UnixListener>) -> Self {
+        Self {
+            uid: stream
+                .io()
+                .peer_cred()
+                .map(|cred| cred.uid())
+                .inspect_err(|e| log::warn!("Could not extract UID from peer: {e}."))
+                .ok(),
+        }
+    }
+}
+
+async fn require_root(
+    ConnectInfo(peer): ConnectInfo<PeerCred>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    match peer.uid {
+        Some(0) => Ok(next.run(request).await),
+        _ => Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
 /// Main entrypoint for the command server.
 ///
 /// This listens for commands on a unix socket and acts on them.
 pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluster>) {
+    // These are the privileged routes, i.e., those that the below "require_root" layer applies to.
     let server = Router::new()
-        .route(
-            "/status",
-            get({
-                let cluster = Arc::clone(&cluster);
-                || get_status(cluster)
-            }),
-        )
         .route(
             "/resources/{id}",
             patch({
@@ -55,7 +82,28 @@ pub async fn server_main(listener: tokio::net::UnixListener, cluster: Arc<Cluste
             }),
         );
 
-    axum::serve(listener, server).await.unwrap();
+    // This layer applies to all of the above routes, ensuring that only root can access them.
+    let server = if !cluster.args.accept_unprivileged_commands {
+        server.route_layer(middleware::from_fn(require_root))
+    } else {
+        server
+    };
+
+    // Any routes added below the prior layer can be accessed by any user.
+    let server = server.route(
+        "/status",
+        get({
+            let cluster = Arc::clone(&cluster);
+            || get_status(cluster)
+        }),
+    );
+
+    axum::serve(
+        listener,
+        server.into_make_service_with_connect_info::<PeerCred>(),
+    )
+    .await
+    .unwrap();
 }
 
 async fn clear_events(cluster: Arc<Cluster>) -> Result<(), (StatusCode, &'static str)> {
