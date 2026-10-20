@@ -122,7 +122,7 @@ pub async fn get_client(
     };
     stream.set_nodelay(true).expect("setting nodelay failed.");
 
-    match &cluster.tls_args {
+    let client = match &cluster.tls_args {
         Some(args) => {
             // Perform mtls handshake
             let mtls_stream = args
@@ -144,7 +144,7 @@ pub async fn get_client(
 
             tokio::task::spawn_local(rpc_system);
 
-            Ok(client)
+            client
         }
         None => {
             let (reader, writer) =
@@ -161,7 +161,19 @@ pub async fn get_client(
 
             tokio::task::spawn_local(rpc_system);
 
-            Ok(client)
+            client
         }
+    };
+
+    // Perform a null RPC to validate that the server is functioning as expected. If we got to this
+    // point, all it means is that a TCP connection was succesfully established, but things could
+    // still go wrong, e.g., the connection could later be rejected for not being sufficiently
+    // privileged or an unexpected different service could have been listening on the port we
+    // connected to.
+    if let Err(e) = client.null_request().send().promise.await {
+        log::debug!("null request failed: {e}");
+        Err(std::io::ErrorKind::Other.into())
+    } else {
+        Ok(client)
     }
 }
