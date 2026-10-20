@@ -52,7 +52,7 @@ pub struct Cli {
     pub sleep_time: u64,
 
     /// Accept commands like "fence" or "failback" from unprivileged users (UID != 0).
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub accept_unprivileged_commands: bool,
 }
 
