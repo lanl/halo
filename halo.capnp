@@ -36,4 +36,7 @@ interface OcfResourceAgent {
     }
 
     operation @0 (resource :Text, op :Operation, args :List(Argument)) -> (result :Result);
+
+    # The null RPC is only for validating that a connection can be made; it intentionally does nothing.
+    null @1 () -> ();
 }

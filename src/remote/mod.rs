@@ -167,6 +167,15 @@ fn __agent_rpc_main<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static>(
 }
 
 impl ocf_resource_agent::Server for OcfResourceAgentImpl {
+    /// Does nothing and returns success. Serves as a test of the connection.
+    fn null(
+        &mut self,
+        _params: ocf_resource_agent::NullParams,
+        _results: ocf_resource_agent::NullResults,
+    ) -> Promise<(), ::capnp::Error> {
+        Promise::ok(())
+    }
+
     fn operation(
         &mut self,
         params: ocf_resource_agent::OperationParams,
