@@ -211,11 +211,30 @@ If it cannot find an IP address in that network, it will not start.
 If your cluster uses a different management network, then you must specify that network in CIDR format
 using the `--network` option.
 
+=== Privileged Port Requirement
+
+As a rudimentary check that communications are privileged, the remote agent will by default deny connections
+that come from unprivileged ports (port number >= 1024).
+Only connections from a privileged source port will be allowed.
+This behavior can be bypassed if desired by passing the `--allow-insecure-ports` option to
+the remote agent.
+This option is *not* recommended in environments where unprivileged users can log in to the management server,
+because such users could send fabricated commands to the remote agents.
+
+When running the remote agents with `--allow-insecure-ports`, it can be helpful to
+run the manager program with the `--use-insecure-port` option.
+This option tells the manager that it can use ports >= 1024 to initiate connections to the agents.
+Without this option, the manager always tries to use a privileged port.
+This might not be possible in some environments, however.
+Note that these options are mainly intended to be used together in test environments,
+but generally are not intended to be used in production.
+
 === TLS
 
 MTLS is available for the management daemon and remote agent to mutually authenticate each other.
 It is not enabled by default because HALO is designed to be run on a secure management network.
-Normally, the remote agent only listens on a private management IP address.
+Normally, the remote agent only listens on a private management IP address and only accepts connections
+from privileged ports.
 However, if additional security is desired, the `--mtls` option can be passed.
 
 = OCF Resource Agents
@@ -264,6 +283,15 @@ A future version of HALO will make manage mode the default.
 The management daemon listens for commands from the CLI utility on a unix domain socket.
 The default path to the socket is `/var/run/halo.socket`,
 but a custom path can be specified with the `--socket` option.
+
+=== Authorizing Commands
+
+Most of the CLI commands should only be run by admins, not by regular users.
+The management daemon determines whether a user is privileged by checking the UID of the process
+connected to the unix socket.
+A UID of 0 is treated as a privileged user, and any other UID is unprivileged.
+The only command available to unprivileged users is `status`.
+Every other command will return HTTP 401 if a non-root user attempts it.
 
 = CLI Utility
 

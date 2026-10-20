@@ -39,6 +39,12 @@ Must also be enabled in
 .BR halo_manager (1)
 to function.
 .TP
+.BR \-\-allow\-insecure\-ports
+Accept TCP connections from source ports that are unprivileged, that is, are >= 1024.
+The default behavior is to reject connections unless the source port is privileged.
+This option should not be used in environments where unprivileged users can log into the management server,
+because then those users could send fabricated commands to the remote agent.
+.TP
 .BR \-\-verbose
 Enable verbose log output.
 This is only recommended while debugging, not for routine operation.
