@@ -257,7 +257,7 @@ impl ResourceGroup {
     }
 
     fn assert_not_running_elsewhere(&self, host: &HostId) {
-        if !self.failover_node.is_some() {
+        if self.failover_node.is_none() {
             // This assertion is irrelevant for non-HA clusters, so just return.
             return;
         };
@@ -427,7 +427,7 @@ impl ResourceState {
         let mut map = self.inner.lock().unwrap();
         let ent = map
             .get_mut(host)
-            .expect("Host {host} must have an entry in the status map");
+            .expect(&format!("Host {host} must have an entry in the status map"));
         let old_status = ent.clone();
         ent.status = new_status;
         old_status.status
@@ -441,7 +441,7 @@ impl ResourceState {
             .lock()
             .unwrap()
             .get(host)
-            .expect("Host {host} must have an entry in the status map")
+            .expect(&format!("Host {host} must have an entry in the status map"))
             .started_groups
             .len()
     }
@@ -491,7 +491,7 @@ impl Resource {
             let mut map = self.state.inner.lock().unwrap();
             let ent = map
                 .get_mut(host)
-                .expect("Host {host} must have an entry in the status map");
+                .expect(&format!("Host {host} must have an entry in the status map"));
             ent.started_groups.insert(root.clone());
         }
 
@@ -513,7 +513,7 @@ impl Resource {
         let mut map = self.state.inner.lock().unwrap();
         let ent = map
             .get_mut(host)
-            .expect("Host {host} must have an entry in the status map");
+            .expect(&format!("Host {host} must have an entry in the status map"));
 
         ent.started_groups.remove(root);
 
@@ -684,7 +684,7 @@ impl Resource {
     pub fn status_on_host(&self, host: &HostId) -> ResourceStatus {
         self.status()
             .get(host)
-            .expect("Host {host} should have a status entry")
+            .expect(&format!("Host {host} should have a status entry"))
             .clone()
     }
 

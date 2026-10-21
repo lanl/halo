@@ -107,12 +107,16 @@ impl Resource {
 
     /// Given a line of output from the `mount` command, parses it into a Lustre Resource.
     pub fn new_lustre(mount_output: &str) -> HandledResult<Self> {
+        // Expected format: "<device> on <mountpoint> type lustre (<options>)"
         let mut tokens = mount_output.split_whitespace();
 
-        let device = tokens.next().unwrap();
-        let mountpoint = tokens.nth(1).unwrap();
+        let (Some(device), Some(mountpoint), Some(opts)) =
+            (tokens.next(), tokens.nth(1), tokens.nth(2))
+        else {
+            eprintln!("could not parse lustre mount line: '{mount_output}'");
+            return handled_error();
+        };
 
-        let opts = tokens.nth(2).unwrap();
         let opts = opts.trim_matches(|c| c == '(' || c == ')').split(',');
         let mut kind: Option<String> = None;
         for opt in opts {
