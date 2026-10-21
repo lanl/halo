@@ -6,9 +6,7 @@
 //! This module implements OCF resource agent operations on nodes which
 //! runs a resource.
 
-use std::process::Command;
-
-use log::debug;
+use {log::debug, tokio::process::Command};
 
 /// OCF Resource Agent operations that can be performed on a resource.
 #[derive(Debug)]
@@ -120,7 +118,7 @@ const OCF_ROOT: &str = "/usr/lib/ocf";
 /// - args: List of arguments to the operation.
 /// - test_id: set the HALO_TEST_ID environment variable. Used in the testing environment to
 ///   distinguish multiple agents running on the same system.
-pub fn do_operation(
+pub async fn do_operation(
     resource: &str,
     op: Operation,
     ocf_operation_args: &Arguments,
@@ -143,6 +141,7 @@ pub fn do_operation(
         .env("HALO_TEST_ID", test_id)
         .envs(ocf_operation_args.args.clone())
         .output()
+        .await
         .map_err(|e| format!("Could not run command {script}: {e}"))?;
 
     let exit_code = match output.status.code() {
