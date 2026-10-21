@@ -51,14 +51,23 @@ pub fn power(args: &PowerArgs) -> HandledResult<()> {
     } else {
         args.hostnames
             .iter()
-            .map(|name| config.get_host(name).unwrap())
-            .collect()
+            .map(|name| {
+                config.get_host(name).ok_or_else(|| {
+                    eprintln!("Host '{name}' not found in config.");
+                })
+            })
+            .collect::<Result<_, _>>()
+            .handle_err(|_| {})?
     };
 
     let mut error_seen = false;
 
     for host in hosts {
-        let agent = FenceAgent::from_config(host).unwrap();
+        let Some(agent) = FenceAgent::from_config(host) else {
+            eprintln!("Host '{}' has no fence agent in config.", host.hostname);
+            error_seen = true;
+            continue;
+        };
         // The host name might have a ":port" suffix; remove that.
         let hostname = host.hostname.split(":").next().unwrap();
 
@@ -81,11 +90,16 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
     let fence_agent = match fence_agent {
         "powerman" => FenceAgent::Powerman,
         "redfish" => {
-            let user = args.username.clone().unwrap();
-            let pass = args.password.clone().unwrap();
+            let (Some(user), Some(pass)) = (args.username.clone(), args.password.clone()) else {
+                eprintln!("The redfish fence agent requires --username and --password.");
+                return handled_error();
+            };
             FenceAgent::Redfish(RedfishArgs::new(user, pass))
         }
-        other => panic!("unsupported fence agent {other}"),
+        other => {
+            eprintln!("Unsupported fence agent '{other}'.");
+            return handled_error();
+        }
     };
 
     let mut error_seen = false;
