@@ -177,6 +177,9 @@ impl Cluster {
     pub fn from_config(config: Option<String>) -> HandledResult<Self> {
         let args = crate::manager::Cli {
             config,
+            // This Cluster is not used to connect to remote agents, so don't try to reserve a
+            // privileged port (which fails when not running as root).
+            use_insecure_port: true,
             ..Default::default()
         };
         Self::new(args)
