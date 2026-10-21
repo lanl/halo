@@ -255,6 +255,18 @@ impl Cluster {
             config.hosts.iter().map(host_from_config_host).collect();
         let hosts = hosts?;
 
+        for rg in &config.resource_groups {
+            for h in std::iter::once(&rg.home_host).chain(&rg.failover_hosts) {
+                if !hosts.contains_key(h) {
+                    eprintln!(
+                        "Resource group {} references host {h}, which is not defined. Invalid config.",
+                        rg.root
+                    );
+                    return handled_error();
+                }
+            }
+        }
+
         // Set failover partners:
         let failover_partners = config.get_failover_partners();
         for host in hosts.values() {
