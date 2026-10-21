@@ -177,6 +177,9 @@ impl Cluster {
     pub fn from_config(config: Option<String>) -> HandledResult<Self> {
         let args = crate::manager::Cli {
             config,
+            // This Cluster is not used to connect to remote agents, so don't try to reserve a
+            // privileged port (which fails when not running as root).
+            use_insecure_port: true,
             ..Default::default()
         };
         Self::new(args)
@@ -251,6 +254,18 @@ impl Cluster {
         let hosts: Result<HashMap<_, _>, _> =
             config.hosts.iter().map(host_from_config_host).collect();
         let hosts = hosts?;
+
+        for rg in &config.resource_groups {
+            for h in std::iter::once(&rg.home_host).chain(&rg.failover_hosts) {
+                if !hosts.contains_key(h) {
+                    eprintln!(
+                        "Resource group {} references host {h}, which is not defined. Invalid config.",
+                        rg.root
+                    );
+                    return handled_error();
+                }
+            }
+        }
 
         // Set failover partners:
         let failover_partners = config.get_failover_partners();

@@ -95,13 +95,8 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
             eprintln!("Fencing Host: {}", host);
         }
 
-        match do_fence(host, &fence_agent, args.action) {
-            Ok(()) => {
-                eprintln!("{} Fence: Success", host);
-            }
-            Err(_) => {
-                error_seen = true;
-            }
+        if do_fence(host, &fence_agent, args.action).is_err() {
+            error_seen = true;
         }
     }
 

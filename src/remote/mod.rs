@@ -134,11 +134,17 @@ async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
 
                 match mtls_acceptor {
                     Some(ref a) => {
-                        let Ok(mtls_stream) = a.accept(stream).await else {
-                            warn!("Error performing TLS handshake. Dropping connection.");
-                            continue;
-                        };
-                        __agent_rpc_main(mtls_stream, agent_client.clone());
+                        // Do the handshake in its own task so that a slow or stalled client
+                        // cannot block the accept loop for every other client.
+                        let acceptor = a.clone();
+                        let agent_client = agent_client.clone();
+                        tokio::task::spawn_local(async move {
+                            let Ok(mtls_stream) = acceptor.accept(stream).await else {
+                                warn!("Error performing TLS handshake. Dropping connection.");
+                                return;
+                            };
+                            __agent_rpc_main(mtls_stream, agent_client);
+                        });
                     }
                     None => {
                         __agent_rpc_main(stream, agent_client.clone());

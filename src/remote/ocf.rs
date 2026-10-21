@@ -131,6 +131,15 @@ pub fn do_operation(
         None => std::process::id().to_string(),
     };
 
+    // The resource name comes from the RPC request; only accept "provider/agent" names so that it
+    // cannot be used to run an executable outside of the resource.d directory.
+    let valid_component = |s: &str| !s.is_empty() && s != "." && s != "..";
+    match resource.split_once('/') {
+        Some((provider, agent))
+            if valid_component(provider) && valid_component(agent) && !agent.contains('/') => {}
+        _ => return Err(format!("Invalid resource agent name '{resource}'")),
+    }
+
     let ocf_root = cli_args
         .ocf_root
         .clone()

@@ -176,7 +176,9 @@ impl Record {
             timestamp: Local::now().naive_local(),
             event,
             obj_id,
-            comment,
+            // Each record is one line in the statefile; a newline in the comment would make the
+            // statefile unparseable and prevent the manager from starting.
+            comment: comment.map(|c| c.replace(['\n', '\r'], " ")),
         }
     }
 
