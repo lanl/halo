@@ -4,8 +4,8 @@
 use clap::Args;
 
 use std::{
-    io::{Read, Write},
-    process::{Command, Stdio},
+    io::Write,
+    process::{Command, Output, Stdio},
 };
 
 use crate::{handled_error, host::*, Handle, HandledResult};
@@ -118,23 +118,11 @@ fn do_fence_given_agent(fence_agent: &str, args: &PowerArgs) -> HandledResult<()
 fn is_host_powered_on(hostname: &str, agent: &FenceAgent) -> HandledResult<bool> {
     let prog = agent.get_executable();
 
-    let (status, child) = run_fence_binary(hostname, agent, FenceCommand::Status)?;
+    let output = run_fence_binary(hostname, agent, FenceCommand::Status)?;
+    let out = String::from_utf8_lossy(&output.stdout);
+    let err = String::from_utf8_lossy(&output.stderr);
 
-    let mut out = String::new();
-    child
-        .stdout
-        .unwrap()
-        .read_to_string(&mut out)
-        .handle_err(|e| eprintln!("Could not read stdout of fence binary: {e}"))?;
-
-    let mut err = String::new();
-    child
-        .stderr
-        .unwrap()
-        .read_to_string(&mut err)
-        .handle_err(|e| eprintln!("Could not read stderr of fence binary: {e}"))?;
-
-    if !status.success() {
+    if !output.status.success() {
         eprintln!("Fence binary '{prog}' failed.");
         eprintln!("stdout: '{out}'");
         eprintln!("stderr: '{err}'");
@@ -168,18 +156,12 @@ fn do_fence(hostname: &str, agent: &FenceAgent, command: FenceCommand) -> Handle
             .map(|_| ());
     }
 
-    let (status, child) = run_fence_binary(hostname, agent, command)?;
-
-    let mut out = String::new();
-    child
-        .stdout
-        .unwrap()
-        .read_to_string(&mut out)
-        .handle_err(|e| eprintln!("Could not read stdout of fence binary: {e}"))?;
+    let output = run_fence_binary(hostname, agent, command)?;
+    let out = String::from_utf8_lossy(&output.stdout);
 
     log::debug!("out: {out}");
 
-    if status.success() {
+    if output.status.success() {
         eprintln!("{hostname} Fence: Success");
         Ok(())
     } else {
@@ -191,7 +173,7 @@ fn run_fence_binary(
     hostname: &str,
     agent: &FenceAgent,
     command: FenceCommand,
-) -> HandledResult<(std::process::ExitStatus, std::process::Child)> {
+) -> HandledResult<Output> {
     let prog = agent.get_executable();
 
     let mut child = Command::new(prog)
@@ -203,16 +185,17 @@ fn run_fence_binary(
 
     let command_bytes = agent.generate_command_bytes(hostname, command);
 
+    // Take stdin so that it is closed after writing, letting the fence agent see EOF.
     child
         .stdin
-        .as_mut()
+        .take()
         .expect("stdin should have been captured")
         .write_all(&command_bytes)
         .handle_err(|e| eprintln!("Could not write to stdin of fence binary '{prog}': {e}"))?;
 
-    let status = child
-        .wait()
-        .handle_err(|e| eprintln!("Could not get exit status of fence binary '{prog}': {e}"))?;
-
-    Ok((status, child))
+    // Read stdout and stderr while waiting, so that a fence agent writing a lot of output cannot
+    // fill the pipe and block forever.
+    child
+        .wait_with_output()
+        .handle_err(|e| eprintln!("Could not get exit status of fence binary '{prog}': {e}"))
 }
