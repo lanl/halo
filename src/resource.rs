@@ -257,7 +257,7 @@ impl ResourceGroup {
     }
 
     fn assert_not_running_elsewhere(&self, host: &HostId) {
-        if !self.failover_node.is_some() {
+        if self.failover_node.is_none() {
             // This assertion is irrelevant for non-HA clusters, so just return.
             return;
         };
