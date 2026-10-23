@@ -189,6 +189,7 @@ impl TestEnvironment {
             mtls: false,
             verbose: false,
             manage_resources: true,
+            world_writable_socket: false,
             fence_on_connection_close: true,
             sleep_time: 5000,
             accept_unprivileged_commands: true,
