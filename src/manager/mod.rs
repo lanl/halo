@@ -41,7 +41,7 @@ pub struct Cli {
     #[arg(long)]
     pub manage_resources: bool,
 
-    /// Allows the socket socket to be world writable
+    /// Allows the socket to be world writable so that unprivileged users can query the status HTTP endpoint
     #[arg(long)]
     pub world_writable_socket: bool,
 
