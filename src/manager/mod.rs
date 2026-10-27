@@ -65,10 +65,7 @@ pub struct Cli {
 /// To avoid clobbering an already-in-use unix socket, a connection is attempted to an existing
 /// unix socket first. If this fails, a new socket listener can be returned, since an existing
 /// in-use socket was determined to be absent at the given location.
-async fn prepare_unix_socket(
-    addr: &String,
-    world_writable_socket: bool,
-) -> HandledResult<tokio::net::UnixListener> {
+async fn prepare_unix_socket(addr: &String, umask: u32) -> HandledResult<tokio::net::UnixListener> {
     // Check for existing socket in use
     match tokio::net::UnixStream::connect(&addr).await {
         Ok(_) => {
@@ -91,25 +88,20 @@ async fn prepare_unix_socket(
         }
     };
     // Now that a new socket needs to be created, modify the umask
-    let old = nix::sys::stat::umask(
-        nix::sys::stat::Mode::from_bits(match world_writable_socket {
-            true => 0o000,
-            false => 0o022,
-        })
-        .unwrap(),
-    );
+    let old = nix::sys::stat::umask(nix::sys::stat::Mode::from_bits(umask).unwrap());
     // Create new socket
-    match tokio::net::UnixListener::bind(addr) {
-        Ok(l) => {
-            // Before returning the socket set our umask back to our old value
-            nix::sys::stat::umask(old);
-            Ok(l)
-        }
+    let res = match tokio::net::UnixListener::bind(addr) {
+        Ok(l) => Ok(l),
         Err(e) => {
             eprintln!("error binding to socket '{addr}': {e}");
             handled_error()
         }
-    }
+    };
+
+    // Before returning set our umask back to our old value
+    nix::sys::stat::umask(old);
+
+    res
 }
 
 /// Main entrypoint for the management service, which monitors and controls the state of
@@ -140,7 +132,14 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
             None => &crate::default_socket(),
         };
 
-        let listener = prepare_unix_socket(addr, cluster.args.world_writable_socket).await?;
+        let listener = prepare_unix_socket(
+            addr,
+            match cluster.args.world_writable_socket {
+                true => 0o000,
+                false => 0o022,
+            },
+        )
+        .await?;
         info!("listening on socket '{addr}'");
 
         let cluster = Arc::new(cluster);
