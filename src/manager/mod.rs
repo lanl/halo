@@ -66,7 +66,10 @@ pub struct Cli {
 /// To avoid clobbering an already-in-use unix socket, a connection is attempted to an existing
 /// unix socket first. If this fails, a new socket listener can be returned, since an existing
 /// in-use socket was determined to be absent at the given location.
-async fn prepare_unix_socket(addr: &String, umask: u32) -> HandledResult<tokio::net::UnixListener> {
+async fn prepare_unix_socket(
+    addr: &String,
+    umask: libc::mode_t,
+) -> HandledResult<tokio::net::UnixListener> {
     // Check for existing socket in use
     match tokio::net::UnixStream::connect(&addr).await {
         Ok(_) => {
