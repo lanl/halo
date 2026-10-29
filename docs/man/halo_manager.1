@@ -31,7 +31,7 @@ The default path is
 .I /etc/halo/halo.conf\fR.
 .TP
 .BR \-\-socket =\fISOCKET\fR
-The path to the unix domain socket used for communication between
+The path to the Unix domain socket used for communication between
 the manager service and the admin CLI utility.
 The default path is
 .I /var/run/halo.socket\fR.
@@ -45,6 +45,14 @@ The default is to only passively observe their state.
 .BR \-\-verbose
 Enable verbose log output.
 This is only recommended while debugging, not for routine operation.
+.TP
+.BR \-\-world\-writable\-socket
+If specified, creates the Unix domain socket with mode 0777.
+(The default mode is 0700).
+This allows unprivileged users to make HTTP requests to the manager.
+The only request they will be authorized to make is "status";
+all other requests will return HTTP 401 unless the UID of the process
+making the request is 0.
 .SH EXAMPLES
 To run the manager service in active mode,
 specifying a custom config file path and socket:

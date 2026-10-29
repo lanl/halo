@@ -41,7 +41,8 @@ pub struct Cli {
     #[arg(long)]
     pub manage_resources: bool,
 
-    /// Allows the socket to be world writable so that unprivileged users can query the status HTTP endpoint
+    /// Allows the CLI socket to be world writable so that unprivileged users can query the status
+    /// HTTP endpoint.
     #[arg(long)]
     pub world_writable_socket: bool,
 
@@ -134,9 +135,10 @@ pub fn main(cluster: cluster::Cluster) -> HandledResult<()> {
 
         let listener = prepare_unix_socket(
             addr,
-            match cluster.args.world_writable_socket {
-                true => 0o000,
-                false => 0o022,
+            if cluster.args.world_writable_socket {
+                0o000
+            } else {
+                0o077
             },
         )
         .await?;
