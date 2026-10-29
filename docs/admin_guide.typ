@@ -283,6 +283,11 @@ A future version of HALO will make manage mode the default.
 The management daemon listens for commands from the CLI utility on a Unix domain socket.
 The default path to the socket is `/var/run/halo.socket`,
 but a custom path can be specified with the `--socket` option.
+Normally the socket is created with permissions `0700`, which only allow the owning
+user--typically root--to access it.
+If you want unprivileged users to be able to access the socket and send HTTP commands,
+you can pass the `--world-writable-socket` option to the manager.
+This causes the socket to be created with permissions `0777`.
 
 === Authorizing Commands
 
