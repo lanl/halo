@@ -35,7 +35,7 @@ The `halo_manager` management daemon controls the state of the cluster by comman
 It also has the ability to fence cluster nodes by powering them off, and communicates with the `halo_remote` daemons over TCP using a capnproto RPC protocol.
 
 The `halo` CLI utility allows the admin to query status and perform actions on the cluster.
-It communicates with the management service using an HTTP API, which occurs over a unix domain socket.
+It communicates with the management service using an HTTP API, which occurs over a Unix domain socket.
 The utility supports commands like `status` to display the cluster state,
 and `fence` to fence a cluster node.
 
@@ -280,7 +280,7 @@ A future version of HALO will make manage mode the default.
 
 == Unix Domain Socket
 
-The management daemon listens for commands from the CLI utility on a unix domain socket.
+The management daemon listens for commands from the CLI utility on a Unix domain socket.
 The default path to the socket is `/var/run/halo.socket`,
 but a custom path can be specified with the `--socket` option.
 
@@ -288,7 +288,7 @@ but a custom path can be specified with the `--socket` option.
 
 Most of the CLI commands should only be run by admins, not by regular users.
 The management daemon determines whether a user is privileged by checking the UID of the process
-connected to the unix socket.
+connected to the Unix socket.
 A UID of 0 is treated as a privileged user, and any other UID is unprivileged.
 The only command available to unprivileged users is `status`.
 Every other command will return HTTP 401 if a non-root user attempts it.
@@ -302,7 +302,7 @@ $ halo failback --onto lu-oss00
 $ halo status --socket halo.socket
 ```
 
-The `--socket` option allows specifying the unix socket path opened by the
+The `--socket` option allows specifying the Unix socket path opened by the
 management daemon, in case the default location is not used.
 
 == HTTP API

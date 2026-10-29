@@ -56,7 +56,7 @@ library, and the server side uses the
 #link("https://docs.rs/axum/latest/axum/")[axum]
 library.
 
-Communication occurs over a unix domain socket, rather than a TCP socket.
+Communication occurs over a Unix domain socket, rather than a TCP socket.
 
 `curl` can be used to make requests of the manager service
 for testing and debugging purposes:
