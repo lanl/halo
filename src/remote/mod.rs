@@ -4,8 +4,7 @@
 use std::{net::Ipv4Addr, str::FromStr};
 
 use {
-    capnp::capability::Promise,
-    capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem},
+    capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem},
     clap::Parser,
     futures::AsyncReadExt,
     log::{info, trace, warn},
@@ -168,36 +167,36 @@ fn __agent_rpc_main<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static>(
 
 impl ocf_resource_agent::Server for OcfResourceAgentImpl {
     /// Does nothing and returns success. Serves as a test of the connection.
-    fn null(
-        &mut self,
+    async fn null(
+        self: std::rc::Rc<Self>,
         _params: ocf_resource_agent::NullParams,
         _results: ocf_resource_agent::NullResults,
-    ) -> Promise<(), ::capnp::Error> {
-        Promise::ok(())
+    ) -> Result<(), ::capnp::Error> {
+        Ok(())
     }
 
-    fn operation(
-        &mut self,
+    async fn operation(
+        self: std::rc::Rc<Self>,
         params: ocf_resource_agent::OperationParams,
         mut results: ocf_resource_agent::OperationResults,
-    ) -> Promise<(), ::capnp::Error> {
-        let params = pry!(params.get());
-        let resource = pry!(params.get_resource());
-        let resource = pry!(resource.to_str());
+    ) -> Result<(), ::capnp::Error> {
+        let params = params.get()?;
+        let resource = params.get_resource()?;
+        let resource = resource.to_str()?;
 
-        let op = pry!(params.get_op());
+        let op = params.get_op()?;
         let op = match op {
             ocf_resource_agent::Operation::Monitor => ocf::Operation::Monitor,
             ocf_resource_agent::Operation::Start => ocf::Operation::Start,
             ocf_resource_agent::Operation::Stop => ocf::Operation::Stop,
         };
 
-        let args = pry!(params.get_args());
+        let args = params.get_args()?;
         let mut ocf_args: Vec<(&str, &str)> = Vec::new();
         for i in 0..args.len() {
             let arg = args.get(i);
-            let key = pry!(pry!(arg.get_key()).to_str());
-            let value = pry!(pry!(arg.get_value()).to_str());
+            let key = arg.get_key()?.to_str()?;
+            let value = arg.get_value()?.to_str()?;
             ocf_args.push((key, value));
         }
 
@@ -207,7 +206,7 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
 
         match ocf::do_operation(resource, op, &ocf_args, &self.cli) {
             Ok((exit_code, error_output)) => {
-                let mut ok_result = pry!(results.get().get_result());
+                let mut ok_result = results.get().get_result()?;
                 let mut inner_result = ::capnp::message::Builder::new_default();
                 let mut inner_result =
                     inner_result.init_root::<ocf_resource_agent::inner_result::Builder>();
@@ -220,16 +219,16 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
                         ocf_error.init_root::<ocf_resource_agent::ocf_error::Builder>();
                     ocf_error.set_code(exit_code);
                     ocf_error.set_message(error_output);
-                    pry!(inner_result.set_inner_err(ocf_error.into_reader()));
+                    inner_result.set_inner_err(ocf_error.into_reader())?;
                 }
-                pry!(ok_result.set_ok(inner_result.into_reader()));
+                ok_result.set_ok(inner_result.into_reader())?;
             }
             Err(e) => {
-                pry!(results.get().get_result()).set_err(e);
+                results.get().get_result()?.set_err(e);
             }
         };
 
-        Promise::ok(())
+        Ok(())
     }
 }
 
