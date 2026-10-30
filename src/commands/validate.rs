@@ -3,32 +3,24 @@
 
 use clap::Args;
 
-use crate::{cluster::Cluster, handled_error, HandledResult};
+use crate::{cluster::Cluster, HandledResult};
 
 #[derive(Args, Debug, Clone)]
 pub struct ValidateArgs {
     /// The location of the config file.
     #[arg(long)]
-    pub config: Option<String>,
+    pub config: String,
 }
 
 pub fn validate(args: &ValidateArgs) -> HandledResult<()> {
-    match &args.config {
-        Some(config) => {
-            let args = crate::manager::Cli {
-                config: Some(config.to_owned()),
-                use_insecure_port: true,
-                ..Default::default()
-            };
-            let cluster = Cluster::new(args)?;
+    let args = crate::manager::Cli {
+        config: Some(args.config.to_owned()),
+        use_insecure_port: true,
+        ..Default::default()
+    };
+    let cluster = Cluster::new(args)?;
 
-            cluster.print_summary();
+    cluster.print_summary();
 
-            Ok(())
-        }
-        None => {
-            eprintln!("Must specify config file using --config.");
-            handled_error()
-        }
-    }
+    Ok(())
 }
