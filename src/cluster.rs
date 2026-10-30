@@ -212,7 +212,7 @@ impl Cluster {
             }
         }
 
-        let new = Cluster::from_config2(&config, args.clone(), state, address, tls_args)?;
+        let new = Cluster::build(&config, args.clone(), state, address, tls_args)?;
 
         if new.resource_groups.iter().any(|rg| rg.root.count > 1) {
             eprintln!("Config has a shared root resource, which is not supported.");
@@ -232,7 +232,7 @@ impl Cluster {
         Ok(new)
     }
 
-    fn from_config2(
+    fn build(
         config: &config::Config,
         args: manager::Cli,
         state: Option<State>,
