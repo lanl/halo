@@ -15,7 +15,12 @@ pub struct ValidateArgs {
 pub fn validate(args: &ValidateArgs) -> HandledResult<()> {
     match &args.config {
         Some(config) => {
-            let cluster = Cluster::from_config(Some(config.to_string()))?;
+            let args = crate::manager::Cli {
+                config: Some(config.to_owned()),
+                use_insecure_port: true,
+                ..Default::default()
+            };
+            let cluster = Cluster::new(args)?;
 
             cluster.print_summary();
 

@@ -173,15 +173,6 @@ impl Cluster {
         self.hosts.get(&HostId(name.to_string()))
     }
 
-    /// Create a Cluster given a path to a config file.
-    pub fn from_config(config: Option<String>) -> HandledResult<Self> {
-        let args = crate::manager::Cli {
-            config,
-            ..Default::default()
-        };
-        Self::new(args)
-    }
-
     /// Create a Cluster given a context. The context contains the arguments, which holds the
     /// (optional) path to the config file.
     pub fn new(args: manager::Cli) -> HandledResult<Self> {

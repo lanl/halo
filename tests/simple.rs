@@ -5,10 +5,17 @@
 mod tests {
     use std::sync::Arc;
 
+    use halo_lib::{cluster::Cluster, manager};
+
     #[test]
     fn failover_partners() {
         let config_path = halo_lib::test_env::test_path("configs/lustre.yaml");
-        let cluster = halo_lib::test_env::cluster_from_config(Some(config_path)).unwrap();
+        let args = manager::Cli {
+            config: Some(config_path),
+            use_insecure_port: true,
+            ..Default::default()
+        };
+        let cluster = Cluster::new(args).unwrap();
 
         let first_host = cluster.hosts().next().unwrap();
         let first_host_partner = Arc::clone(first_host);
