@@ -68,7 +68,7 @@ pub struct Cli {
 /// in-use socket was determined to be absent at the given location.
 async fn prepare_unix_socket(
     addr: &String,
-    umask: libc::mode_t,
+    umask: nix::sys::stat::mode_t,
 ) -> HandledResult<tokio::net::UnixListener> {
     // Check for existing socket in use
     match tokio::net::UnixStream::connect(&addr).await {
