@@ -247,9 +247,9 @@ impl Cluster {
         let failover_partners = config.get_failover_partners();
         for host in hosts.values() {
             if let Some(partner) = failover_partners.get(host.raw_name()) {
-                let partner = hosts
-                    .get(partner)
-                    .expect("Host {} referenced but not defined. Invalid config.");
+                let partner = hosts.get(partner).expect(&format!(
+                    "Host {partner} referenced but not defined. Invalid config."
+                ));
 
                 // TODO: use ? and make this method return HandledResult
                 host.set_failover_partner(Some(Arc::clone(partner)))
@@ -303,19 +303,18 @@ impl Cluster {
 
             let root_resource = Resource::from_config(root, config, &resource_list, args.clone());
 
-            let home_host = Arc::clone(
-                hosts
-                    .get(&config_rg.home_host)
-                    .expect("Host {h} referenced but not defined. Invalid config."),
-            );
+            let home_host = Arc::clone(hosts.get(&config_rg.home_host).expect(&format!(
+                "Host {} referenced but not defined. Invalid config.",
+                config_rg.home_host
+            )));
 
             let failover_host = config_rg
                 .failover_hosts
                 .first()
                 .map(|h| {
-                    hosts
-                        .get(h)
-                        .expect("Host {h} referenced but not defined. Invalid config.")
+                    hosts.get(h).expect(&format!(
+                        "Host {h} referenced but not defined. Invalid config."
+                    ))
                 })
                 .map(Arc::clone);
 

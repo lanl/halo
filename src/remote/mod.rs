@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{net::Ipv4Addr, str::FromStr};
+use std::{collections::HashMap, net::Ipv4Addr, rc::Rc, str::FromStr};
 
 use {
     capnp::capability::Promise,
@@ -19,7 +19,12 @@ use crate::{
 pub mod ocf;
 
 struct OcfResourceAgentImpl {
-    cli: Cli,
+    cli: Rc<Cli>,
+
+    /// Operations on different resources run concurrently, but operations on the same resource
+    /// are run one at a time, as OCF resource agents expect. Keyed by resource agent and
+    /// arguments.
+    resource_locks: HashMap<String, Rc<tokio::sync::Mutex<()>>>,
 }
 
 #[derive(Parser)]
@@ -113,7 +118,10 @@ async fn __agent_main(args: Cli, addr: &str) -> HandledResult<()> {
             info!("Listening on {addr}");
 
             let agent_client: ocf_resource_agent::Client =
-                capnp_rpc::new_client(OcfResourceAgentImpl { cli: args });
+                capnp_rpc::new_client(OcfResourceAgentImpl {
+                    cli: Rc::new(args),
+                    resource_locks: HashMap::new(),
+                });
 
             loop {
                 let Ok((stream, socket)) = listener.accept().await else {
@@ -183,7 +191,7 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
     ) -> Promise<(), ::capnp::Error> {
         let params = pry!(params.get());
         let resource = pry!(params.get_resource());
-        let resource = pry!(resource.to_str());
+        let resource = pry!(resource.to_str()).to_owned();
 
         let op = pry!(params.get_op());
         let op = match op {
@@ -205,31 +213,43 @@ impl ocf_resource_agent::Server for OcfResourceAgentImpl {
 
         let ocf_args = ocf::Arguments::from(&ocf_args);
 
-        match ocf::do_operation(resource, op, &ocf_args, &self.cli) {
-            Ok((exit_code, error_output)) => {
-                let mut ok_result = pry!(results.get().get_result());
-                let mut inner_result = ::capnp::message::Builder::new_default();
-                let mut inner_result =
-                    inner_result.init_root::<ocf_resource_agent::inner_result::Builder>();
+        let mut sorted_args = ocf_args.args.clone();
+        sorted_args.sort();
+        let lock_key = format!("{resource} {sorted_args:?}");
+        let lock = Rc::clone(self.resource_locks.entry(lock_key).or_default());
+        let cli = Rc::clone(&self.cli);
 
-                if exit_code == 0 {
-                    inner_result.set_inner_ok(());
-                } else {
-                    let mut ocf_error = ::capnp::message::Builder::new_default();
-                    let mut ocf_error =
-                        ocf_error.init_root::<ocf_resource_agent::ocf_error::Builder>();
-                    ocf_error.set_code(exit_code);
-                    ocf_error.set_message(error_output);
-                    pry!(inner_result.set_inner_err(ocf_error.into_reader()));
+        // Run the resource agent script without blocking the agent, so that a slow operation
+        // (e.g., a long zpool import) does not hold up requests for other resources.
+        Promise::from_future(async move {
+            let _guard = lock.lock().await;
+
+            match ocf::do_operation(&resource, op, &ocf_args, &cli).await {
+                Ok((exit_code, error_output)) => {
+                    let mut ok_result = results.get().get_result()?;
+                    let mut inner_result = ::capnp::message::Builder::new_default();
+                    let mut inner_result =
+                        inner_result.init_root::<ocf_resource_agent::inner_result::Builder>();
+
+                    if exit_code == 0 {
+                        inner_result.set_inner_ok(());
+                    } else {
+                        let mut ocf_error = ::capnp::message::Builder::new_default();
+                        let mut ocf_error =
+                            ocf_error.init_root::<ocf_resource_agent::ocf_error::Builder>();
+                        ocf_error.set_code(exit_code);
+                        ocf_error.set_message(error_output);
+                        inner_result.set_inner_err(ocf_error.into_reader())?;
+                    }
+                    ok_result.set_ok(inner_result.into_reader())?;
                 }
-                pry!(ok_result.set_ok(inner_result.into_reader()));
-            }
-            Err(e) => {
-                pry!(results.get().get_result()).set_err(e);
-            }
-        };
+                Err(e) => {
+                    results.get().get_result()?.set_err(e);
+                }
+            };
 
-        Promise::ok(())
+            Ok(())
+        })
     }
 }
 

@@ -233,7 +233,7 @@ impl Host {
         self.sender
             .send(HostMessage::Command(command))
             .await
-            .expect("Sending host message {command} failed");
+            .unwrap_or_else(|e| panic!("Sending host message {:?} failed", e.0));
     }
 
     pub fn fence_agent(&self) -> &Option<FenceAgent> {

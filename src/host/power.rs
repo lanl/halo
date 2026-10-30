@@ -6,7 +6,7 @@ use std::{collections::HashMap, error::Error, fmt, process::Stdio};
 use {
     clap::ValueEnum,
     log::{error, warn},
-    tokio::io::{AsyncReadExt, AsyncWriteExt},
+    tokio::io::AsyncWriteExt,
 };
 
 use crate::{config, handled_error, Handle, HandledResult};
@@ -186,36 +186,25 @@ impl super::Host {
 
         let command_bytes = agent.generate_command_bytes(&self.address.name, command);
 
+        // Take stdin so that it is closed after writing, letting the fence agent see EOF.
         child
             .stdin
-            .as_mut()
+            .take()
             .unwrap()
             .write_all(&command_bytes)
             .await
             .handle_err(|e| error!("Failed to write to stdin for fence binary '{prog}': {e}"))?;
 
-        let status = child
-            .wait()
+        // Read stdout and stderr while waiting, so that a fence agent writing a lot of output
+        // cannot fill the pipe and block forever.
+        let output = child
+            .wait_with_output()
             .await
             .handle_err(|e| error!("Failed to wait on child fence binary '{prog}': {e}"))?;
+        let out = String::from_utf8_lossy(&output.stdout);
+        let err = String::from_utf8_lossy(&output.stderr);
 
-        let mut out = String::new();
-        child
-            .stdout
-            .unwrap()
-            .read_to_string(&mut out)
-            .await
-            .handle_err(|e| error!("Failed to read fence binary '{prog}' stdout: {e}"))?;
-
-        let mut err = String::new();
-        child
-            .stderr
-            .unwrap()
-            .read_to_string(&mut err)
-            .await
-            .handle_err(|e| error!("Failed to read fence binary '{prog}' stderr: {e}"))?;
-
-        if status.success() {
+        if output.status.success() {
             warn!("Fencing host {} succeded.", self.id());
             Ok(())
         } else {
