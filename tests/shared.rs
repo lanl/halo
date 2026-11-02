@@ -84,4 +84,51 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn unmanage1() {
+        let env = test_env_helper("unmanage1");
+
+        env.start_resource("ip_addr_0", 0);
+        env.start_resource("ip_addr_1", 0);
+
+        let _a = env.start_agent(0);
+        let _b = env.start_agent(1);
+        let _m = env.start_manager(true);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        env.unmanage_resource("ip_addr_0");
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        env.manage_resource("ip_addr_0");
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let status = env.get_status();
+        for resource in status.resources {
+            let (st, _) = resource.single_host_status();
+            if resource.kind == "heartbeat/ip" {
+                if resource.id.contains("1") {
+                    assert_eq!(st, "Running (Failed Over)");
+                } else {
+                    assert_eq!(st, "Running");
+                }
+            }
+        }
+        env.failback(1).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let status = env.get_status();
+        for resource in status.resources {
+            let (st, _) = resource.single_host_status();
+            match resource.kind.as_str() {
+                "heartbeat/ip" => assert_eq!(st, "Running"),
+                _ => {
+                    for st in resource.status.values() {
+                        assert_eq!(st.status, "Running");
+                    }
+                }
+            }
+        }
+    }
 }

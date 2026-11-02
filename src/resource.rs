@@ -231,10 +231,8 @@ impl ResourceGroup {
         // its state MUST be revalidated before the manager can take any actions on it. Therefore,
         // clear any out of date knowledge on whether it was known to be running somewhere.
         if remanaged {
-            self.root.clear_resource_group_knowledge(&self.id());
-
             for host in self.hosts() {
-                self.root.set_status_recursive(
+                self.root.set_non_shared_status(
                     ResourceStatus::Unknown(
                         "Manager is beginning management of resource.".to_string(),
                     ),
@@ -522,16 +520,6 @@ impl Resource {
         }
     }
 
-    fn clear_resource_group_knowledge(&self, resource_group: &ResourceId) {
-        for per_host_map in self.state.inner.lock().unwrap().values_mut() {
-            per_host_map.started_groups.remove(resource_group);
-        }
-
-        for child in &self.dependents {
-            child.clear_resource_group_knowledge(resource_group);
-        }
-    }
-
     /// This method checks if the resource is running on the system connected via the given Client.
     async fn check_and_update_status(&self, client: &Client) -> Result<(), ManagementError> {
         match self.monitor(client).await {
@@ -733,6 +721,28 @@ impl Resource {
     pub fn set_status_recursive(&self, status: ResourceStatus, host: &HostId) {
         for child in self.dependents.iter() {
             child.set_status_recursive(status.clone(), host);
+        }
+
+        self.set_status(status, host);
+    }
+
+    /// Updates the status of this resource, and updates its children recursively, except that it
+    /// stops when it encounters a shared resource.
+    ///
+    /// This is a "workaround" for the case where a resource tree switches from unmanaged to
+    /// managed, and the resource tree includes shared resources. Normally this action would reset
+    /// the status of every resource in the tree to "Unknown". However, for shared resources, that
+    /// might be overly pessimistic because the resource might be started due to another parent
+    /// resource running on the same Host. In that case, switching those shared resources to
+    /// Unknown can lead the other resource group management task to believe a problem has occurred
+    /// when actually none has.
+    ///
+    /// It would be more precise to only stop the recursion when it's known that shared resource
+    /// has another parent on this same host, but that's trickier to get right so I'm using this
+    /// less precise logic as it's good enough.
+    fn set_non_shared_status(&self, status: ResourceStatus, host: &HostId) {
+        for child in self.dependents.iter().filter(|res| res.count == 1) {
+            child.set_non_shared_status(status.clone(), host);
         }
 
         self.set_status(status, host);
