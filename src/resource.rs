@@ -217,7 +217,7 @@ impl ResourceGroup {
     }
 
     /// Update resources group's managed status during runtime.
-    pub async fn update_managed(&self, managed: bool) {
+    pub fn update_managed(&self, managed: bool) {
         let remanaged = {
             let mut managed_status = self.managed.lock().unwrap();
             let was_managed = *managed_status;
